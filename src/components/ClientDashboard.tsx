@@ -49,6 +49,7 @@ interface ClientDashboardProps {
   onBackToAdmin: () => void;
   onRecordLog: (log: Omit<Log, "id" | "timestamp">) => void;
   onUpdateClient: (updatedClient: Client) => void;
+  showBackToAdmin?: boolean;
 }
 
 export default function ClientDashboard({
@@ -56,6 +57,7 @@ export default function ClientDashboard({
   onBackToAdmin,
   onRecordLog,
   onUpdateClient,
+  showBackToAdmin = false,
 }: ClientDashboardProps) {
   const [sheetData, setSheetData] = useState<SpreadsheetData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1109,15 +1111,19 @@ export default function ClientDashboard({
         {/* Dashboard Header toolbar */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-white/10 mb-8">
           <div className="flex items-center gap-4">
-            <button
-              id="back-to-admin-btn"
-              onClick={onBackToAdmin}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-            >
-              <ArrowLeft className="h-3.5 w-3.5 text-blue-400" />
-              BACK TO ADMIN
-            </button>
-            <span className="h-4 w-px bg-white/10"></span>
+            {showBackToAdmin && (
+              <>
+                <button
+                  id="back-to-admin-btn"
+                  onClick={onBackToAdmin}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5 text-blue-400" />
+                  BACK TO ADMIN
+                </button>
+                <span className="h-4 w-px bg-white/10"></span>
+              </>
+            )}
             
             <div className="flex items-center gap-2">
               <span className="px-2 py-0.5 rounded text-[10px] font-mono border bg-blue-500/10 border-blue-500/20 text-blue-400">

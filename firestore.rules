@@ -1,0 +1,108 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ==========================================
+    // HARDENED SECURITY GLOBAL PRIMITIVES
+    // ==========================================
+    
+    // Checks if a client request is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Identifies if the authenticated user is the designated system owner by UID or email
+    function isOwnerByEmail() {
+      return isSignedIn() && (
+             request.auth.uid == 'nKJz7KlPOkN7y9rXG2ZKLL5Lowp1' ||
+             (request.auth.token != null && request.auth.token.email == 'raed.sight@gmail.com')
+             );
+    }
+
+    // Resolves role-based access control (RBAC) parameters from the user's own profile document
+    function userHasRole(uid, role) {
+      return exists(/databases/$(database)/documents/users/$(uid)) && 
+             get(/databases/$(database)/documents/users/$(uid)).data.get('role', '') == role;
+    }
+
+    // Checks if the authenticated user has the 'owner' role
+    function isOwner() {
+      return isSignedIn() && (
+        isOwnerByEmail() ||
+        userHasRole(request.auth.uid, 'owner')
+      );
+    }
+
+    // Checks if the authenticated user has either 'admin' or 'owner' privileges
+    function isAdminOrOwner() {
+      return isSignedIn() && (
+        isOwnerByEmail() ||
+        userHasRole(request.auth.uid, 'admin') ||
+        userHasRole(request.auth.uid, 'owner')
+      );
+    }
+
+    // Strictly verifies if a client is authenticated and restricted only to their own client staging portal
+    function isClientOf(clientId) {
+      return isSignedIn() && 
+             userHasRole(request.auth.uid, 'client') && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientId', '') == clientId;
+    }
+
+    // ==========================================
+    // COLLECTION-LEVEL ACCESS CONTROL POLICIES
+    // ==========================================
+
+    // 1. Users Collection: Strict self-access policy
+    match /users/{userId} {
+      // Users can always access, read, and write their own data.
+      // Separated to prevent evaluating isAdminOrOwner() (which triggers exists()/get() calls) when the profile is first created.
+      allow get, create, update: if isSignedIn() && request.auth.uid == userId;
+      
+      // Admins and owners can access, read, and write other users' profiles.
+      allow get, create, update: if isSignedIn() && request.auth.uid != userId && isAdminOrOwner();
+      
+      // Listing all user profiles is strictly restricted to system administrators and owners (preventing user directory exposure)
+      allow list: if isAdminOrOwner();
+      
+      // Only the designated owner can permanently delete profiles
+      allow delete: if isOwner();
+    }
+
+    // 2. Clients Collection: Strict portal-to-client mapping
+    match /clients/{clientId} {
+      // Clients can only access their own specific staging portal configuration.
+      allow get: if isAdminOrOwner() || isClientOf(clientId);
+
+      // Only administrators and owners can list all client portals in the system.
+      allow list: if isAdminOrOwner();
+
+      // Only administrators and owners can register new staging portals.
+      allow create: if isAdminOrOwner();
+
+      // Updates to the specific client portal can only be executed by assigned client users or administrators.
+      allow update: if isAdminOrOwner() || isClientOf(clientId);
+
+      // Only the designated owner can delete staging portals.
+      allow delete: if isOwner();
+    }
+
+    // 3. Logs Collection: Audit trail isolation
+    match /logs/{logId} {
+      // Audit trail logs can only be read and listed by administrators and owners.
+      allow get: if isAdminOrOwner();
+      allow list: if isAdminOrOwner();
+
+      // Users can write audit logs for their own system activities.
+      allow create, update: if isSignedIn();
+
+      // Only the owner can flush system activity logs.
+      allow delete: if isOwner();
+    }
+
+    // 4. Test Collection: Infrastructure validation
+    match /test/{documentId} {
+      allow read: if true;
+    }
+  }
+}

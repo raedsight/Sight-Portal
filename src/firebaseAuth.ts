@@ -1,9 +1,10 @@
-import { initializeApp } from "firebase/app";
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from "firebase/auth";
-import firebaseConfig from "../firebase-applet-config.json";
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+import { 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  onAuthStateChanged, 
+  User 
+} from "firebase/auth";
+import { auth } from "./firebase";
 
 const provider = new GoogleAuthProvider();
 // Request Google Sheets scope (matching what user confirmed)
@@ -22,8 +23,8 @@ export const initAuth = (
       if (cachedAccessToken) {
         if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
       } else if (!isSigningIn) {
-        cachedAccessToken = null;
-        if (onAuthFailure) onAuthFailure();
+        // If the user refreshed or is already logged in, we fetch a fresh token or await user gesture
+        if (onAuthSuccess) onAuthSuccess(user, "");
       }
     } else {
       cachedAccessToken = null;

@@ -1,0 +1,110 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role-based access control parameters.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The unique Firebase Authentication user ID."
+        },
+        "email": {
+          "type": "string",
+          "description": "User's verified email address."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["owner", "admin", "client"],
+          "description": "Role group assigned to this user."
+        },
+        "clientId": {
+          "type": "string",
+          "description": "Associated client ID. Applicable only if role is 'client'."
+        }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Client": {
+      "title": "Client Portal",
+      "description": "Portal configurations and virtual staging parameters for a client.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "company": {
+          "type": "string"
+        },
+        "sheetId": {
+          "type": "string"
+        },
+        "sheetTab": {
+          "type": "string"
+        },
+        "ue5Endpoint": {
+          "type": "string"
+        },
+        "branding": {
+          "type": "object"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "bugs": {
+          "type": "array"
+        }
+      },
+      "required": ["id", "name", "company", "sheetId"]
+    },
+    "Log": {
+      "title": "System Log",
+      "description": "Audit log mapping user and pipeline actions.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "clientId": {
+          "type": "string"
+        },
+        "clientName": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "details": {
+          "type": "string"
+        },
+        "payload": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "clientId", "clientName", "timestamp", "type", "status", "details"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile collection with secure roles."
+    },
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Client visual stage definitions."
+    },
+    "/logs/{logId}": {
+      "schema": "Log",
+      "description": "Chronological system activity logs."
+    }
+  }
+}
