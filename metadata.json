@@ -1,0 +1,6 @@
+{
+  "name": "Client Portal and UE5 Sheet Bridge",
+  "description": "Manage clients, design custom-branded dashboards, instantly parse Google Sheets, and stream layout and virtual production parameter updates directly to Unreal Engine 5.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
