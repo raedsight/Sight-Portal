@@ -69,9 +69,6 @@ void ASightPortalSiteManager::SpawnZoneManagers()
 
     bIsSpawning = true;
 
-    // Clear out any old instances
-    ClearZoneManagers();
-
     UWorld* World = GetWorld();
     if (!World)
     {
@@ -79,10 +76,55 @@ void ASightPortalSiteManager::SpawnZoneManagers()
         return;
     }
 
+    // 1. Scan attached children to recover any untracked valid Zone Managers (preserves them across editor rebuilds/reloads)
+    TArray<AActor*> AttachedActors;
+    GetAttachedActors(AttachedActors);
+    for (AActor* Attached : AttachedActors)
+    {
+        if (IsValid(Attached) && Attached->IsA(ZoneManagerClass))
+        {
+            if (!ActiveZoneManagers.Contains(Attached))
+            {
+                ActiveZoneManagers.Add(Attached);
+            }
+        }
+    }
+
+    // 2. Clean up invalid/destroyed actors from our array
+    for (int32 i = ActiveZoneManagers.Num() - 1; i >= 0; --i)
+    {
+        if (!IsValid(ActiveZoneManagers[i]))
+        {
+            ActiveZoneManagers.RemoveAt(i);
+        }
+    }
+
+    // 3. If any actor in our array is NOT an instance of the current ZoneManagerClass, destroy and remove it
+    for (int32 i = ActiveZoneManagers.Num() - 1; i >= 0; --i)
+    {
+        if (IsValid(ActiveZoneManagers[i]) && !ActiveZoneManagers[i]->IsA(ZoneManagerClass))
+        {
+            ActiveZoneManagers[i]->Destroy();
+            ActiveZoneManagers.RemoveAt(i);
+        }
+    }
+
+    // 4. If we have more than ZoneCount, destroy excess ones from the end
+    while (ActiveZoneManagers.Num() > ZoneCount)
+    {
+        AActor* ExcessActor = ActiveZoneManagers.Last();
+        if (IsValid(ExcessActor))
+        {
+            ExcessActor->Destroy();
+        }
+        ActiveZoneManagers.RemoveAt(ActiveZoneManagers.Num() - 1);
+    }
+
+    // 5. Spawn only the missing Zone Managers, keeping existing ones (and their custom transforms!) completely intact
     FVector ManagerLocation = GetActorLocation();
     FRotator ManagerRotation = GetActorRotation();
 
-    for (int32 Index = 0; Index < ZoneCount; ++Index)
+    for (int32 Index = ActiveZoneManagers.Num(); Index < ZoneCount; ++Index)
     {
         // Position grid/linear alignment based on spacing parameter
         FVector SpawnLoc = ManagerLocation + (GetActorRightVector() * (Index * ZoneSpacing));
@@ -98,7 +140,7 @@ void ASightPortalSiteManager::SpawnZoneManagers()
         SpawnParams.Owner = this;
         SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
         #if WITH_EDITOR
-        if (World && !World->IsGameWorld())
+        if (!World->IsGameWorld())
         {
             SpawnParams.ObjectFlags |= RF_Transient;
         }
@@ -107,8 +149,10 @@ void ASightPortalSiteManager::SpawnZoneManagers()
         AActor* NewZoneActor = World->SpawnActor<AActor>(ZoneManagerClass, SpawnLoc, ManagerRotation, SpawnParams);
         if (NewZoneActor)
         {
+            // Attach SightPortalZoneManager to SightPortalSiteManager
+            NewZoneActor->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
             ActiveZoneManagers.Add(NewZoneActor);
-            UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Successfully spawned Zone Manager at location %s"), *SpawnLoc.ToString());
+            UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Successfully spawned and attached Zone Manager at location %s"), *SpawnLoc.ToString());
         }
     }
 
