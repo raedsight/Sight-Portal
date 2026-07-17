@@ -19,21 +19,13 @@ struct FPropertyBlockRowDetails
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|BlockRow")
     int32 PropertyCount = 3;
 
-    // Blueprint template class to use for visual representation of this row's properties
+    // The spawned BlockSpline actor controlling the placement for this row. Can be assigned a custom pre-placed spline in level.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|BlockRow")
-    TSubclassOf<AActor> PropertyVisualizer;
-
-    // The spawned BlockSpline actor controlling the placement for this row
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SightPortal|BlockRow")
     ABlockSpline* BlockSplineActor = nullptr;
 
     // Custom offset location to apply to properties in this row (Property Location)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|BlockRow")
     FVector PropertyLocation = FVector::ZeroVector;
-
-    // Spacing between spawned actors along the spline in this row
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|BlockRow")
-    float GridSpacing = 350.0f;
 
     // Custom offset rotation to apply to properties in this row
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|BlockRow")
@@ -68,6 +60,10 @@ public:
     virtual void OnConstruction(const FTransform& Transform) override;
 
 public:
+    // Custom Block Name identifier for property matching
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Configuration")
+    FString BlockName = TEXT("1");
+
     // Row layout offset vector when positioning spawned row splines dynamically
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Configuration")
     FVector SpawnOffset = FVector::ZeroVector;
@@ -80,6 +76,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Configuration", meta = (ClampMin = "0"))
     int32 PropertyRowCount = 1;
 
+    // Class of BlockSpline actor to spawn dynamically if none is custom-selected
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Configuration")
+    TSubclassOf<ABlockSpline> BlockSplineClass;
+
     // Dynamic list of property rows, automatically resized to match PropertyRowCount
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Configuration")
     TArray<FPropertyBlockRowDetails> PropertyRowDetails;
@@ -91,12 +91,20 @@ public:
     // --- Operations ---
 
     // Cleans up all spawned property actors in the active viewport space
-    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
     void ClearActiveSpawnedActors();
 
     // Spawns and arranges properties along the spline paths of each row's BlockSpline actor
-    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
     void SpawnRowsOfProperties();
+
+    // Spawns/updates Property Visualizers along rows
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
+    void SpawnPropertyVisualizers();
+
+    // Clears Property Visualizers for all rows
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
+    void ClearPropertyVisualizers();
 
 private:
     bool bIsSpawning = false;
