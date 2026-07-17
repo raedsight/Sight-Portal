@@ -40,6 +40,7 @@ export const DEFAULT_CLIENTS: Client[] = [
     sheetId: "1tZp-u4cEunWqS8C8F3uW98vF8nK393J_i3d_8hH8q7g",
     sheetTab: "ArchVisProps",
     ue5Endpoint: "http://localhost:8012/api/ue5-stage",
+    webSocketEndpoint: "ws://127.0.0.1:8009/ws/hyperion-vis",
     branding: {
       logoText: "HYPERION DIRECT",
       primaryColor: "#f59e0b", // Gorgeous Gold/Amber
@@ -104,6 +105,7 @@ export const DEFAULT_CLIENTS: Client[] = [
     sheetId: "1BxiMVs0XRA5nFMdKv1aM9ldm5i-YSgcbL1g6xGoS18A",
     sheetTab: "Sheet1",
     ue5Endpoint: "http://127.0.0.1:8008/remote/object/call",
+    webSocketEndpoint: "ws://127.0.0.1:8009/ws/neon-nebula",
     branding: {
       logoText: "NEBULA V-STAGE",
       primaryColor: "#d946ef", // Vibrant Magenta
@@ -121,6 +123,7 @@ export const DEFAULT_CLIENTS: Client[] = [
     sheetId: "1_8jK6u9KjS_sQfF99G-q6hVv8l2pEq5L_g48q61zZ0g",
     sheetTab: "MainSpawns",
     ue5Endpoint: "http://localhost:8008/remote/object/call",
+    webSocketEndpoint: "ws://127.0.0.1:8009/ws/overlord-egames",
     branding: {
       logoText: "OVERLORD ENGAGE",
       primaryColor: "#06b6d4", // Sharp Cyan

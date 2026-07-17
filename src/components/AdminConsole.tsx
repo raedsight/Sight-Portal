@@ -84,6 +84,7 @@ export default function AdminConsole({
   const [sheetId, setSheetId] = useState("");
   const [sheetTab, setSheetTab] = useState("Sheet1");
   const [ue5Endpoint, setUe5Endpoint] = useState("http://127.0.0.1:8008/remote/object/call");
+  const [webSocketEndpoint, setWebSocketEndpoint] = useState("ws://127.0.0.1:8009");
   
   // Theme options
   const [logoText, setLogoText] = useState("");
@@ -126,6 +127,7 @@ export default function AdminConsole({
       sheetId: sheetId || "1BxiMVs0XRA5nFMdKv1aM9ldm5i-YSgcbL1g6xGoS18A", // fallback template
       sheetTab: sheetTab || "Sheet1",
       ue5Endpoint: ue5Endpoint || "http://127.0.0.1:8008/remote/object/call",
+      webSocketEndpoint: webSocketEndpoint || `ws://127.0.0.1:8009/ws/${newId}`,
       branding: {
         logoText: logoText || name.toUpperCase() + " STAGE",
         primaryColor,
@@ -149,6 +151,7 @@ export default function AdminConsole({
     setSheetId(client.sheetId);
     setSheetTab(client.sheetTab);
     setUe5Endpoint(client.ue5Endpoint);
+    setWebSocketEndpoint(client.webSocketEndpoint || "");
     setLogoText(client.branding.logoText);
     setPrimaryColor(client.branding.primaryColor);
     setAccentColor(client.branding.accentColor);
@@ -167,6 +170,7 @@ export default function AdminConsole({
       sheetId,
       sheetTab,
       ue5Endpoint,
+      webSocketEndpoint,
       branding: {
         logoText: logoText || name.toUpperCase() + " STAGE",
         primaryColor,
@@ -188,6 +192,7 @@ export default function AdminConsole({
     setSheetId("");
     setSheetTab("Sheet1");
     setUe5Endpoint("http://127.0.0.1:8008/remote/object/call");
+    setWebSocketEndpoint("ws://127.0.0.1:8009");
     setLogoText("");
     setPrimaryColor("#0070FF");
     setAccentColor("#f59e0b");
@@ -403,6 +408,17 @@ export default function AdminConsole({
                     className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors font-mono"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1">Live WebSocket Connection Endpoint URL</label>
+                <input
+                  type="text"
+                  value={webSocketEndpoint}
+                  onChange={(e) => setWebSocketEndpoint(e.target.value)}
+                  placeholder="e.g. ws://127.0.0.1:8009 or leave empty for dynamic default"
+                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors font-mono"
+                />
               </div>
             </div>
 

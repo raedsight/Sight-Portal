@@ -128,7 +128,7 @@ export default function ClientDashboard({
 
     try {
       const isHttps = window.location.protocol === "https:";
-      const wsUrl = `${isHttps ? "wss" : "ws"}://${window.location.host}/ws/${client.id}`;
+      const wsUrl = client.webSocketEndpoint || `${isHttps ? "wss" : "ws"}://${window.location.host}/ws/${client.id}`;
       
       setTestWsLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔗 Targeting URL: ${wsUrl}`]);
       
@@ -175,10 +175,16 @@ export default function ClientDashboard({
 
       ws.onerror = () => {
         setTestWsStatus("error");
+        const isNetlify = typeof window !== "undefined" && window.location.hostname.includes("netlify.app");
         setTestWsLogs(prev => [
           ...prev,
           `[${new Date().toLocaleTimeString()}] ❌ Handshake connection error logged! Is the network path obstructed?`,
-          `[${new Date().toLocaleTimeString()}] 💡 UE5 Debug Tip: Confirm certificate validation or check for CORS headers if connecting externally.`
+          ...(isNetlify ? [
+            `[${new Date().toLocaleTimeString()}] ⚠️ STATIC HOST ALERT (Netlify): Netlify hosts purely static compiled assets and does NOT run our Node.js/Express server or active background WebSockets.`,
+            `[${new Date().toLocaleTimeString()}] 💡 SOLUTION: In the Admin Console, configure a custom "Live WebSocket Connection Endpoint URL" that points to your live container server (e.g. your active Cloud Run or Render server URL).`
+          ] : [
+            `[${new Date().toLocaleTimeString()}] 💡 UE5 Debug Tip: Confirm certificate validation or check for CORS headers if connecting externally.`
+          ])
         ]);
       };
 
@@ -1518,13 +1524,28 @@ export default function ClientDashboard({
                     Our C++ subsystem connects directly to this web application's cloud socket route to download initial spreadsheet records and listen to instant state changes seamlessly without any local Python scripts.
                   </p>
 
+                  {typeof window !== "undefined" && window.location.hostname.includes("netlify.app") && (
+                    <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300 space-y-2 font-sans">
+                      <div className="flex items-center gap-2 font-bold text-amber-400">
+                        <AlertTriangle className="h-4 w-4 shrink-0" />
+                        Netlify Static Hosting Limitation Detected
+                      </div>
+                      <p className="text-gray-300 leading-relaxed text-[11px]">
+                        Netlify hosts compiled static assets and **cannot run our live Express backend (`server.ts`)** which hosts the WebSocket protocol wrapper. Therefore, querying WebSockets at the default Netlify domain returns a connection failure.
+                      </p>
+                      <p className="text-gray-400 text-[10.5px] font-medium">
+                        👉 **To fix this**: Enter your dedicated full-stack server URL (such as your Cloud Run Developer App URL) in the custom <strong className="text-white">Live WebSocket Connection Endpoint URL</strong> field inside the client's configuration in the <strong className="text-white">Admin Console</strong>!
+                      </p>
+                    </div>
+                  )}
+
                   <div className="space-y-1.5">
                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block font-mono">Live WebSocket Connection Endpoint URL:</span>
                     <div className="bg-black/60 font-mono text-[10.5px] text-emerald-300 p-2.5 border border-white/5 rounded-lg flex items-center justify-between gap-1 overflow-x-auto select-all">
                       <code>
-                        {typeof window !== "undefined"
+                        {client.webSocketEndpoint || (typeof window !== "undefined"
                           ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host.replace("ais-dev-", "ais-pre-")}/ws/${client.id}`
-                          : `wss://ais-pre-.../ws/${client.id}`}
+                          : `wss://ais-pre-.../ws/${client.id}`)}
                       </code>
                     </div>
                     <span className="text-[9.5px] text-[#2ebd85] block leading-tight font-sans font-medium">
