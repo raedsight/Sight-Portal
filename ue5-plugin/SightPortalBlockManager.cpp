@@ -259,7 +259,11 @@ void ASightPortalBlockManager::SpawnRowsOfProperties()
                     }
                     #endif
 
-                    TSubclassOf<AActor> VisualizerClass = Row.PropertyVisualizer ? Row.PropertyVisualizer : APropertyVisualizer::StaticClass();
+                    TSubclassOf<AActor> VisualizerClass = Row.PropertyVisualizer;
+                    if (!VisualizerClass)
+                    {
+                        VisualizerClass = APropertyVisualizer::StaticClass();
+                    }
 
                     AActor* NewPropertyActor = World->SpawnActor<AActor>(VisualizerClass, SpawnLoc, FinalRot, SpawnParams);
                     if (NewPropertyActor)
