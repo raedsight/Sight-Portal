@@ -205,7 +205,11 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
             SpawnParams.Owner = this;
             SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-            TSubclassOf<ABlockSpline> SplineClassToSpawn = BlockSplineClass ? BlockSplineClass : ABlockSpline::StaticClass();
+            TSubclassOf<ABlockSpline> SplineClassToSpawn = BlockSplineClass;
+            if (!SplineClassToSpawn)
+            {
+                SplineClassToSpawn = ABlockSpline::StaticClass();
+            }
 
             ABlockSpline* NewSpline = World->SpawnActor<ABlockSpline>(SplineClassToSpawn, SplineLocation, ManagerRotation, SpawnParams);
             if (NewSpline)
