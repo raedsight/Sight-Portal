@@ -6,3 +6,11 @@ coverage/
 *.log
 .env*
 !.env.example
+/SightPortalPlugin/.vs
+/SightPortalPlugin/DerivedDataCache
+/SightPortalPlugin/Intermediate
+/SightPortalPlugin/Content/__ExternalActors__
+/SightPortalPlugin/Content/__ExternalObjects__
+/SightPortalPlugin/Binaries
+/SightPortalPlugin/Plugins/SightPortal/Binaries
+/SightPortalPlugin/Saved
