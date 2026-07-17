@@ -19,9 +19,9 @@ struct FPropertyBlockRowDetails
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|BlockRow")
     int32 PropertyCount = 3;
 
-    // The spawned BlockSpline actor controlling the placement for this row. Can be assigned a custom pre-placed spline in level.
+    // Blueprint template class to use for visual representation of this row's properties
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|BlockRow")
-    ABlockSpline* BlockSplineActor = nullptr;
+    TSubclassOf<APropertyVisualizer> PropertyVisualizer;
 
     // Custom offset location to apply to properties in this row (Property Location)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|BlockRow")

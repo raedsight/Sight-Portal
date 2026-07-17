@@ -50,12 +50,14 @@ void ASightPortalBlockManager::ClearActiveSpawnedActors()
 
     ClearPropertyVisualizers();
 
-    for (FPropertyBlockRowDetails& Row : PropertyRowDetails)
+    // Destroy all attached child splines
+    TArray<AActor*> AttachedActors;
+    GetAttachedActors(AttachedActors);
+    for (AActor* Attached : AttachedActors)
     {
-        if (IsValid(Row.BlockSplineActor))
+        if (IsValid(Attached) && Attached->IsA(ABlockSpline::StaticClass()))
         {
-            Row.BlockSplineActor->Destroy();
-            Row.BlockSplineActor = nullptr;
+            Attached->Destroy();
         }
     }
     ActiveSpawnedActors.Empty();
@@ -75,6 +77,7 @@ void ASightPortalBlockManager::ClearPropertyVisualizers()
         CurrentParent = CurrentParent->GetAttachParentActor();
     }
 
+    // Clear tracked visualizers
     for (FPropertyBlockRowDetails& Row : PropertyRowDetails)
     {
         for (AActor* Vis : Row.SpawnedVisualizers)
@@ -93,6 +96,48 @@ void ASightPortalBlockManager::ClearPropertyVisualizers()
             }
         }
         Row.SpawnedVisualizers.Empty();
+    }
+
+    // Also scan for any untracked child visualizers on splines or on us
+    TArray<AActor*> AttachedActors;
+    GetAttachedActors(AttachedActors);
+    for (AActor* Attached : AttachedActors)
+    {
+        if (IsValid(Attached))
+        {
+            if (Attached->IsA(APropertyVisualizer::StaticClass()))
+            {
+                if (SiteManager)
+                {
+                    APropertyVisualizer* PropVis = Cast<APropertyVisualizer>(Attached);
+                    if (PropVis)
+                    {
+                        SiteManager->UnregisterPropertyVisualizer(PropVis->PropertyDetails.Name);
+                    }
+                }
+                Attached->Destroy();
+            }
+            else if (Attached->IsA(ABlockSpline::StaticClass()))
+            {
+                TArray<AActor*> SplineAttached;
+                Attached->GetAttachedActors(SplineAttached);
+                for (AActor* SplineChild : SplineAttached)
+                {
+                    if (IsValid(SplineChild) && SplineChild->IsA(APropertyVisualizer::StaticClass()))
+                    {
+                        if (SiteManager)
+                        {
+                            APropertyVisualizer* PropVis = Cast<APropertyVisualizer>(SplineChild);
+                            if (PropVis)
+                            {
+                                SiteManager->UnregisterPropertyVisualizer(PropVis->PropertyDetails.Name);
+                            }
+                        }
+                        SplineChild->Destroy();
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -156,7 +201,7 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
         }
     }
 
-    // Scan attached child splines to recover any that are unassigned
+    // Scan attached child splines to recover existing splines
     TArray<AActor*> AttachedActors;
     GetAttachedActors(AttachedActors);
 
@@ -169,37 +214,50 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
         }
     }
 
+    // Destroy any excess splines (e.g. if PropertyRowCount was decreased in Editor)
+    while (FoundSplines.Num() > PropertyRowDetails.Num())
+    {
+        ABlockSpline* ExcessSpline = FoundSplines.Last();
+        if (IsValid(ExcessSpline))
+        {
+            TArray<AActor*> SplineAttached;
+            ExcessSpline->GetAttachedActors(SplineAttached);
+            for (AActor* SplineChild : SplineAttached)
+            {
+                if (IsValid(SplineChild))
+                {
+                    if (SiteManager)
+                    {
+                        APropertyVisualizer* PropVis = Cast<APropertyVisualizer>(SplineChild);
+                        if (PropVis)
+                        {
+                            SiteManager->UnregisterPropertyVisualizer(PropVis->PropertyDetails.Name);
+                        }
+                    }
+                    SplineChild->Destroy();
+                }
+            }
+            ExcessSpline->Destroy();
+        }
+        FoundSplines.RemoveAt(FoundSplines.Num() - 1);
+    }
+
     for (int32 RowIndex = 0; RowIndex < PropertyRowDetails.Num(); ++RowIndex)
     {
         FPropertyBlockRowDetails& Row = PropertyRowDetails[RowIndex];
 
         FVector SplineLocation = ManagerLocation + (GetActorForwardVector() * (RowIndex * RowSpacing)) + (SpawnOffset * RowIndex) + Row.PropertyLocation;
 
-        // 1. Ensure spline actor exists
-        if (!IsValid(Row.BlockSplineActor))
+        ABlockSpline* RowSpline = nullptr;
+        if (RowIndex < FoundSplines.Num())
         {
-            // Try assigning an existing unassigned spline first
-            for (ABlockSpline* FSpline : FoundSplines)
+            RowSpline = FoundSplines[RowIndex];
+            if (IsValid(RowSpline))
             {
-                bool bAlreadyAssigned = false;
-                for (const FPropertyBlockRowDetails& OtherRow : PropertyRowDetails)
-                {
-                    if (OtherRow.BlockSplineActor == FSpline)
-                    {
-                        bAlreadyAssigned = true;
-                        break;
-                    }
-                }
-                if (!bAlreadyAssigned)
-                {
-                    Row.BlockSplineActor = FSpline;
-                    break;
-                }
+                RowSpline->SetActorLocation(SplineLocation);
             }
         }
-
-        // If still null, spawn a new spline
-        if (!IsValid(Row.BlockSplineActor))
+        else
         {
             FActorSpawnParameters SpawnParams;
             SpawnParams.Owner = this;
@@ -211,28 +269,23 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
                 SplineClassToSpawn = ABlockSpline::StaticClass();
             }
 
-            ABlockSpline* NewSpline = World->SpawnActor<ABlockSpline>(SplineClassToSpawn, SplineLocation, ManagerRotation, SpawnParams);
-            if (NewSpline)
+            RowSpline = World->SpawnActor<ABlockSpline>(SplineClassToSpawn, SplineLocation, ManagerRotation, SpawnParams);
+            if (RowSpline)
             {
-                NewSpline->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
-                Row.BlockSplineActor = NewSpline;
-                ActiveSpawnedActors.Add(NewSpline);
+                RowSpline->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+                FoundSplines.Add(RowSpline);
+                ActiveSpawnedActors.Add(RowSpline);
                 UE_LOG(LogTemp, Log, TEXT("[SightPortal BlockManager] Spawned BlockSpline for Row %d"), RowIndex);
             }
         }
-        else
-        {
-            // Position the existing spline according to current offsets
-            Row.BlockSplineActor->SetActorLocation(SplineLocation);
-        }
 
-        if (!IsValid(Row.BlockSplineActor)) continue;
+        if (!IsValid(RowSpline)) continue;
 
         // Apply visual settings to the spline
-        Row.BlockSplineActor->VisualizerRotationOffset = Row.PropertyRotation;
-        Row.BlockSplineActor->VisualizerScaleOffset = Row.PropertyScale;
+        RowSpline->VisualizerRotationOffset = Row.PropertyRotation;
+        RowSpline->VisualizerScaleOffset = Row.PropertyScale;
 
-        // 2. Clean up destroyed/invalid visualizer references
+        // Clean up destroyed/invalid visualizer references from the tracking array
         for (int32 i = Row.SpawnedVisualizers.Num() - 1; i >= 0; --i)
         {
             if (!IsValid(Row.SpawnedVisualizers[i]))
@@ -241,7 +294,7 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
             }
         }
 
-        // 3. Destroy excess visualizers
+        // Destroy excess visualizers
         while (Row.SpawnedVisualizers.Num() > Row.PropertyCount)
         {
             AActor* Excess = Row.SpawnedVisualizers.Last();
@@ -260,7 +313,7 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
             Row.SpawnedVisualizers.RemoveAt(Row.SpawnedVisualizers.Num() - 1);
         }
 
-        // 4. Ensure array size matches PropertyCount
+        // Ensure array size matches PropertyCount
         if (Row.SpawnedVisualizers.Num() != Row.PropertyCount)
         {
             Row.SpawnedVisualizers.SetNum(Row.PropertyCount);
@@ -273,10 +326,10 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
             CumulativeIndex += PropertyRowDetails[PreRow].PropertyCount;
         }
 
-        USplineComponent* SplineComp = Row.BlockSplineActor->SplineComponent;
+        USplineComponent* SplineComp = RowSpline->SplineComponent;
         if (SplineComp)
         {
-            float ActiveSpacing = Row.BlockSplineActor->VisualizerSpacing;
+            float ActiveSpacing = RowSpline->VisualizerSpacing;
 
             for (int32 i = 0; i < Row.PropertyCount; ++i)
             {
@@ -315,10 +368,16 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
                     SpawnParams.Owner = this;
                     SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-                    PropertyVis = World->SpawnActor<APropertyVisualizer>(APropertyVisualizer::StaticClass(), SpawnLoc, SpawnRot, SpawnParams);
+                    TSubclassOf<APropertyVisualizer> VisualizerClass = Row.PropertyVisualizer;
+                    if (!VisualizerClass)
+                    {
+                        VisualizerClass = APropertyVisualizer::StaticClass();
+                    }
+
+                    PropertyVis = World->SpawnActor<APropertyVisualizer>(VisualizerClass, SpawnLoc, SpawnRot, SpawnParams);
                     if (PropertyVis)
                     {
-                        PropertyVis->AttachToActor(Row.BlockSplineActor, FAttachmentTransformRules::KeepWorldTransform);
+                        PropertyVis->AttachToActor(RowSpline, FAttachmentTransformRules::KeepWorldTransform);
                         Row.SpawnedVisualizers[i] = PropertyVis;
                     }
                 }
@@ -339,7 +398,7 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
         }
 
         // Re-trigger construction of the spline to finalize child visualizer alignment
-        Row.BlockSplineActor->OnConstruction(Row.BlockSplineActor->GetActorTransform());
+        RowSpline->OnConstruction(RowSpline->GetActorTransform());
     }
 
     bIsSpawning = false;
