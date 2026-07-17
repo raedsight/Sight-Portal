@@ -132,8 +132,11 @@ export default function ClientDashboard({
       
       setTestWsLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔗 Targeting URL: ${wsUrl}`]);
       
-      // Connect to the actual live Node.js Express + ws backend with subprotocol list
-      const ws = new WebSocket(wsUrl, "ws");
+      // Connect to the actual live Node.js Express + ws backend.
+      // We do not force the "ws" subprotocol here because many enterprise reverse proxies, CDNs, 
+      // and cloud gateways (like Google Front End) strip or block non-standard subprotocols during handshakes,
+      // which causes native browser engines to terminate immediately with a Code 1006 error.
+      const ws = new WebSocket(wsUrl);
       testWsRef.current = ws;
 
       ws.onopen = () => {
@@ -176,14 +179,22 @@ export default function ClientDashboard({
       ws.onerror = () => {
         setTestWsStatus("error");
         const isNetlify = typeof window !== "undefined" && window.location.hostname.includes("netlify.app");
+        const isTargetingNetlify = wsUrl.includes("netlify.app");
+        
         setTestWsLogs(prev => [
           ...prev,
           `[${new Date().toLocaleTimeString()}] ❌ Handshake connection error logged! Is the network path obstructed?`,
-          ...(isNetlify ? [
-            `[${new Date().toLocaleTimeString()}] ⚠️ STATIC HOST ALERT (Netlify): Netlify hosts purely static compiled assets and does NOT run our Node.js/Express server or active background WebSockets.`,
-            `[${new Date().toLocaleTimeString()}] 💡 SOLUTION: In the Admin Console, configure a custom "Live WebSocket Connection Endpoint URL" that points to your live container server (e.g. your active Cloud Run or Render server URL).`
-          ] : [
-            `[${new Date().toLocaleTimeString()}] 💡 UE5 Debug Tip: Confirm certificate validation or check for CORS headers if connecting externally.`
+          ...(isNetlify ? (
+            isTargetingNetlify ? [
+              `[${new Date().toLocaleTimeString()}] ⚠️ STATIC HOST ALERT (Netlify): Netlify hosts purely static compiled assets and does NOT run our Node.js/Express server or active background WebSockets.`,
+              `[${new Date().toLocaleTimeString()}] 💡 SOLUTION: In the Admin Console, configure a custom "Live WebSocket Connection Endpoint URL" that points to your live container server (e.g. your active Cloud Run or Render server URL).`
+            ] : [
+              `[${new Date().toLocaleTimeString()}] ℹ️ STATIC HOST DETECTED: You are browsing via Netlify, but targeting a custom remote container: "${wsUrl}".`,
+              `[${new Date().toLocaleTimeString()}] 💡 WAKE-UP TIP: The remote Cloud Run container scales to zero. Open your live app URL (https://${new URL(wsUrl).host}) in a new browser tab first to trigger a cold-start wake-up!`,
+              `[${new Date().toLocaleTimeString()}] 🔌 PORTAL TIP: If the Shared URL is unresponsive, try using the active Development Container endpoint: wss://ais-dev-4wjcvfkjzt7ohntjrl7gk5-405891248157.europe-west3.run.app/ws/${client.id}`
+            ]
+          ) : [
+            `[${new Date().toLocaleTimeString()}] 💡 UE5 Debug Tip: Confirm certificate validation, container cold start, or check for CORS headers if connecting externally.`
           ])
         ]);
       };
