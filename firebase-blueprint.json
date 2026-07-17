@@ -91,6 +91,26 @@
         }
       },
       "required": ["id", "clientId", "clientName", "timestamp", "type", "status", "details"]
+    },
+    "ThemePreset": {
+      "title": "Theme Preset",
+      "description": "Predefined branding configurations.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "branding": {
+          "type": "object"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "name", "branding", "updatedAt"]
     }
   },
   "firestore": {
@@ -105,6 +125,10 @@
     "/logs/{logId}": {
       "schema": "Log",
       "description": "Chronological system activity logs."
+    },
+    "/themePresets/{presetId}": {
+      "schema": "ThemePreset",
+      "description": "Stored branding presets."
     }
   }
 }

@@ -40,7 +40,7 @@ import {
   Activity,
   LogOut
 } from "lucide-react";
-import { Client, SpreadsheetData, SheetRow, Log, BugIssue, BugActivity } from "../types";
+import { Client, SpreadsheetData, SheetRow, Log, BugIssue, BugActivity, ThemePreset } from "../types";
 import { extractSpreadsheetId, getStoredClientSheet, saveStoredClientSheet, SPREADSHEET_TEMPLATES } from "../data";
 import { initAuth, googleSignIn, logout, getAccessToken } from "../firebaseAuth";
 
@@ -73,7 +73,7 @@ export default function ClientDashboard({
   const [pushingSheet, setPushingSheet] = useState(false);
   
   // Tab indicator
-  const [activeTab, setActiveTab ] = useState<"workspace" | "bugs" | "plugin">("workspace");
+  const [activeTab, setActiveTab ] = useState<"workspace" | "bugs">("workspace");
   
   // Bug tracking states
   const [selectedBugId, setSelectedBugId] = useState<string | null>(null);
@@ -112,6 +112,8 @@ export default function ClientDashboard({
   const [testWsLogs, setTestWsLogs] = useState<string[]>([]);
   const [testWsStatus, setTestWsStatus] = useState<"idle" | "connecting" | "connected" | "success" | "error">("idle");
   const testWsRef = useRef<WebSocket | null>(null);
+  
+
 
   const runWebSocketTest = () => {
     if (testWsRef.current) {
@@ -126,7 +128,7 @@ export default function ClientDashboard({
 
     try {
       const isHttps = window.location.protocol === "https:";
-      const wsUrl = `${isHttps ? "wss" : "ws"}://${window.location.host}/ws`;
+      const wsUrl = `${isHttps ? "wss" : "ws"}://${window.location.host}/ws/${client.id}`;
       
       setTestWsLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔗 Targeting URL: ${wsUrl}`]);
       
@@ -299,8 +301,8 @@ export default function ClientDashboard({
     try {
       if (!token) throw new Error("A valid auth token is required");
 
-      // Step 1: Detect sheet/tab name dynamically from google sheets metadata
-      let sheetTitle = "Sheet1";
+      // Step 1: Detect sheet/tab name dynamically from google sheets metadata, fall back to client's configured sheetTab or Sheet1
+      let sheetTitle = client.sheetTab || "Sheet1";
       onRecordLog({
         clientId: client.id,
         clientName: client.name,
@@ -323,23 +325,32 @@ export default function ClientDashboard({
             sheetTitle = matched.properties.title;
           }
         } else if (metaData.sheets && metaData.sheets.length > 0) {
-          sheetTitle = metaData.sheets[0].properties?.title || "Sheet1";
+          // If no custom tabId (gid) is specified, look if there is a match for client.sheetTab name
+          const matchedByName = metaData.sheets.find(
+            (s: any) => s.properties?.title?.toLowerCase() === client.sheetTab?.toLowerCase()
+          );
+          if (matchedByName) {
+            sheetTitle = matchedByName.properties.title;
+          } else {
+            sheetTitle = metaData.sheets[0].properties?.title || client.sheetTab || "Sheet1";
+          }
         }
       } else {
-        console.warn("Could not query sheet metadata. Defaulting range to 'Sheet1'");
+        console.warn(`Could not query sheet metadata. Defaulting range to configured sheetTab '${sheetTitle}'`);
       }
 
       // Step 2: Clear old cells in the range A1:Z2000 to prevent leftover columns or columns offset conflicts
+      const rangeForClear = `'${sheetTitle}'!A1:Z2000`;
       onRecordLog({
         clientId: client.id,
         clientName: client.name,
         type: "config_change",
         status: "warning",
-        details: `Clearing old grid data in range "${sheetTitle}!A1:Z2000"`,
+        details: `Clearing old grid data in range "${rangeForClear}"`,
       });
 
       const clearRes = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(sheetTitle)}!A1:Z2000:clear`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(rangeForClear)}:clear`,
         {
           method: "POST",
           headers: {
@@ -363,16 +374,17 @@ export default function ClientDashboard({
       ];
 
       // Step 4: Write values back to spreadsheet starting at A1
+      const rangeForWrite = `'${sheetTitle}'!A1`;
       onRecordLog({
         clientId: client.id,
         clientName: client.name,
         type: "config_change",
         status: "warning",
-        details: `Uploading ${values2D.length} rows to sheet layout "${sheetTitle}!A1"`,
+        details: `Uploading ${values2D.length} rows to sheet layout "${rangeForWrite}"`,
       });
 
       const writeRes = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(sheetTitle)}!A1?valueInputOption=USER_ENTERED`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(rangeForWrite)}?valueInputOption=USER_ENTERED`,
         {
           method: "PUT",
           headers: {
@@ -380,7 +392,7 @@ export default function ClientDashboard({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            range: `${sheetTitle}!A1`,
+            range: rangeForWrite,
             majorDimension: "ROWS",
             values: values2D,
           }),
@@ -431,6 +443,11 @@ export default function ClientDashboard({
     const loadedData = getStoredClientSheet(client.id, defaultPreset);
     setSheetData(loadedData);
     setFetchError(null);
+
+    // Auto-fetch from Google Sheets if configured
+    if (client.sheetId) {
+      handleFetchGoogleSheet();
+    }
   }, [client.id]);
 
   // Synchronize dynamic spreadsheet state to the Express backend memory
@@ -471,8 +488,13 @@ export default function ClientDashboard({
     // Extract sheet and tab IDs
     const { sheetId, tabId } = extractSpreadsheetId(client.sheetId);
     
-    // Build Google CSV export link (using general public gid or default to 0 if none is available)
-    const exportUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv${tabId ? `&gid=${tabId}` : ""}`;
+    // Build Google CSV export link (using general public gid or specific tab name if available)
+    let exportUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
+    if (tabId) {
+      exportUrl += `&gid=${tabId}`;
+    } else if (client.sheetTab) {
+      exportUrl += `&sheet=${encodeURIComponent(client.sheetTab)}`;
+    }
     
     onRecordLog({
       clientId: client.id,
@@ -500,7 +522,7 @@ export default function ClientDashboard({
         let inQuotes = false;
         for (let j = 0; j < line.length; j++) {
           const char = line[j];
-          if (char === '"' || char === "'") {
+          if (char === '"') {
             inQuotes = !inQuotes;
           } else if (char === ',' && !inQuotes) {
             result.push(current.trim());
@@ -564,6 +586,7 @@ export default function ClientDashboard({
 
   // Cell editing handlers
   const handleStartCellEdit = (rowIndex: number, colName: string, currentValue: string) => {
+    if (colName === "Name") return;
     setEditingCell({ rowIndex, colName });
     setEditingValue(currentValue);
   };
@@ -1090,7 +1113,7 @@ export default function ClientDashboard({
   };
 
   const getContainerClass = () => {
-    return "max-w-7xl mx-auto glass rounded-2xl p-6 shadow-2xl relative border border-white/10";
+    return "w-full glass rounded-2xl p-6 shadow-2xl relative border border-white/10";
   };
 
   const isLightStyle = false; // Force Elegant Dark layout framework for maximum consistency and gorgeousness
@@ -1212,26 +1235,6 @@ export default function ClientDashboard({
             </button>
 
             <button
-              id="push-sheet-btn"
-              onClick={handlePushToGoogleSheet}
-              disabled={pushingSheet || !sheetData}
-              className="px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer bg-black/60 border border-white/10 hover:border-purple-500/30 text-white flex items-center gap-1.5"
-              title="Push changes and headers write back to the dynamic Google Sheet"
-            >
-              <FileSpreadsheet className={`h-3.5 w-3.5 text-purple-400 ${pushingSheet ? "animate-spin" : ""}`} />
-              {pushingSheet ? "Writing Sheet..." : "Sync To Google Sheet"}
-            </button>
-
-            <button
-              id="reset-template-btn"
-              onClick={handleResetToPresetTemplate}
-              className="px-3 py-2 text-xs font-mono rounded-lg transition-colors cursor-pointer border border-white/10 bg-black/40 text-gray-400 hover:text-white hover:bg-black/60 flex items-center gap-1.5"
-            >
-              <RefreshCw className="h-3 w-3" />
-              Reset Preset
-            </button>
-
-            <button
               id="transmit-ue5-btn"
               onClick={handleTransmitPayloadToUE5}
               disabled={transmitting || !sheetData}
@@ -1283,18 +1286,6 @@ export default function ClientDashboard({
               </span>
             )}
           </button>
-          
-          <button
-            onClick={() => setActiveTab("plugin")}
-            className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 ${
-              activeTab === "plugin"
-                ? "border-blue-500 text-white"
-                : "border-transparent text-gray-400 hover:text-white"
-            }`}
-          >
-            <FileCode className="h-4 w-4 text-cyan-400" />
-            Bespoke UE5 C++ Connector
-          </button>
         </div>
 
         {/* Floating SMTP Simulation E-mail Logger Banner */}
@@ -1322,6 +1313,37 @@ export default function ClientDashboard({
         {/* Tab 1: Workspace & Spreadsheet Sync */}
         {activeTab === "workspace" && (
           <div>
+            {/* Iframe detection notice */}
+            {typeof window !== "undefined" && window.self !== window.top && !currentUser && (
+              <div className="p-4 mb-6 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs flex items-start gap-3.5 shadow-lg">
+                <div className="p-1.5 bg-blue-500/10 rounded-lg text-blue-400 shrink-0">
+                  <Zap className="h-4 w-4" />
+                </div>
+                <div className="flex-1 space-y-2">
+                  <div>
+                    <strong className="font-bold uppercase tracking-wider text-blue-300">💡 Running inside an Iframe Preview</strong>
+                    <p className="mt-1 text-gray-300 leading-relaxed font-sans">
+                      Google Account auth popups are usually blocked by browsers inside sandboxed frame previews. To authenticate your Google Account and synchronize with Google Sheets seamlessly, please open the application in a new browser tab:
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <a
+                      href={window.location.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-[10px] uppercase tracking-wider font-mono transition-colors"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      Open in New Tab
+                    </a>
+                    <span className="text-gray-400 text-[10px] self-center font-mono">
+                      (Recommended for full Google Sheets sync)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Warning Logs / Error notifications */}
             {fetchError && (
               <div className="p-4 mb-6 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 text-xs flex items-start gap-2.5 shadow-sm">
@@ -1369,56 +1391,8 @@ export default function ClientDashboard({
                         <Plus className="h-3 w-3" />
                         <span className="text-[10px] font-bold uppercase">Row</span>
                       </button>
-                      <button
-                        id="add-column-trigger-btn"
-                        onClick={() => setShowAddColumnInput(!showAddColumnInput)}
-                        className={`px-2 py-1 rounded transition border cursor-pointer flex items-center gap-1 ${
-                          showAddColumnInput 
-                            ? "bg-purple-600/30 border-purple-400 text-purple-300" 
-                            : "bg-black/60 hover:bg-white/5 text-purple-400 border-white/10"
-                        }`}
-                        title="Insert Column to Sheet"
-                      >
-                        <Plus className="h-3 w-3" />
-                        <span className="text-[10px] font-bold uppercase">Col</span>
-                      </button>
                     </div>
                   </div>
-
-                  {/* Add Column Inline HUD Panel */}
-                  {showAddColumnInput && sheetData && (
-                    <div className="mb-4 p-3 rounded bg-purple-500/10 border border-purple-500/20 flex flex-wrap items-center gap-2 max-w-lg transition-all duration-200">
-                      <div className="text-xs font-mono text-purple-300 font-bold uppercase tracking-wider shrink-0">
-                        New Column:
-                      </div>
-                      <input
-                        type="text"
-                        placeholder="e.g. SurfaceSqFt, Elevation, Notes..."
-                        value={newColumnName}
-                        onChange={(e) => setNewColumnName(e.target.value)}
-                        className="px-2 py-1 bg-black text-xs border border-purple-500/40 rounded text-gray-200 focus:outline-none w-48 font-mono focus:ring-1 focus:ring-purple-400"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleAddColumn(newColumnName);
-                        }}
-                        autoFocus
-                      />
-                      <button
-                        onClick={() => handleAddColumn(newColumnName)}
-                        className="px-2.5 py-1 text-xs bg-purple-600 hover:bg-purple-500 text-white rounded cursor-pointer font-mono font-bold transition-all duration-150"
-                      >
-                        Add Column
-                      </button>
-                      <button
-                        onClick={() => {
-                          setShowAddColumnInput(false);
-                          setNewColumnName("");
-                        }}
-                        className="px-2.5 py-1 text-xs bg-black/40 hover:bg-black/60 text-gray-400 rounded cursor-pointer font-mono"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  )}
 
                   {/* Grid content */}
                   {!sheetData ? (
@@ -1437,94 +1411,16 @@ export default function ClientDashboard({
                       <table className="w-full text-left border-collapse text-xs">
                         <thead>
                           <tr className="bg-black/60 border-b border-white/10 font-mono block xl:table-row">
-                            {sheetData.headers.map((hdr, hIdx) => {
-                              const isHeaderEditing = editingHeader === hdr;
-                              return (
-                                <th 
-                                  key={hdr} 
-                                  className="p-2.5 font-bold text-gray-400 tracking-wider font-mono text-[11px] min-w-[140px] group/hdr relative"
-                                >
-                                  {isHeaderEditing ? (
-                                    <div className="flex items-center gap-1">
-                                      <input
-                                        type="text"
-                                        value={editingHeaderValue}
-                                        onChange={(e) => setEditingHeaderValue(e.target.value)}
-                                        onBlur={() => handleRenameColumn(hdr, editingHeaderValue)}
-                                        onKeyDown={(e) => {
-                                          if (e.key === "Enter") handleRenameColumn(hdr, editingHeaderValue);
-                                          if (e.key === "Escape") setEditingHeader(null);
-                                        }}
-                                        autoFocus
-                                        className="px-1.5 py-0.5 bg-black border border-blue-500 text-blue-200 rounded text-xs leading-none font-mono focus:outline-none focus:ring-1 focus:ring-blue-400 w-full"
-                                      />
-                                    </div>
-                                  ) : (
-                                    <div className="flex items-center justify-between gap-1 select-none">
-                                      <span 
-                                        className="cursor-pointer hover:text-blue-400 truncate flex-1 block py-0.5 font-bold uppercase tracking-wider text-gray-300"
-                                        onDoubleClick={() => {
-                                          setEditingHeader(hdr);
-                                          setEditingHeaderValue(hdr);
-                                        }}
-                                        title="Double-click to rename this column header"
-                                      >
-                                        {hdr}
-                                      </span>
-                                      
-                                      {/* Column Controls - visible on hover to avoid clutter */}
-                                      <div className="opacity-0 group-hover/hdr:opacity-100 transition-opacity flex items-center gap-0.5 shrink-0 bg-black/80 px-1 rounded border border-white/10 py-0.5 absolute right-1">
-                                        {hIdx > 0 && (
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleMoveColumn(hdr, "left");
-                                            }}
-                                            className="p-0.5 text-[9px] hover:text-blue-400 text-gray-400 transition"
-                                            title="Move Column Left"
-                                          >
-                                            ◀
-                                          </button>
-                                        )}
-                                        {hIdx < sheetData.headers.length - 1 && (
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleMoveColumn(hdr, "right");
-                                            }}
-                                            className="p-0.5 text-[9px] hover:text-blue-400 text-gray-400 transition"
-                                            title="Move Column Right"
-                                          >
-                                            ▶
-                                          </button>
-                                        )}
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setEditingHeader(hdr);
-                                            setEditingHeaderValue(hdr);
-                                          }}
-                                          className="p-0.5 text-[9px] hover:text-yellow-400 text-gray-400 transition"
-                                          title="Rename Column"
-                                        >
-                                          ✎
-                                        </button>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleDeleteColumn(hdr);
-                                          }}
-                                          className="p-0.5 text-[9px] hover:text-red-400 text-gray-400 transition"
-                                          title="Delete Column"
-                                        >
-                                          ✕
-                                        </button>
-                                      </div>
-                                    </div>
-                                  )}
-                                </th>
-                              );
-                            })}
+                            {sheetData.headers.map((hdr) => (
+                              <th 
+                                key={hdr} 
+                                className="p-2.5 font-bold text-gray-300 tracking-wider font-mono text-[11px] min-w-[140px] select-none"
+                              >
+                                <span className="block py-0.5 font-bold uppercase tracking-wider text-gray-300">
+                                  {hdr}
+                                </span>
+                              </th>
+                            ))}
                             <th className="p-2.5 font-bold text-gray-400 tracking-wider text-right font-mono text-[11px]">
                               Actions
                             </th>
@@ -1538,13 +1434,18 @@ export default function ClientDashboard({
                             >
                               {sheetData.headers.map((colName) => {
                                 const val = row[colName] || "";
-                                const isCellEditing = editingCell?.rowIndex === rIdx && editingCell?.colName === colName;
+                                const isNameColumn = colName === "Name";
+                                const isCellEditing = !isNameColumn && editingCell?.rowIndex === rIdx && editingCell?.colName === colName;
                                 
                                 return (
                                   <td 
                                     key={colName} 
                                     className="p-2 border-b border-white/5"
-                                    onClick={() => handleStartCellEdit(rIdx, colName, val)}
+                                    onClick={() => {
+                                      if (!isNameColumn) {
+                                        handleStartCellEdit(rIdx, colName, val);
+                                      }
+                                    }}
                                   >
                                     {isCellEditing ? (
                                       <input
@@ -1560,7 +1461,11 @@ export default function ClientDashboard({
                                         className="px-1.5 py-0.5 bg-black border border-blue-500 text-blue-200 rounded text-xs leading-none font-mono focus:outline-none focus:ring-1 focus:ring-blue-400 max-w-[120px]"
                                       />
                                     ) : (
-                                      <span className="font-mono cursor-pointer block hover:underline hover:text-blue-400 min-h-[16px] truncate break-all selection:bg-blue-900/45">
+                                      <span className={`font-mono block min-h-[16px] truncate break-all selection:bg-blue-900/45 ${
+                                        isNameColumn 
+                                          ? "text-gray-400 select-none cursor-not-allowed" 
+                                          : "cursor-pointer hover:underline hover:text-blue-400"
+                                      }`}>
                                         {val === "true" ? (
                                           <span className="text-emerald-400">true</span>
                                         ) : val === "false" ? (
@@ -1593,6 +1498,89 @@ export default function ClientDashboard({
                   <div className="mt-4 pt-3 flex flex-wrap items-center justify-between gap-4 font-mono text-[10px] text-gray-500 border-t border-white/10">
                     <span>⚡ Double-click any cell to adjust coordinate parameters inline</span>
                     <span>Active Sheet Preset: <strong className="text-gray-400">{currentPresetName}</strong></span>
+                  </div>
+                </div>
+
+                {/* Persistent Direct Cloud WebSocket Option */}
+                <div className="bg-emerald-500/5 border border-emerald-500/20 p-5 rounded-xl leading-relaxed text-xs space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-emerald-400 flex items-center gap-1.5 text-sm">
+                      <CloudLightning className="h-4 w-4 shrink-0 text-emerald-400 animate-pulse" />
+                      🔌 Live Cloud WebSocket (Native UE5 Client Gateway)
+                    </span>
+                    <span className="bg-emerald-500/15 text-emerald-300 text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded">
+                      Direct & Instant
+                    </span>
+                  </div>
+                  
+                  <p className="text-gray-300 text-[11.5px] leading-relaxed">
+                    Unreal Engine 5 comes equipped with a highly performant **native WebSockets module**. 
+                    Our C++ subsystem connects directly to this web application's cloud socket route to download initial spreadsheet records and listen to instant state changes seamlessly without any local Python scripts.
+                  </p>
+
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block font-mono">Live WebSocket Connection Endpoint URL:</span>
+                    <div className="bg-black/60 font-mono text-[10.5px] text-emerald-300 p-2.5 border border-white/5 rounded-lg flex items-center justify-between gap-1 overflow-x-auto select-all">
+                      <code>
+                        {typeof window !== "undefined"
+                          ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host.replace("ais-dev-", "ais-pre-")}/ws/${client.id}`
+                          : `wss://ais-pre-.../ws/${client.id}`}
+                      </code>
+                    </div>
+                    <span className="text-[9.5px] text-[#2ebd85] block leading-tight font-sans font-medium">
+                      🔒 **Client-Isolated Endpoint**: This URL is dedicated exclusively to **{client.name}** (`{client.id}`). Your Unreal Engine 5 project will only listen to and synchronize spreadsheet events belonging to this client!
+                    </span>
+                  </div>
+
+                  {/* Dynamic WebSocket Connection Tester and Live Output Logs */}
+                  <div className="bg-black/40 border border-white/5 rounded-xl p-4 space-y-3.5">
+                    <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                      <span className="font-bold text-[11px] uppercase tracking-wider text-gray-300 flex items-center gap-1.5 font-mono">
+                        <Terminal className="h-3.5 w-3.5 text-emerald-400" />
+                        Live Connection Tester & Health Diagnostics
+                      </span>
+                      <span className={`text-[9px] px-1.5 py-0.5 font-bold rounded uppercase ${
+                        testWsStatus === "idle" ? "bg-gray-800 text-gray-400" :
+                        testWsStatus === "connecting" ? "bg-amber-500/10 text-amber-400 animate-pulse" :
+                        testWsStatus === "connected" ? "bg-cyan-500/10 text-cyan-400" :
+                        testWsStatus === "success" ? "bg-emerald-500/15 text-emerald-400" :
+                        "bg-red-500/10 text-red-400"
+                      }`}>
+                        {testWsStatus}
+                      </span>
+                    </div>
+
+                    <p className="text-gray-400 text-[10.5px] leading-snug">
+                      Validate your cloud workspace routing and check the WebSocket handshake's response health before compiling your C++ project modules.
+                    </p>
+
+                    <button
+                      onClick={runWebSocketTest}
+                      disabled={testWsStatus === "connecting"}
+                      className={`w-full py-2 px-4 rounded-lg font-mono text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer select-none border border-emerald-500/20 text-black ${
+                        testWsStatus === "connecting" 
+                          ? "bg-emerald-500/20 text-emerald-400 cursor-not-allowed" 
+                          : "bg-emerald-400 hover:bg-emerald-300 hover:scale-[1.01] active:scale-[0.99] shadow-md shadow-emerald-950/20"
+                      }`}
+                    >
+                      <Activity className={`h-3.5 w-3.5 ${testWsStatus === "connecting" ? "animate-spin" : ""}`} />
+                      {testWsStatus === "connecting" ? "Testing Handshake Routing..." : "Trigger Socket Connection Test"}
+                    </button>
+
+                    {testWsLogs.length > 0 && (
+                      <div className="bg-black/85 rounded-lg border border-white/5 p-3 font-mono text-[10px] space-y-1.5 max-h-[160px] overflow-y-auto leading-normal">
+                        {testWsLogs.map((log, index) => (
+                          <div key={index} className={`whitespace-pre-wrap leading-relaxed ${
+                            log.includes("❌") || log.includes("💥") ? "text-red-400 font-bold" :
+                            log.includes("🟢") || log.includes("✅") ? "text-emerald-400 font-bold" :
+                            log.includes("💡") ? "text-cyan-300" :
+                            "text-gray-300"
+                          }`}>
+                            {log}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1748,12 +1736,16 @@ export default function ClientDashboard({
 
                     <div className="space-y-1 text-[9.5px]">
                       <div className="flex justify-between border-b border-white/5 pb-1.5">
-                        <span className="text-gray-500">Target Node</span>
-                        <span className="text-gray-350 truncate max-w-[170px]">{client.ue5Endpoint}</span>
+                        <span className="text-gray-500">WebSocket Node</span>
+                        <span className="text-emerald-400 font-mono truncate max-w-[170px]" title={typeof window !== "undefined" ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws/${client.id}` : ""}>
+                          {typeof window !== "undefined"
+                            ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host.replace("ais-dev-", "ais-pre-")}/ws/${client.id}`
+                            : "Connecting..."}
+                        </span>
                       </div>
                       <div className="flex justify-between border-b border-white/5 py-1.5">
-                        <span className="text-gray-500">Simulation Port</span>
-                        <span className="text-blue-400 font-bold">Port 8008 Connective</span>
+                        <span className="text-gray-500">Subsystem Hook</span>
+                        <span className="text-blue-400 font-bold">C++ Native WebSockets</span>
                       </div>
                       <div className="flex justify-between border-b border-white/5 py-1.5">
                         <span className="text-gray-500">Payload Mapping</span>
@@ -2231,336 +2223,6 @@ export default function ClientDashboard({
               </div>
 
             </div>
-          </div>
-        )}
-
-        {/* Tab 3: Bespoke UE5 C++ Connector Engine */}
-        {activeTab === "plugin" && (
-          <div className="animate-fadeIn text-left space-y-6">
-            
-            {/* Class Introduction banner */}
-            <div className="rounded-xl border border-white/10 bg-black/45 p-5">
-              <div className="flex items-start gap-4">
-                <div className="h-10 w-10 bg-cyan-950 border border-cyan-500/30 rounded flex items-center justify-center font-bold text-cyan-400 shrink-0 select-none">
-                  C++
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                    USightPortalConnector Subsystem Plugin Code
-                  </h3>
-                  <p className="text-xs text-gray-300 leading-relaxed font-sans mt-1">
-                    Rather than relying on generic, third-party Unreal Engine plugins that require complex server configuration, we wrote a bespoke **C++ subsystem** tailored explicitly for real-estate visualization.
-                  </p>
-                  <p className="text-xs text-gray-400 font-sans mt-2">
-                    This class listens on local networking ports in your simulation box, receives JSON structures, parses real-estate variables directly into primitive variables (`FSightPortalProperty`), and fires live Blueprint event broadcasts to instantly update actors without stopping your viewport simulation!
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* C++ Code Display Card and code copies */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              
-              {/* Left Column: Code Navigator & Clipboard Copy */}
-              <div className="lg:col-span-8 space-y-4">
-                <div className="rounded-xl border border-white/10 bg-black/35 overflow-hidden">
-                  
-                  {/* File selectors header toolbar */}
-                  <div className="bg-black/80 px-4 py-3 border-b border-white/10 flex justify-between items-center">
-                    <span className="text-[10px] font-mono text-gray-400 flex items-center gap-1.5">
-                      <Terminal className="h-3.5 w-3.5 text-cyan-400" />
-                      Active File: <strong className="text-gray-250">SightPortalConnector.h</strong>
-                    </span>
-                    <button
-                      onClick={() => {
-                        // Copy headers
-                        navigator.clipboard.writeText(`// Copy header file contents`);
-                        alert("Bespoke Header code copied to clipboard successfully!");
-                      }}
-                      className="px-2.5 py-1 text-[10px] font-mono font-medium rounded bg-white/5 hover:bg-white/10 text-cyan-400 border border-white/10 flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Clipboard className="h-3 w-3" />
-                      Copy Header C++ Code
-                    </button>
-                  </div>
-
-                  {/* Header visual preview code container */}
-                  <div className="p-4 bg-slate-950 font-mono text-[10.5px] text-gray-300 overflow-x-auto max-h-72 scrollbar-thin">
-                    <pre className="whitespace-pre">
-{`#pragma once
-
-#include "CoreMinimal.h"
-#include "Subsystems/GameInstanceSubsystem.h"
-#include "HttpModule.h"
-#include "Interfaces/IHttpRequest.h"
-#include "Interfaces/IHttpResponse.h"
-#include "Dom/JsonObject.h"
-#include "SightPortalConnector.generated.h"
-
-// Custom struct representing the real-estate attributes synced from the Google Sheet
-USTRUCT(BlueprintType)
-struct FSightPortalProperty
-{
-    GENERATED_BODY()
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal")
-    FString Name;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal")
-    FString Zone;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal")
-    FString Block;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal")
-    int32 DoorNo = 0;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal")
-    float Price = 0.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal")
-    float Surface = 0.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal")
-    FString Availability;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal")
-    float BuildingSurface = 0.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal")
-    int32 BedroomsCount = 0;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal")
-    int32 BathroomsCount = 0;
-};`}
-                    </pre>
-                  </div>
-                </div>
-
-                {/* Source C++ Section */}
-                <div className="rounded-xl border border-white/10 bg-black/35 overflow-hidden">
-                  
-                  {/* File selection source */}
-                  <div className="bg-black/80 px-4 py-3 border-b border-white/10 flex justify-between items-center">
-                    <span className="text-[10px] font-mono text-gray-400 flex items-center gap-1.5">
-                      <Terminal className="h-3.5 w-3.5 text-cyan-400" />
-                      Active File: <strong className="text-gray-250">SightPortalConnector.cpp</strong>
-                    </span>
-                    <button
-                      onClick={() => {
-                        alert("Bespoke implementation Source code copied to clipboard successfully!");
-                      }}
-                      className="px-2.5 py-1 text-[10px] font-mono font-medium rounded bg-white/5 hover:bg-white/10 text-cyan-405 text-cyan-400 border border-white/10 flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Clipboard className="h-3 w-3" />
-                      Copy Source C++ Code
-                    </button>
-                  </div>
-
-                  {/* source visual */}
-                  <div className="p-4 bg-slate-950 font-mono text-[10.5px] text-gray-300 overflow-x-auto max-h-72 scrollbar-thin">
-                    <pre className="whitespace-pre">
-{`#include "SightPortalConnector.h"
-#include "Serialization/JsonSerializer.h"
-
-void USightPortalConnector::HandleHTTPResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful)
-{
-    if (!bWasSuccessful || !Response.IsValid()) {
-        UE_LOG(LogTemp, Error, TEXT("[SightPortal Bridge] Fetch failed. Check networking channel."));
-        return;
-    }
-
-    FString ResponseString = Response->GetContentAsString();
-    TSharedPtr<FJsonObject> JsonObject;
-    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ResponseString);
-
-    if (FJsonSerializer::Deserialize(Reader, JsonObject) && JsonObject.IsValid()) {
-        TArray<FSightPortalProperty> PropertyPortfolio;
-        TSharedPtr<FJsonObject> PayloadObj = JsonObject->GetObjectField(TEXT("payload"));
-        const TArray<TSharedPtr<FJsonValue>>* RowsArray;
-        
-        if (PayloadObj->TryGetArrayField(TEXT("attributes_matrix"), RowsArray)) {
-            for (const auto& RowVal : *RowsArray) {
-                TSharedPtr<FJsonObject> RowObj = RowVal->AsObject();
-                if (!RowObj.IsValid()) continue;
-
-                FSightPortalProperty Property;
-                Property.Name = RowObj->GetStringField(TEXT("Name"));
-                Property.Zone = RowObj->GetStringField(TEXT("Zone"));
-                Property.Block = RowObj->GetStringField(TEXT("Block"));
-                Property.DoorNo = FCString::Atoi(*RowObj->GetStringField(TEXT("Door No")));
-                Property.Price = FCString::Atof(*RowObj->GetStringField(TEXT("Price")));
-                Property.Surface = FCString::Atof(*RowObj->GetStringField(TEXT("Surface")));
-                Property.Availability = RowObj->GetStringField(TEXT("Availability"));
-                Property.BuildingSurface = FCString::Atof(*RowObj->GetStringField(TEXT("BuildingSurface")));
-                Property.BedroomsCount = FCString::Atoi(*RowObj->GetStringField(TEXT("BedroomsCount")));
-                Property.BathroomsCount = FCString::Atoi(*RowObj->GetStringField(TEXT("BathroomsCount")));
-
-                PropertyPortfolio.Add(Property);
-            }
-        }
-        // Broadcast delegates live!
-        OnRealEstateDataReceived.Broadcast(PropertyPortfolio);
-    }
-}`}
-                    </pre>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Right Column: Setup Walkthrough instructions */}
-              <div className="lg:col-span-4 space-y-6">
-                
-                {/* File Location notice */}
-                <div className="bg-cyan-500/5 border border-cyan-500/20 p-4 rounded-xl leading-relaxed text-xs">
-                  <span className="font-bold text-cyan-400 block mb-1">📁 Auto-Generated Code Available</span>
-                  <p className="text-gray-400 text-[11px]">
-                    We have compiled complete, ready-to-move code sources inside this playground's directory space:
-                  </p>
-                  <ul className="list-disc list-inside mt-2 text-[10.5px] font-mono text-cyan-300 space-y-1">
-                    <li>/ue5-plugin/SightPortalConnector.h</li>
-                    <li>/ue5-plugin/SightPortalConnector.cpp</li>
-                    <li>/ue5-plugin/SightPortalActorManager.h</li>
-                    <li>/ue5-plugin/SightPortalActorManager.cpp</li>
-                  </ul>
-                  <p className="text-gray-400 text-[11px] mt-2">
-                    Open your code explorer or export a ZIP file anytime via settings to grab these modules instantly!
-                  </p>
-                </div>
-
-                {/* Persistent Direct Cloud WebSocket Option */}
-                <div className="bg-emerald-500/5 border border-emerald-500/20 p-5 rounded-xl leading-relaxed text-xs space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-emerald-400 flex items-center gap-1.5 text-sm">
-                      <CloudLightning className="h-4 w-4 shrink-0 text-emerald-400 animate-pulse" />
-                      🔌 Live Cloud WebSocket (Native UE5 Client Gateway)
-                    </span>
-                    <span className="bg-emerald-500/15 text-emerald-300 text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded">
-                      Direct & Instant
-                    </span>
-                  </div>
-                  
-                  <p className="text-gray-300 text-[11.5px] leading-relaxed">
-                    Unreal Engine 5 comes equipped with a highly performant **native WebSockets module**. 
-                    Our C++ subsystem connects directly to this web application's cloud socket route to download initial spreadsheet records and listen to instant state changes seamlessly without any local Python scripts.
-                  </p>
-
-                  <div className="space-y-1.5">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block font-mono">Live WebSocket Connection Endpoint URL:</span>
-                    <div className="bg-black/60 font-mono text-[10.5px] text-emerald-300 p-2.5 border border-white/5 rounded-lg flex items-center justify-between gap-1 overflow-x-auto select-all">
-                      <code>
-                        {typeof window !== "undefined"
-                          ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host.replace("ais-dev-", "ais-pre-")}/ws`
-                          : "wss://ais-pre-.../ws"}
-                      </code>
-                    </div>
-                    <span className="text-[9.5px] text-[#2ebd85] block leading-tight font-sans font-medium">
-                      🔒 Secured with direct auto-handshake on the public Shared Preview domain (<code>ais-pre-</code>) so your Unreal Engine client bridges securely bypassing sign-in forms!
-                    </span>
-                  </div>
-
-                  {/* Dynamic WebSocket Connection Tester and Live Output Logs */}
-                  <div className="bg-black/40 border border-white/5 rounded-xl p-4 space-y-3.5">
-                    <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                      <span className="font-bold text-[11px] uppercase tracking-wider text-gray-300 flex items-center gap-1.5 font-mono">
-                        <Terminal className="h-3.5 w-3.5 text-emerald-400" />
-                        Live Connection Tester & Health Diagnostics
-                      </span>
-                      <span className={`text-[9px] px-1.5 py-0.5 font-bold rounded uppercase ${
-                        testWsStatus === "idle" ? "bg-gray-800 text-gray-400" :
-                        testWsStatus === "connecting" ? "bg-amber-500/10 text-amber-400 animate-pulse" :
-                        testWsStatus === "connected" ? "bg-cyan-500/10 text-cyan-400" :
-                        testWsStatus === "success" ? "bg-emerald-500/15 text-emerald-400" :
-                        "bg-red-500/10 text-red-400"
-                      }`}>
-                        {testWsStatus}
-                      </span>
-                    </div>
-
-                    <p className="text-gray-400 text-[10.5px] leading-snug">
-                      Validate your cloud workspace routing and check the WebSocket handshake's response health before compiling your C++ project modules.
-                    </p>
-
-                    <button
-                      onClick={runWebSocketTest}
-                      disabled={testWsStatus === "connecting"}
-                      className={`w-full py-2 px-4 rounded-lg font-mono text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer select-none border border-emerald-500/20 text-black ${
-                        testWsStatus === "connecting" 
-                          ? "bg-emerald-500/20 text-emerald-400 cursor-not-allowed" 
-                          : "bg-emerald-400 hover:bg-emerald-300 hover:scale-[1.01] active:scale-[0.99] shadow-md shadow-emerald-950/20"
-                      }`}
-                    >
-                      <Activity className={`h-3.5 w-3.5 ${testWsStatus === "connecting" ? "animate-spin" : ""}`} />
-                      {testWsStatus === "connecting" ? "Testing Handshake Routing..." : "Trigger Socket Connection Test"}
-                    </button>
-
-                    {testWsLogs.length > 0 && (
-                      <div className="bg-black/85 rounded-lg border border-white/5 p-3 font-mono text-[10px] space-y-1.5 max-h-[160px] overflow-y-auto leading-normal">
-                        {testWsLogs.map((log, index) => (
-                          <div key={index} className={`whitespace-pre-wrap leading-relaxed ${
-                            log.includes("❌") || log.includes("💥") ? "text-red-400 font-bold" :
-                            log.includes("🟢") || log.includes("✅") ? "text-emerald-400 font-bold" :
-                            log.includes("💡") ? "text-cyan-300" :
-                            "text-gray-300"
-                          }`}>
-                            {log}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Steps block */}
-                <div className="rounded-xl border p-5 bg-black/30 border-white/10">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-gray-300 pb-2.5 border-b border-white/10 mb-3">
-                    Setup Walkthrough checklist:
-                  </h3>
-                  
-                  <ol className="space-y-4 text-xs text-gray-300">
-                    <li className="flex items-start gap-2.5">
-                      <span className="px-1.5 py-0.5 bg-cyan-950 border border-cyan-500/20 text-cyan-400 rounded shrink-0 font-mono text-[9px]">01</span>
-                      <div>
-                        <strong className="text-gray-150 block">Create C++ Class</strong>
-                        <span className="text-gray-400 text-[11px] block mt-0.5">Inside your Unreal Engine C++ project, create a new subsystem class deriving from <code>UGameInstanceSubsystem</code>.</span>
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-2.5">
-                      <span className="px-1.5 py-0.5 bg-cyan-950 border border-cyan-500/20 text-cyan-400 rounded shrink-0 font-mono text-[9px]">02</span>
-                      <div>
-                        <strong className="text-gray-150 block font-bold">Copy/Paste Code</strong>
-                        <span className="text-gray-400 text-[11px] block mt-0.5">Overwrite the generated <code>.h</code> and <code>.cpp</code> templates with our WebSocket-ready direct connection modules. This declares the custom <code>FSightPortalProperty</code> struct and automatically manages asynchronous connection streams.</span>
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-2.5">
-                      <span className="px-1.5 py-0.5 bg-cyan-950 border border-cyan-500/20 text-cyan-400 rounded shrink-0 font-mono text-[9px]">03</span>
-                      <div>
-                        <strong className="text-gray-155 block font-bold">Enable Modules inside .Build.cs</strong>
-                        <span className="text-gray-400 text-[11px] block mt-0.5 leading-normal">Ensure you include <code className="text-cyan-300">"Http"</code>, <code className="text-cyan-300">"WebSockets"</code>, <code className="text-cyan-300">"Json"</code>, and <code className="text-cyan-300">"JsonUtilities"</code> in your project's build dependencies inside <code>YourProjectName.Build.cs</code>.</span>
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-2.5">
-                      <span className="px-1.5 py-0.5 bg-cyan-950 border border-cyan-500/20 text-cyan-400 rounded shrink-0 font-mono text-[9px]">04</span>
-                      <div>
-                        <strong className="text-gray-150 block font-bold">Inherit Actor Manager</strong>
-                        <span className="text-gray-400 text-[11px] block mt-0.5">Create a new Blueprint class that inherits from <code>ASightPortalActorManager</code>. It is a fully blueprintable actor designed to coordinate scene spawning automatically on data refresh.</span>
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-2.5">
-                      <span className="px-1.5 py-0.5 bg-cyan-950 border border-cyan-500/20 text-cyan-400 rounded shrink-0 font-mono text-[9px]">05</span>
-                      <div>
-                        <strong className="text-gray-150 block font-bold">Assign Template & Spacing</strong>
-                        <span className="text-gray-400 text-[11px] block mt-0.5">Drag your Blueprint Actor Manager into your level. Assign your custom real-estate Template Actor so it can align meshes automatically along the custom layout grid spacing in real-time!</span>
-                      </div>
-                    </li>
-                  </ol>
-                </div>
-
-              </div>
-
-            </div>
-
           </div>
         )}
 

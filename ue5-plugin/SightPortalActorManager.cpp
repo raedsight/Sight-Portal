@@ -105,6 +105,12 @@ void ASightPortalActorManager::OnDataReceived(const TArray<FSightPortalProperty>
 {
     UE_LOG(LogTemp, Log, TEXT("[SightPortal Manager] Received a full portfolio callback with %d items. Running layout loop..."), PropertyPortfolio.Num());
 
+    SyncedProperties = PropertyPortfolio;
+
+#if WITH_EDITOR
+    Modify();
+#endif
+
     // Call default spawning implementation
     SpawnAndArrangePortfolio(PropertyPortfolio);
 
@@ -115,6 +121,19 @@ void ASightPortalActorManager::OnDataReceived(const TArray<FSightPortalProperty>
 void ASightPortalActorManager::OnPropertyDetailUpdated(const FString& Name, const FSightPortalProperty& PropertyDetails)
 {
     UE_LOG(LogTemp, Log, TEXT("[SightPortal Manager] Property Event triggered: '%s' pricing updated to $%0.2f"), *Name, PropertyDetails.Price);
+
+    for (FSightPortalProperty& Prop : SyncedProperties)
+    {
+        if (Prop.Name == Name)
+        {
+            Prop = PropertyDetails;
+            break;
+        }
+    }
+
+#if WITH_EDITOR
+    Modify();
+#endif
 
     // Trigger Blueprint graph customization branch
     OnPropertySyncUpdated(Name, PropertyDetails);
@@ -136,16 +155,35 @@ void ASightPortalActorManager::ClearActiveSpawnedActors()
 
 void ASightPortalActorManager::SpawnAndArrangePortfolio(const TArray<FSightPortalProperty>& Properties)
 {
-    // Clear out any old instances
-    ClearActiveSpawnedActors();
-
-    UWorld* World = GetWorld();
-    if (!World) return;
+    if (bIsSpawning)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SightPortal Manager] SpawnAndArrangePortfolio aborted to prevent re-entrant execution / infinite recursion loops."));
+        return;
+    }
 
     // Use PropertyVisualizerTemplate if defined, otherwise log a warning
     if (!PropertyVisualizerTemplate)
     {
         UE_LOG(LogTemp, Warning, TEXT("[SightPortal Manager] PropertyVisualizerTemplate is not assigned in Actor Manager! Define your visualizer Blueprint Template to enable local 3D spawner grids."));
+        return;
+    }
+
+    // Safety check: Ensure the template is not this class itself or any derived subclass of it to block infinite spawning loops
+    if (PropertyVisualizerTemplate->IsChildOf(ASightPortalActorManager::StaticClass()))
+    {
+        UE_LOG(LogTemp, Error, TEXT("[SightPortal Manager] ERROR: PropertyVisualizerTemplate is set to ASightPortalActorManager (or a subclass of it)! This will cause a recursive stack overflow crash. Aborting spawning process for safety."));
+        return;
+    }
+
+    bIsSpawning = true;
+
+    // Clear out any old instances
+    ClearActiveSpawnedActors();
+
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        bIsSpawning = false;
         return;
     }
 
@@ -186,4 +224,6 @@ void ASightPortalActorManager::SpawnAndArrangePortfolio(const TArray<FSightPorta
                 *PropertyData.Name, *SpawnLoc.ToString());
         }
     }
+
+    bIsSpawning = false;
 }

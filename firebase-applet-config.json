@@ -1,9 +1,12 @@
 {
-  "projectId": "sodium-icon-v8gvj",
-  "appId": "1:1127775803:web:ef47c48d1d48849d25261e",
-  "apiKey": "AIzaSyA2auatnkhPPK5joeafBy77NgOw7jz6pxE",
-  "authDomain": "sodium-icon-v8gvj.firebaseapp.com",
-  "storageBucket": "sodium-icon-v8gvj.firebasestorage.app",
-  "messagingSenderId": "1127775803",
-  "measurementId": ""
+  "projectId": "sight-portal-adc29",
+  "appId": "1:652369042640:web:7e444ceb89c71fe0c292d5",
+  "apiKey": "AIzaSyA06_CxsLgoEf1suKIKszsWzIXaEKAdn3Q",
+  "authDomain": "sight-portal-adc29.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "sight-portal-adc29.firebasestorage.app",
+  "messagingSenderId": "652369042640",
+  "measurementId": "",
+  "oAuthClientId": "",
+  "recaptchaSiteKey": ""
 }

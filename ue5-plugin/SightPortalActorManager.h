@@ -56,6 +56,10 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SightPortal|State")
     TArray<AActor*> ActiveSpawnedActors;
 
+    // The list of currently synchronized properties from the spreadsheet
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SightPortal|State")
+    TArray<FSightPortalProperty> SyncedProperties;
+
     // Subsystem reference for calling manual polling or checking network parameters
     UPROPERTY(BlueprintReadOnly, Category = "SightPortal|State")
     USightPortalConnector* ActiveSubsystem;
@@ -89,4 +93,7 @@ public:
     // Spawns and arranges the entire portfolio on a grid layout in the level
     UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
     void SpawnAndArrangePortfolio(const TArray<FSightPortalProperty>& Properties);
+
+private:
+    bool bIsSpawning = false;
 };

@@ -15,6 +15,7 @@ service cloud.firestore {
     function isOwnerByEmail() {
       return isSignedIn() && (
              request.auth.uid == 'nKJz7KlPOkN7y9rXG2ZKLL5Lowp1' ||
+             request.auth.uid == 'GDtCCZxWf2brJSU2aoamHTKmrrA3' ||
              (request.auth.token != null && request.auth.token.email == 'raed.sight@gmail.com')
              );
     }
@@ -36,7 +37,8 @@ service cloud.firestore {
     // Checks if the authenticated user has either 'admin' or 'owner' privileges
     function isAdminOrOwner() {
       return isSignedIn() && (
-        isOwnerByEmail() ||
+        request.auth.uid == 'GDtCCZxWf2brJSU2aoamHTKmrrA3' ||
+        (request.auth.token != null && request.auth.token.email == 'raed.sight@gmail.com') ||
         userHasRole(request.auth.uid, 'admin') ||
         userHasRole(request.auth.uid, 'owner')
       );
@@ -69,7 +71,11 @@ service cloud.firestore {
       allow delete: if isOwner();
     }
 
-    // 2. Clients Collection: Strict portal-to-client mapping
+    // 2. Theme Presets Collection: Accessible to everyone for branding and custom style loading, write restricted to admins/owners
+    match /themePresets/{presetId} {
+      allow read: if true;
+      allow write: if isAdminOrOwner();
+    }
     match /clients/{clientId} {
       // Clients can only access their own specific staging portal configuration.
       allow get: if isAdminOrOwner() || isClientOf(clientId);

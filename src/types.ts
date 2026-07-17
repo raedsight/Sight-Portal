@@ -14,6 +14,13 @@ export interface BrandingTheme {
   fontFamily: "sans" | "mono" | "grotesk";
 }
 
+export interface ThemePreset {
+  id: string;
+  name: string;
+  branding: BrandingTheme;
+  updatedAt: string;
+}
+
 export interface BugActivity {
   id: string;
   timestamp: string;

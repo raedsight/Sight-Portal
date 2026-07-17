@@ -21,25 +21,54 @@ import {
   orderBy, 
   limit, 
   onSnapshot, 
-  getDocFromServer 
+  getDocFromServer,
+  writeBatch
 } from "firebase/firestore";
-import { Client, Log } from "./types";
+import { Client, Log, ThemePreset } from "./types";
 import { DEFAULT_CLIENTS, DEFAULT_LOGS } from "./data";
+import firebaseConfig from "../firebase-applet-config.json";
 
-// Your web app's Firebase configuration requested by the user
-const firebaseConfig = {
-  apiKey: "AIzaSyA06_CxsLgoEf1suKIKszsWzIXaEKAdn3Q",
-  authDomain: "sight-portal-adc29.firebaseapp.com",
-  projectId: "sight-portal-adc29",
-  storageBucket: "sight-portal-adc29.firebasestorage.app",
-  messagingSenderId: "652369042640",
-  appId: "1:652369042640:web:7e444ceb89c71fe0c292d5"
-};
+// -------------------------------------------------------------
+// THEME PRESET OPERATIONS (REAL FIRESTORE)
+// -------------------------------------------------------------
+
+export async function syncThemePresets(onUpdate: (presets: ThemePreset[]) => void): Promise<() => void> {
+  try {
+    const q = query(collection(db, "themePresets"), orderBy("updatedAt", "desc"));
+    return onSnapshot(q, (snap) => {
+      const presets = snap.docs.map(d => d.data() as ThemePreset);
+      onUpdate(presets);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, "themePresets");
+    });
+  } catch (e) {
+    console.error("Failed to attach theme presets listener:", e);
+    return () => {};
+  }
+}
+
+export async function saveThemePreset(preset: ThemePreset): Promise<void> {
+  try {
+    await setDoc(doc(db, "themePresets", preset.id), preset, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `themePresets/${preset.id}`);
+  }
+}
+
+export async function deleteThemePreset(presetId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, "themePresets", presetId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `themePresets/${presetId}`);
+  }
+}
 
 // Initialize Firebase with Authentication & Firestore support
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+export const db = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== "(default)"
+  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
+  : getFirestore(app);
 
 // 8-Pillar Error Handling conforming strictly to standard integration skills
 export enum OperationType {
@@ -226,10 +255,11 @@ export async function writeLog(log: Log): Promise<void> {
   }
 }
 
-export async function clearAllLogs(logs: Log[]): Promise<void> {
+export async function clearAllLogs(): Promise<void> {
   try {
-    const batchPromises = logs.map(l => deleteDoc(doc(db, "logs", l.id)));
-    await Promise.all(batchPromises);
+    const snap = await getDocs(collection(db, "logs"));
+    const promises = snap.docs.map(d => deleteDoc(d.ref));
+    await Promise.all(promises);
   } catch (err) {
     handleFirestoreError(err, OperationType.DELETE, "logs");
   }
@@ -248,6 +278,18 @@ export async function triggerGoogleAuthPopup(): Promise<{ user: User; accessToke
     return { user: result.user, accessToken: credential.accessToken };
   } catch (error: any) {
     console.error("[Google Auth Popup error]", error);
+    const msg = error.message || String(error);
+    if (
+      msg.includes("Pending promise was never set") ||
+      msg.includes("popup-blocked") ||
+      msg.includes("cancelled-popup-request") ||
+      error.code === "auth/popup-blocked" ||
+      error.code === "auth/cancelled-popup-request"
+    ) {
+      throw new Error(
+        "Google Sign-In popup was blocked or interrupted by the iframe preview environment. Please click 'Open in New Tab' to run outside the sandbox."
+      );
+    }
     throw error;
   }
 }
@@ -260,6 +302,18 @@ export async function triggerGoogleLogin(): Promise<User> {
     return result.user;
   } catch (error: any) {
     console.error("[Google Login error]", error);
+    const msg = error.message || String(error);
+    if (
+      msg.includes("Pending promise was never set") ||
+      msg.includes("popup-blocked") ||
+      msg.includes("cancelled-popup-request") ||
+      error.code === "auth/popup-blocked" ||
+      error.code === "auth/cancelled-popup-request"
+    ) {
+      throw new Error(
+        "Google Sign-In popup was blocked or interrupted by the iframe preview environment. Please click 'Open in New Tab' at the top, or use Email/Password login."
+      );
+    }
     throw error;
   }
 }

@@ -45,6 +45,9 @@ struct FSightPortalProperty
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|RealEstate")
     int32 BathroomsCount = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|RealEstate")
+    FString Class;
 };
 
 // Blueprint multicast delegates to notify levels when property records are pulled

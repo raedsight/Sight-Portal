@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.5
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   Users, 
   Plus, 
@@ -30,11 +30,13 @@ import {
   Building2,
   Lock,
   Copy,
-  Check
+  Check,
+  Save
 } from "lucide-react";
-import { Client, Log, BgStyleType } from "../types";
+import { Client, Log, BgStyleType, ThemePreset } from "../types";
 import { SPREADSHEET_TEMPLATES } from "../data";
-import { UserProfile } from "../firebase";
+import { UserProfile, syncThemePresets, saveThemePreset, deleteThemePreset } from "../firebase";
+import ThemePresets from "./ThemePresets";
 
 interface AdminConsoleProps {
   clients: Client[];
@@ -64,7 +66,7 @@ export default function AdminConsole({
   onDeleteUserProfile,
 }: AdminConsoleProps) {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"portals" | "users">("portals");
+  const [activeTab, setActiveTab] = useState<"portals" | "users" | "themes">("portals");
 
   // Form & Search States
   const [showAddForm, setShowAddForm] = useState(false);
@@ -91,8 +93,14 @@ export default function AdminConsole({
   const [fontFamily, setFontFamily] = useState<"sans" | "mono" | "grotesk">("grotesk");
   const [selectedTemplate, setSelectedTemplate] = useState<string>("Virtual Camera & Rig Parameters");
 
-  // Local state to track modifications in user directory before committing to DB
   const [userEdits, setUserEdits] = useState<Record<string, { role: "owner" | "admin" | "client"; clientId: string | null }>>({});
+  const [themePresets, setThemePresets] = useState<ThemePreset[]>([]);
+
+  // Listen for theme presets changes
+  useEffect(() => {
+    const unsub = syncThemePresets(setThemePresets);
+    return () => unsub.then(unsubFn => unsubFn());
+  }, []);
 
   const isOwner = currentUserProfile?.role === "owner";
 
@@ -286,6 +294,19 @@ export default function AdminConsole({
               {userProfiles.length}
             </span>
           </button>
+          <button
+            onClick={() => setActiveTab("themes")}
+            className={`px-4 py-2 text-xs font-mono uppercase tracking-wider font-bold transition border-b-2 -mb-[2px] cursor-pointer flex items-center gap-1.5 ${
+              activeTab === "themes"
+                ? "border-blue-500 text-white"
+                : "border-transparent text-gray-500 hover:text-gray-300"
+            }`}
+          >
+            Branding Presets
+            <span className="px-1.5 py-0.5 text-[9px] bg-white/10 rounded-full text-blue-300 font-sans">
+              {themePresets.length}
+            </span>
+          </button>
         </div>
       </div>
 
@@ -389,6 +410,26 @@ export default function AdminConsole({
             <div className="lg:col-span-6 space-y-4">
               <div className="border-l-2 border-blue-500 pl-3 py-1 mb-2">
                 <span className="text-xs font-bold text-gray-300 tracking-wider uppercase">2. Brand Themes & Staged Layouts</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1">Apply Theme Preset</label>
+                <select
+                  onChange={(e) => {
+                    const preset = themePresets.find(p => p.id === e.target.value);
+                    if (preset) {
+                      setLogoText(preset.branding.logoText);
+                      setPrimaryColor(preset.branding.primaryColor);
+                      setAccentColor(preset.branding.accentColor);
+                      setBgStyle(preset.branding.bgStyle);
+                      setFontFamily(preset.branding.fontFamily);
+                    }
+                  }}
+                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                >
+                  <option value="">Select a preset...</option>
+                  {themePresets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
               </div>
 
               <div>
@@ -511,7 +552,7 @@ export default function AdminConsole({
       )}
 
       {/* RENDER VIEW ACCORDING TO SELECTED TAB */}
-      {activeTab === "portals" ? (
+      {activeTab === "portals" && (
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 animate-fadeIn" id="admin-columns-container">
           
           {/* Left Column: Client Management */}
@@ -640,19 +681,44 @@ export default function AdminConsole({
             {/* Quick Unreal Control Setup instructions Card */}
             <div className="glass rounded-xl p-5 shadow-lg text-gray-300">
               <h3 className="text-sm font-bold text-white font-sans mb-3 flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-blue-400" />
-                How to Connect Unreal Engine 5 Real-Time Remote Control
+                <Sparkles className="h-4 w-4 text-emerald-400" />
+                How to Connect Unreal Engine 5 via Real-Time WebSockets
               </h3>
               <div className="space-y-3 text-xs opacity-90 font-sans">
                 <p>
-                  To broadcast dynamic data updates from client spreadsheets straight to active Scene actors, enable the Web Remote Control in UE5:
+                  To sync spreadsheets to active 3D Scene actors, integrate our modern C++ connection modules that link directly to the Live Cloud WebSocket:
                 </p>
-                <ol className="list-decimal pl-5 space-y-1.5 font-mono text-[11px] text-gray-500">
-                  <li>Go to <strong className="text-white">Plugins</strong> &gt; search and enable <strong className="text-blue-400 font-sans">Web Remote Control</strong>.</li>
-                  <li>Go to <strong className="text-white">Project Settings</strong> &gt; search and enable <strong className="text-blue-400 font-sans">Remote Control Web Server</strong>.</li>
-                  <li>Launch your editor. Port <strong className="text-blue-400 font-bold">8008</strong> will auto-bind to receive secure JSON payloads.</li>
-                  <li>Make sure client endpoints are directed appropriately (e.g. <code className="bg-black/50 px-1 py-0.5 border border-white/5 text-blue-400">http://127.0.0.1:8008/remote/object/call</code>).</li>
+                <ol className="list-decimal pl-5 space-y-2 font-mono text-[11px] text-gray-400">
+                  <li>
+                    <strong className="text-white">Import Subsystem Classes</strong>: Open the <code className="text-emerald-400 font-sans bg-black/40 px-1 py-0.5 rounded border border-white/5 font-mono">/ue5-plugin</code> directory in the code workspace and copy the <strong className="text-white">SightPortalConnector</strong> and <strong className="text-white">SightPortalActorManager</strong> C++ modules into your project's Source folder.
+                  </li>
+                  <li>
+                    <strong className="text-white">Configure Build Dependencies</strong>: In your project's <code className="text-blue-400 font-sans bg-black/40 px-1 py-0.5 rounded border border-white/5 font-mono">YourProject.Build.cs</code> file, append <code className="text-emerald-400">"WebSockets"</code>, <code className="text-emerald-400">"Http"</code>, <code className="text-emerald-400">"Json"</code>, and <code className="text-emerald-400">"JsonUtilities"</code> to <code className="text-white">PublicDependencyModuleNames</code>.
+                  </li>
+                  <li>
+                    <strong className="text-white">Set Up Blueprint Actor Manager</strong>: Create a new Blueprint class inheriting from <code className="text-blue-400">ASightPortalActorManager</code>. Place this manager in your level and select the template actors to lay out.
+                  </li>
+                  <li>
+                    <strong className="text-white">Real-Time Data Streaming</strong>: When editing parameters or triggering a <strong className="text-blue-400 font-semibold">Force Refresh</strong>, updates are pushed instantly. The active client ID's isolated WebSocket path (<code className="text-emerald-400">/ws/&lt;client_slug&gt;</code>) handles individual portfolio synchronization!
+                  </li>
                 </ol>
+
+                <div className="mt-4 pt-4 border-t border-white/10 space-y-2.5">
+                  <div className="rounded-lg bg-black/40 p-3 border border-white/5 space-y-1.5 font-mono text-[10px]">
+                    <div className="text-gray-400 font-bold tracking-wide text-[9px] uppercase text-blue-400">Environment Credentials</div>
+                    <div>
+                      <span className="text-gray-500 block text-[9px] uppercase">Remote Endpoint URL (HTTP Poll)</span>
+                      <code className="text-emerald-400 break-all select-all">https://sight-portal-1127775803.europe-west2.run.app/api/health</code>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 block text-[9px] uppercase">Web Socket URL (Live Stream)</span>
+                      <code className="text-emerald-400 break-all select-all">wss://ais-pre-4wjcvfkjzt7ohntjrl7gk5-405891248157.europe-west3.run.app/ws/hyperion-vis</code>
+                      <p className="text-gray-500 text-[8.5px] mt-0.5 font-sans leading-normal">
+                        * Note: Replace <code className="text-gray-300">hyperion-vis</code> at the end of the WebSocket URL with your active client's unique slug id.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -781,8 +847,9 @@ export default function AdminConsole({
             </div>
           </div>
         </div>
-      ) : (
-        /* USER GROUP DIRECTORY TAB PANEL */
+      )}
+      {activeTab === "themes" && <ThemePresets presets={themePresets} />}
+      {activeTab === "users" && (
         <div className="glass rounded-xl p-6 shadow-2xl space-y-6 animate-fadeIn" id="user-directory-panel">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
             <div>

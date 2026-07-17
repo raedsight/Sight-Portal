@@ -46,6 +46,18 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
     console.error("Sign in error:", error);
+    const msg = error.message || String(error);
+    if (
+      msg.includes("Pending promise was never set") ||
+      msg.includes("popup-blocked") ||
+      msg.includes("cancelled-popup-request") ||
+      error.code === "auth/popup-blocked" ||
+      error.code === "auth/cancelled-popup-request"
+    ) {
+      throw new Error(
+        "Google Sign-In popup was blocked or interrupted by the iframe preview environment. Please click 'Open in New Tab' to run outside the sandbox, or use email/password sign-in."
+      );
+    }
     throw error;
   } finally {
     isSigningIn = false;

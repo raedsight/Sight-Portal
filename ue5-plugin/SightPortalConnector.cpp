@@ -252,6 +252,7 @@ void USightPortalConnector::ParseAndSyncJsonPayload(const FString& JsonContent)
             TArray<FString> BuildingSurfaceKeys = { TEXT("BuildingSurface"), TEXT("building_surface"), TEXT("BuildingArea"), TEXT("building_area") };
             TArray<FString> BedroomsCountKeys = { TEXT("BedroomsCount"), TEXT("bedroom_count"), TEXT("Rooms"), TEXT("rooms"), TEXT("Bedrooms"), TEXT("bedrooms") };
             TArray<FString> BathroomsCountKeys = { TEXT("BathroomsCount"), TEXT("bathroom_count"), TEXT("Bathrooms"), TEXT("bathrooms") };
+            TArray<FString> ClassKeys = { TEXT("Class"), TEXT("class"), TEXT("Type"), TEXT("type"), TEXT("Category"), TEXT("category") };
 
             for (const auto& RowVal : *RowsArray)
             {
@@ -282,6 +283,9 @@ void USightPortalConnector::ParseAndSyncJsonPayload(const FString& JsonContent)
 
                 FString BathroomsStr = GetFirstMatchingFieldAsString(RowObj, BathroomsCountKeys);
                 Property.BathroomsCount = FCString::Atoi(*BathroomsStr);
+
+                FString ClassStr = GetFirstMatchingFieldAsString(RowObj, ClassKeys);
+                Property.Class = ClassStr;
 
                 PropertyPortfolio.Add(Property);
 

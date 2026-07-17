@@ -51,7 +51,8 @@ import {
   ShieldCheck,
   UserCheck,
   Database,
-  Trash2
+  Trash2,
+  RefreshCw
 } from "lucide-react";
 
 export default function App() {
@@ -199,12 +200,16 @@ export default function App() {
     let unsubscribe: (() => void) | null = null;
 
     const setupSync = async () => {
+      let firstRun = true;
       unsubscribe = await syncLogs((updatedLogs) => {
-        if (updatedLogs.length === 0) {
+        if (updatedLogs.length === 0 && firstRun && !localStorage.getItem("sightportal_seeded_logs")) {
+          firstRun = false;
+          localStorage.setItem("sightportal_seeded_logs", "true");
           DEFAULT_LOGS.forEach(async (l) => {
             await writeLog(l);
           });
         } else {
+          firstRun = false;
           setLogs(updatedLogs);
         }
       });
@@ -265,41 +270,90 @@ export default function App() {
     }
   }, [deepLinkPortal, userProfile, clients, authLoading]);
 
+  // Sync state & helper function to trigger a manual refresh on demand
+  const [syncing, setSyncing] = useState<boolean>(false);
+
+  const handleForceSync = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    const slug = selectedClient?.id || "hyperion-vis";
+    const name = selectedClient?.name || "Hyperion Vis";
+    try {
+      const res = await fetch("/api/force-sync", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ client_slug: slug })
+      });
+      const data = await res.json();
+      if (data.success) {
+        await handleRecordLog({
+          clientId: slug,
+          clientName: name,
+          type: "config_change",
+          status: "success",
+          details: `Manual Force Refresh triggered. Dispatched client '${slug}' spreadsheet records to UE5 WebSocket receiver.`
+        });
+        alert(`Unreal Sync Completed! Re-synchronized parameters for client '${name}' to the active Unreal Engine session.`);
+      } else {
+        alert(`Sync failed: ${data.error || "Unknown error"}`);
+      }
+    } catch (err) {
+      console.error("[Force Sync] Failed:", err);
+      alert("Failed to communicate with Server. Verify internet connectivity.");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   // Poll connection health and Unreal presence
   useEffect(() => {
     const probeEndpoints = async () => {
       // 1. Probe the main server health route
+      let serverUeAlive = false;
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 2000);
-        const res = await fetch("/api/health", { signal: controller.signal });
+        const slugQuery = selectedClient ? `?client_slug=${selectedClient.id}` : "";
+        const res = await fetch(`/api/health${slugQuery}`, { signal: controller.signal });
         clearTimeout(timeoutId);
         setBackendAlive(res.ok);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.ue5Alive) {
+            serverUeAlive = true;
+          }
+        }
       } catch (err) {
         setBackendAlive(false);
       }
 
       // 2. Discover running native Unreal Engine Remote Control API (which runs directly on localhost)
-      const targetUE5Urls = [
-        selectedClient?.ue5Endpoint || "http://localhost:8008/remote/object/call",
-        "http://127.0.0.1:8008/remote/object/call"
-      ];
+      if (serverUeAlive) {
+        setUe5Alive(true);
+      } else {
+        const targetUE5Urls = [
+          selectedClient?.ue5Endpoint || "http://localhost:8008/remote/object/call",
+          "http://127.0.0.1:8008/remote/object/call"
+        ];
 
-      let ueResponsive = false;
-      for (const url of targetUE5Urls) {
-        if (!url) continue;
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 1200);
-          await fetch(url, { method: "GET", mode: "no-cors", signal: controller.signal });
-          clearTimeout(timeoutId);
-          ueResponsive = true;
-          break;
-        } catch (e) {
-          // Unreachable port
+        let ueResponsive = false;
+        for (const url of targetUE5Urls) {
+          if (!url) continue;
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 1200);
+            await fetch(url, { method: "GET", mode: "no-cors", signal: controller.signal });
+            clearTimeout(timeoutId);
+            ueResponsive = true;
+            break;
+          } catch (e) {
+            // Unreachable port
+          }
         }
+        setUe5Alive(ueResponsive);
       }
-      setUe5Alive(ueResponsive);
     };
 
     probeEndpoints();
@@ -374,14 +428,21 @@ export default function App() {
       return;
     }
     if (confirm("Are you sure you want to flush and erase all system activity logs in the Cloud database?")) {
-      await clearAllLogs(logs);
-      await handleRecordLog({
-        clientId: "system",
-        clientName: "System Central",
-        type: "config_change",
-        status: "success",
-        details: "Owner flushed central database audit log streams.",
-      });
+      try {
+        localStorage.setItem("sightportal_seeded_logs", "true");
+        await clearAllLogs();
+        await handleRecordLog({
+          clientId: "system",
+          clientName: "System Central",
+          type: "config_change",
+          status: "success",
+          details: "Owner flushed central database audit log streams.",
+        });
+        alert("System central audit logs have been successfully cleared.");
+      } catch (err: any) {
+        console.error("Failed to clear logs:", err);
+        alert(`Failed to clear logs: ${err.message || String(err)}`);
+      }
     }
   };
 
@@ -639,6 +700,29 @@ export default function App() {
               >
                 Sign In with Google
               </button>
+
+              {/* Iframe Warning and New Tab helper */}
+              {typeof window !== "undefined" && window.self !== window.top && (
+                <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-left text-[11px] text-blue-400 space-y-2">
+                  <p className="font-sans leading-normal">
+                    ⚠️ <strong>Iframe Sandbox Warning:</strong> Google Sign-In popups are blocked by browsers inside sandboxed preview frames.
+                  </p>
+                  <div className="flex gap-2">
+                    <a
+                      href={window.location.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-[10px] uppercase tracking-wider font-mono transition-colors"
+                    >
+                      <Monitor className="h-3 w-3" />
+                      Open in New Tab
+                    </a>
+                    <span className="text-[10px] text-gray-400 self-center">
+                      (Allows popups to function normally)
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -696,7 +780,7 @@ export default function App() {
       
       {/* Universal Sticky Glass Top Bar */}
       <header className="bg-[#0A0A0A] border-b border-white/10 sticky top-0 z-55 flex-none" id="app-nav-bar">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+        <div className="w-full px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
           
           {/* Logo & Platform Name */}
           <div className="flex items-center gap-3">
@@ -778,7 +862,7 @@ export default function App() {
       </header>
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8" id="app-main-content">
+      <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-8" id="app-main-content">
         {activeView === "admin" && isDeveloperUser ? (
           <AdminConsole
             clients={clients}
@@ -814,7 +898,7 @@ export default function App() {
 
       {/* Sticky Universal Footer */}
       <footer className="bg-[#070707] border-t border-white/5 py-3 text-xs text-gray-500 font-mono mt-auto flex-none">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="w-full px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.6)] animate-pulse"></span>
             <span>
@@ -859,6 +943,17 @@ export default function App() {
                 <WifiOff className="h-3.5 w-3.5 text-amber-500 opacity-60 ml-0.5" />
               )}
             </div>
+
+            {/* 3. Force Refresh Action Button */}
+            <button
+              onClick={handleForceSync}
+              disabled={syncing}
+              title="Force trigger a manual re-sync of active client parameters to the Unreal Engine 5 instance"
+              className="flex items-center gap-1.5 px-3 py-1 bg-blue-600/10 hover:bg-blue-600 border border-blue-500/20 hover:border-blue-400 text-blue-400 hover:text-white rounded-lg cursor-pointer transition-all disabled:opacity-50 text-[10px] md:text-[11px] font-semibold select-none font-mono"
+            >
+              <RefreshCw className={`h-3 w-3 ${syncing ? "animate-spin" : ""}`} />
+              <span>{syncing ? "Syncing..." : "Force Refresh"}</span>
+            </button>
           </div>
         </div>
       </footer>
