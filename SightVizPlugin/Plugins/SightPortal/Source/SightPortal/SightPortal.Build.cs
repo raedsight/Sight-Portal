@@ -38,6 +38,10 @@ public class SightPortal : ModuleRules
 				"Engine",
 				"Slate",
 				"SlateCore",
+                "WebSockets",
+				"Http",
+				"Json",
+				"JsonUtilities",
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
