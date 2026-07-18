@@ -1,19 +1,22 @@
 #include "SightPortalSiteManager.h"
+#include "SightPortalZoneManager.h"
+#include "SightPortalConnector.h"
 #include "Engine/World.h"
+#include "Engine/Engine.h"
 
 ASightPortalSiteManager::ASightPortalSiteManager()
 {
     PrimaryActorTick.bCanEverTick = false;
     ZoneCount = 1;
     ZoneSpacing = 1500.0f;
+    WebSocketURL = TEXT("wss://ais-pre-4wjcvfkjzt7ohntjrl7gk5-405891248157.europe-west3.run.app/ws/hyperion-vis");
+    RemoteEndpointURL = TEXT("https://sight-portal-1127775803.europe-west2.run.app/api/health");
 }
 
 void ASightPortalSiteManager::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
-
-    // Spawns zones dynamically in response to parameter updates in the Editor viewport
-    SpawnZoneManagers();
+    // Removed automatic spawning to prevent resetting manual transforms
 }
 
 void ASightPortalSiteManager::BeginPlay()
@@ -22,7 +25,17 @@ void ASightPortalSiteManager::BeginPlay()
 
     UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Site Manager Booted."));
 
-    SpawnZoneManagers();
+    // Sync URLs to Connector on start
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    if (Connector)
+    {
+        Connector->WebSocketURL = WebSocketURL;
+        Connector->RemoteEndpointURL = RemoteEndpointURL;
+        
+        Connector->DisconnectWebSocket();
+        Connector->ConnectWebSocket();
+        Connector->FetchLatestSpreadsheetData();
+    }
 }
 
 void ASightPortalSiteManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -35,6 +48,8 @@ void ASightPortalSiteManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ASightPortalSiteManager::ClearZoneManagers()
 {
     UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Clearing %d active spawned Zone Managers..."), ActiveZoneManagers.Num());
+
+    ClearPropertyVisualizers();
 
     for (AActor* Actor : ActiveZoneManagers)
     {
@@ -79,82 +94,145 @@ void ASightPortalSiteManager::SpawnZoneManagers()
     // 1. Scan attached children to recover any untracked valid Zone Managers (preserves them across editor rebuilds/reloads)
     TArray<AActor*> AttachedActors;
     GetAttachedActors(AttachedActors);
+
+    TArray<ASightPortalZoneManager*> ExistingZones;
     for (AActor* Attached : AttachedActors)
     {
-        if (IsValid(Attached) && Attached->IsA(ZoneManagerClass))
+        if (IsValid(Attached) && Attached->IsA(ASightPortalZoneManager::StaticClass()))
         {
-            if (!ActiveZoneManagers.Contains(Attached))
+            ExistingZones.Add(Cast<ASightPortalZoneManager>(Attached));
+        }
+    }
+
+    // 2. Destroy excess ones
+    while (ExistingZones.Num() > ZoneCount)
+    {
+        ASightPortalZoneManager* Excess = ExistingZones.Last();
+        if (IsValid(Excess))
+        {
+            Excess->Destroy();
+        }
+        ExistingZones.RemoveAt(ExistingZones.Num() - 1);
+    }
+
+    // 3. Spawn missing and arrange ALL of them correctly along the spacing vector
+    FVector ManagerLocation = GetActorLocation();
+    FRotator ManagerRotation = GetActorRotation();
+
+    for (int32 Index = 0; Index < ZoneCount; ++Index)
+    {
+        // Position alignment based on spacing parameter
+        FVector TargetLocation = ManagerLocation + (GetActorRightVector() * (Index * ZoneSpacing));
+
+        if (Index < ExistingZones.Num())
+        {
+            // Position alignment is preserved, adjusting existing to the current Spacing parameter
+            if (IsValid(ExistingZones[Index]))
             {
-                ActiveZoneManagers.Add(Attached);
+                ExistingZones[Index]->SetActorLocation(TargetLocation);
+            }
+        }
+        else
+        {
+            FActorSpawnParameters SpawnParams;
+            SpawnParams.Owner = this;
+            SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+            ASightPortalZoneManager* NewZone = World->SpawnActor<ASightPortalZoneManager>(
+                ZoneManagerClass,
+                TargetLocation,
+                ManagerRotation,
+                SpawnParams
+            );
+
+            if (NewZone)
+            {
+                // Attach SightPortalZoneManager to SightPortalSiteManager
+                NewZone->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+                
+                // Assign Zone Name based on index
+                NewZone->ZoneName = FString::FromInt(Index + 1);
+
+                ExistingZones.Add(NewZone);
+                UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Successfully spawned and attached Zone Manager at location %s"), *TargetLocation.ToString());
             }
         }
     }
 
-    // 2. Clean up invalid/destroyed actors from our array
-    for (int32 i = ActiveZoneManagers.Num() - 1; i >= 0; --i)
+    ActiveZoneManagers.Empty();
+    for (ASightPortalZoneManager* Zone : ExistingZones)
     {
-        if (!IsValid(ActiveZoneManagers[i]))
-        {
-            ActiveZoneManagers.RemoveAt(i);
-        }
-    }
-
-    // 3. If any actor in our array is NOT an instance of the current ZoneManagerClass, destroy and remove it
-    for (int32 i = ActiveZoneManagers.Num() - 1; i >= 0; --i)
-    {
-        if (IsValid(ActiveZoneManagers[i]) && !ActiveZoneManagers[i]->IsA(ZoneManagerClass))
-        {
-            ActiveZoneManagers[i]->Destroy();
-            ActiveZoneManagers.RemoveAt(i);
-        }
-    }
-
-    // 4. If we have more than ZoneCount, destroy excess ones from the end
-    while (ActiveZoneManagers.Num() > ZoneCount)
-    {
-        AActor* ExcessActor = ActiveZoneManagers.Last();
-        if (IsValid(ExcessActor))
-        {
-            ExcessActor->Destroy();
-        }
-        ActiveZoneManagers.RemoveAt(ActiveZoneManagers.Num() - 1);
-    }
-
-    // 5. Spawn only the missing Zone Managers, keeping existing ones (and their custom transforms!) completely intact
-    FVector ManagerLocation = GetActorLocation();
-    FRotator ManagerRotation = GetActorRotation();
-
-    for (int32 Index = ActiveZoneManagers.Num(); Index < ZoneCount; ++Index)
-    {
-        // Position grid/linear alignment based on spacing parameter
-        FVector SpawnLoc = ManagerLocation + (GetActorRightVector() * (Index * ZoneSpacing));
-
-        // Ensure SpawnLoc components are finite
-        if (SpawnLoc.ContainsNaN() || SpawnLoc.Size() > 1e12)
-        {
-            UE_LOG(LogTemp, Warning, TEXT("[SightPortal SiteManager] Spawn location %s is invalid. Skipping spawn for Zone index %d"), *SpawnLoc.ToString(), Index);
-            continue;
-        }
-
-        FActorSpawnParameters SpawnParams;
-        SpawnParams.Owner = this;
-        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-        #if WITH_EDITOR
-        if (!World->IsGameWorld())
-        {
-            SpawnParams.ObjectFlags |= RF_Transient;
-        }
-        #endif
-
-        AActor* NewZoneActor = World->SpawnActor<AActor>(ZoneManagerClass, SpawnLoc, ManagerRotation, SpawnParams);
-        if (NewZoneActor)
-        {
-            // Attach SightPortalZoneManager to SightPortalSiteManager
-            NewZoneActor->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
-            ActiveZoneManagers.Add(NewZoneActor);
-            UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Successfully spawned and attached Zone Manager at location %s"), *SpawnLoc.ToString());
-        }
+        ActiveZoneManagers.Add(Zone);
     }
 
     bIsSpawning = false;
+}
+
+void ASightPortalSiteManager::SpawnPropertyVisualizers()
+{
+    UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Site-wide Spawning/Syncing of Property Visualizers initiated."));
+    for (AActor* ZoneActor : ActiveZoneManagers)
+    {
+        ASightPortalZoneManager* Zone = Cast<ASightPortalZoneManager>(ZoneActor);
+        if (IsValid(Zone))
+        {
+            Zone->SpawnPropertyVisualizers();
+        }
+    }
+}
+
+void ASightPortalSiteManager::ClearPropertyVisualizers()
+{
+    UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Site-wide Clearing of Property Visualizers initiated."));
+    for (AActor* ZoneActor : ActiveZoneManagers)
+    {
+        ASightPortalZoneManager* Zone = Cast<ASightPortalZoneManager>(ZoneActor);
+        if (IsValid(Zone))
+        {
+            Zone->ClearPropertyVisualizers();
+        }
+    }
+    RegisteredPropertyVisualizers.Empty();
+}
+
+void ASightPortalSiteManager::RegisterPropertyVisualizer(const FString& PropertyName, AActor* VisualizerActor)
+{
+    if (PropertyName.IsEmpty() || !IsValid(VisualizerActor)) return;
+    RegisteredPropertyVisualizers.Add(PropertyName, VisualizerActor);
+}
+
+void ASightPortalSiteManager::UnregisterPropertyVisualizer(const FString& PropertyName)
+{
+    if (PropertyName.IsEmpty()) return;
+    RegisteredPropertyVisualizers.Remove(PropertyName);
+}
+
+AActor* ASightPortalSiteManager::GetRegisteredPropertyVisualizer(const FString& PropertyName) const
+{
+    if (PropertyName.IsEmpty()) return nullptr;
+    const AActor* const* FoundActorPtr = RegisteredPropertyVisualizers.Find(PropertyName);
+    return FoundActorPtr ? const_cast<AActor*>(*FoundActorPtr) : nullptr;
+}
+
+void ASightPortalSiteManager::ForceFetchData()
+{
+    UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Force fetch initiated. Syncing variables and connecting..."));
+
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    if (Connector)
+    {
+        Connector->WebSocketURL = WebSocketURL;
+        Connector->RemoteEndpointURL = RemoteEndpointURL;
+
+        // Force disconnect and reconnect WebSocket using the new URL
+        Connector->DisconnectWebSocket();
+        Connector->ConnectWebSocket();
+
+        // Trigger an HTTP poll to pull the latest spreadsheet data immediately
+        Connector->FetchLatestSpreadsheetData();
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SightPortal SiteManager] USightPortalConnector subsystem not found during ForceFetchData."));
+    }
 }
