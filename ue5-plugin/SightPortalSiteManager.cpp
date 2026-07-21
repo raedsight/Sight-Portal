@@ -1,6 +1,7 @@
 #include "SightPortalSiteManager.h"
 #include "SightPortalZoneManager.h"
 #include "SightPortalConnector.h"
+#include "PropertyVisualizer.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 
@@ -34,6 +35,9 @@ void ASightPortalSiteManager::BeginPlay()
     {
         Connector->WebSocketURL = WebSocketURL;
         Connector->RemoteEndpointURL = RemoteEndpointURL;
+
+        // Bind callback for when data is fetched/updated
+        Connector->OnRealEstateDataReceived.AddDynamic(this, &ASightPortalSiteManager::HandleDataReceived);
         
         Connector->DisconnectWebSocket();
         Connector->ConnectWebSocket();
@@ -44,6 +48,12 @@ void ASightPortalSiteManager::BeginPlay()
 void ASightPortalSiteManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     ClearZoneManagers();
+
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    if (Connector)
+    {
+        Connector->OnRealEstateDataReceived.RemoveDynamic(this, &ASightPortalSiteManager::HandleDataReceived);
+    }
 
     Super::EndPlay(EndPlayReason);
 }
@@ -253,3 +263,27 @@ void ASightPortalSiteManager::PostEditMove(bool bFinished)
     bHasBeenManuallyMoved = true;
 }
 #endif
+
+void ASightPortalSiteManager::HandleDataReceived(const TArray<FSightPortalProperty>& PropertyPortfolio)
+{
+    UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Received spreadsheet data updates. Syncing %d property records..."), PropertyPortfolio.Num());
+
+    for (const FSightPortalProperty& Prop : PropertyPortfolio)
+    {
+        AActor* VisualizerActor = GetRegisteredPropertyVisualizer(Prop.Name);
+        if (IsValid(VisualizerActor))
+        {
+            APropertyVisualizer* PropVis = Cast<APropertyVisualizer>(VisualizerActor);
+            if (PropVis)
+            {
+                PropVis->PropertyDetails = Prop;
+                
+                // Keep name in sync in the viewport
+#if WITH_EDITOR
+                PropVis->SetActorLabel(Prop.Name);
+#endif
+                UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Updated PropertyDetails for visualizer '%s'"), *Prop.Name);
+            }
+        }
+    }
+}
