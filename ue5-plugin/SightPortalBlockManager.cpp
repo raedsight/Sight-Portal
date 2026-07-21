@@ -346,7 +346,7 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
 
                 int32 VisualizerBlockIndex = CumulativeIndex + i;
 
-                FString ExpectedName = FString::Printf(TEXT("%s%d"), *BlockName, i + 1);
+                FString ExpectedName = FString::Printf(TEXT("%s%d"), *BlockName, VisualizerBlockIndex + 1);
 
                 // Determine unique real-estate property data to load
                 FSightPortalProperty AssignedProperty;
@@ -372,7 +372,7 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
                         {
                             if (Prop.Zone.Equals(ZoneName, ESearchCase::IgnoreCase) &&
                                 Prop.Block.Equals(BlockName, ESearchCase::IgnoreCase) &&
-                                Prop.DoorNo == (i + 1))
+                                Prop.DoorNo == (VisualizerBlockIndex + 1))
                             {
                                 AssignedProperty = Prop;
                                 bFoundMatch = true;
@@ -384,14 +384,14 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
                     // 3. If still not found, but we have some matched properties for this block, use index-based selection
                     if (!bFoundMatch && MatchedProperties.Num() > 0)
                     {
-                        AssignedProperty = MatchedProperties[i % MatchedProperties.Num()];
+                        AssignedProperty = MatchedProperties[VisualizerBlockIndex % MatchedProperties.Num()];
                         bFoundMatch = true;
                     }
 
                     // 4. Global index fallback as a last resort if cache has items but no specific match
                     if (!bFoundMatch && Connector->CachedProperties.Num() > 0)
                     {
-                        AssignedProperty = Connector->CachedProperties[i % Connector->CachedProperties.Num()];
+                        AssignedProperty = Connector->CachedProperties[VisualizerBlockIndex % Connector->CachedProperties.Num()];
                         bFoundMatch = true;
                     }
                 }
@@ -402,7 +402,7 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
                     AssignedProperty.Name = ExpectedName;
                     AssignedProperty.Zone = ZoneName;
                     AssignedProperty.Block = BlockName;
-                    AssignedProperty.DoorNo = i + 1;
+                    AssignedProperty.DoorNo = VisualizerBlockIndex + 1;
                     AssignedProperty.Price = 250000.0f + (VisualizerBlockIndex * 15000.0f);
                     AssignedProperty.Surface = 120.0f + (VisualizerBlockIndex * 10.0f);
                     AssignedProperty.Availability = TEXT("Available");
