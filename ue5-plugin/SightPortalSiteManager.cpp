@@ -124,12 +124,13 @@ void ASightPortalSiteManager::SpawnZoneManagers()
         // Position alignment based on spacing parameter
         FVector TargetLocation = ManagerLocation + (GetActorRightVector() * (Index * ZoneSpacing));
 
+        ASightPortalZoneManager* TargetZone = nullptr;
         if (Index < ExistingZones.Num())
         {
-            // Position alignment is preserved, adjusting existing to the current Spacing parameter
-            if (IsValid(ExistingZones[Index]))
+            TargetZone = ExistingZones[Index];
+            if (IsValid(TargetZone))
             {
-                ExistingZones[Index]->SetActorLocation(TargetLocation);
+                TargetZone->SetActorLocation(TargetLocation);
             }
         }
         else
@@ -138,24 +139,29 @@ void ASightPortalSiteManager::SpawnZoneManagers()
             SpawnParams.Owner = this;
             SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-            ASightPortalZoneManager* NewZone = World->SpawnActor<ASightPortalZoneManager>(
+            TargetZone = World->SpawnActor<ASightPortalZoneManager>(
                 ZoneManagerClass,
                 TargetLocation,
                 ManagerRotation,
                 SpawnParams
             );
 
-            if (NewZone)
+            if (TargetZone)
             {
                 // Attach SightPortalZoneManager to SightPortalSiteManager
-                NewZone->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
-                
-                // Assign Zone Name based on index
-                NewZone->ZoneName = FString::FromInt(Index + 1);
-
-                ExistingZones.Add(NewZone);
+                TargetZone->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+                ExistingZones.Add(TargetZone);
                 UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Successfully spawned and attached Zone Manager at location %s"), *TargetLocation.ToString());
             }
+        }
+
+        if (IsValid(TargetZone))
+        {
+            // Assign Zone Name (Z1, Z2, Z3...)
+            TargetZone->ZoneName = FString::Printf(TEXT("Z%d"), Index + 1);
+#if WITH_EDITOR
+            TargetZone->SetActorLabel(TargetZone->ZoneName);
+#endif
         }
     }
 

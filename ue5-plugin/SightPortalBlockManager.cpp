@@ -281,6 +281,10 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
 
         if (!IsValid(RowSpline)) continue;
 
+#if WITH_EDITOR
+        RowSpline->SetActorLabel(FString::Printf(TEXT("%s_Spline_R%d"), *BlockName, RowIndex + 1));
+#endif
+
         // Apply visual settings to the spline
         RowSpline->VisualizerRotationOffset = Row.PropertyRotation;
         RowSpline->VisualizerScaleOffset = Row.PropertyScale;
@@ -339,20 +343,60 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
 
                 int32 VisualizerBlockIndex = CumulativeIndex + i;
 
+                FString ExpectedName = FString::Printf(TEXT("%s%d"), *BlockName, i + 1);
+
                 // Determine unique real-estate property data to load
                 FSightPortalProperty AssignedProperty;
-                if (MatchedProperties.Num() > 0)
+                bool bFoundMatch = false;
+
+                if (Connector)
                 {
-                    AssignedProperty = MatchedProperties[VisualizerBlockIndex % MatchedProperties.Num()];
+                    // 1. Try to find an exact match by Name (e.g. Z1B11) in CachedProperties
+                    for (const FSightPortalProperty& Prop : Connector->CachedProperties)
+                    {
+                        if (Prop.Name.Equals(ExpectedName, ESearchCase::IgnoreCase))
+                        {
+                            AssignedProperty = Prop;
+                            bFoundMatch = true;
+                            break;
+                        }
+                    }
+
+                    // 2. If not found, try to find by Zone, Block, and DoorNo
+                    if (!bFoundMatch)
+                    {
+                        for (const FSightPortalProperty& Prop : Connector->CachedProperties)
+                        {
+                            if (Prop.Zone.Equals(ZoneName, ESearchCase::IgnoreCase) &&
+                                Prop.Block.Equals(BlockName, ESearchCase::IgnoreCase) &&
+                                Prop.DoorNo == (i + 1))
+                            {
+                                AssignedProperty = Prop;
+                                bFoundMatch = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // 3. If still not found, but we have some matched properties for this block, use index-based selection
+                    if (!bFoundMatch && MatchedProperties.Num() > 0)
+                    {
+                        AssignedProperty = MatchedProperties[VisualizerBlockIndex % MatchedProperties.Num()];
+                        bFoundMatch = true;
+                    }
+
+                    // 4. Global index fallback as a last resort if cache has items but no specific match
+                    if (!bFoundMatch && Connector->CachedProperties.Num() > 0)
+                    {
+                        AssignedProperty = Connector->CachedProperties[VisualizerBlockIndex % Connector->CachedProperties.Num()];
+                        bFoundMatch = true;
+                    }
                 }
-                else if (Connector && Connector->CachedProperties.Num() > 0)
+
+                // 5. If still no match or no cache, generate clean mock fallback with correct default name
+                if (!bFoundMatch)
                 {
-                    AssignedProperty = Connector->CachedProperties[VisualizerBlockIndex % Connector->CachedProperties.Num()];
-                }
-                else
-                {
-                    // Clean mock fallback if cache isn't loaded yet
-                    AssignedProperty.Name = FString::Printf(TEXT("Prop_Z%s_B%s_R%d_%d"), *ZoneName, *BlockName, RowIndex + 1, i + 1);
+                    AssignedProperty.Name = ExpectedName;
                     AssignedProperty.Zone = ZoneName;
                     AssignedProperty.Block = BlockName;
                     AssignedProperty.DoorNo = i + 1;
@@ -387,6 +431,10 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
                     PropertyVis->SetActorLocationAndRotation(SpawnLoc, SpawnRot);
                     PropertyVis->SetActorScale3D(Row.PropertyScale);
                     PropertyVis->PropertyDetails = AssignedProperty;
+
+#if WITH_EDITOR
+                    PropertyVis->SetActorLabel(AssignedProperty.Name);
+#endif
 
                     // Central Registry
                     if (SiteManager)
