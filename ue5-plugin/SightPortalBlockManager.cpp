@@ -338,12 +338,15 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
         {
             float ActiveSpacing = RowSpline->VisualizerSpacing;
 
-            // Ensure the length of the spline matches the Property Count multiplied by the spacing number
-            float TargetSplineLength = Row.PropertyCount * ActiveSpacing;
-            SplineComp->ClearSplinePoints(false);
-            SplineComp->AddSplinePoint(FVector(0.f, 0.f, 0.f), ESplineCoordinateSpace::Local, false);
-            SplineComp->AddSplinePoint(FVector(TargetSplineLength, 0.f, 0.f), ESplineCoordinateSpace::Local, false);
-            SplineComp->UpdateSpline();
+            if (RowSpline->bAutoManageSplinePoints)
+            {
+                // Ensure the length of the spline matches the Property Count multiplied by the spacing number
+                float TargetSplineLength = Row.PropertyCount * ActiveSpacing;
+                SplineComp->ClearSplinePoints(false);
+                SplineComp->AddSplinePoint(FVector(0.f, 0.f, 0.f), ESplineCoordinateSpace::Local, false);
+                SplineComp->AddSplinePoint(FVector(TargetSplineLength, 0.f, 0.f), ESplineCoordinateSpace::Local, false);
+                SplineComp->UpdateSpline();
+            }
 
             for (int32 i = 0; i < Row.PropertyCount; ++i)
             {

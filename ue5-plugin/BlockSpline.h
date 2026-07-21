@@ -39,6 +39,11 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Spline")
     FVector VisualizerScaleOffset = FVector(1.0f, 1.0f, 1.0f);
 
+    // If true, the spline points will be automatically managed as a straight line of matching length.
+    // Uncheck this to manually edit and shape the spline curve in the editor.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Spline")
+    bool bAutoManageSplinePoints = true;
+
     // Track if this block spline has been manually moved by the user in the editor
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|State")
     bool bHasBeenManuallyMoved = false;
