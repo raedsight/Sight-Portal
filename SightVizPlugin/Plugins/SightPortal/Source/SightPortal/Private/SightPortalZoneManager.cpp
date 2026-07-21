@@ -8,6 +8,9 @@ ASightPortalZoneManager::ASightPortalZoneManager()
     BlockCount = 1;
     BlockSpacing = 1000.0f;
     ZoneName = TEXT("1");
+
+    USceneComponent* SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
+    RootComponent = SceneRoot;
 }
 
 void ASightPortalZoneManager::OnConstruction(const FTransform& Transform)
@@ -111,7 +114,7 @@ void ASightPortalZoneManager::SpawnBlockManagers()
         if (Index < ExistingBlocks.Num())
         {
             BlockManager = ExistingBlocks[Index];
-            if (IsValid(BlockManager))
+            if (IsValid(BlockManager) && !BlockManager->bHasBeenManuallyMoved)
             {
                 BlockManager->SetActorLocation(TargetLocation);
             }
@@ -180,3 +183,11 @@ void ASightPortalZoneManager::ClearPropertyVisualizers()
         }
     }
 }
+
+#if WITH_EDITOR
+void ASightPortalZoneManager::PostEditMove(bool bFinished)
+{
+    Super::PostEditMove(bFinished);
+    bHasBeenManuallyMoved = true;
+}
+#endif

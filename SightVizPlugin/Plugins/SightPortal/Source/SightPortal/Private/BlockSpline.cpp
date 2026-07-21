@@ -15,6 +15,7 @@ ABlockSpline::ABlockSpline()
     VisualizerSpacing = 350.0f;
     VisualizerRotationOffset = FRotator::ZeroRotator;
     VisualizerScaleOffset = FVector(1.0f, 1.0f, 1.0f);
+    bAutoManageSplinePoints = true;
 }
 
 void ABlockSpline::BeginPlay()
@@ -31,18 +32,48 @@ void ABlockSpline::OnConstruction(const FTransform& Transform)
     TArray<AActor*> AttachedActors;
     GetAttachedActors(AttachedActors);
 
+    int32 PropertyCount = 0;
+    for (AActor* Child : AttachedActors)
+    {
+        if (IsValid(Child) && Child->IsA(APropertyVisualizer::StaticClass()))
+        {
+            PropertyCount++;
+        }
+    }
+
+    if (bAutoManageSplinePoints && PropertyCount > 0)
+    {
+        float TargetSplineLength = PropertyCount * VisualizerSpacing;
+        SplineComponent->ClearSplinePoints(false);
+        SplineComponent->AddSplinePoint(FVector(0.f, 0.f, 0.f), ESplineCoordinateSpace::Local, false);
+        SplineComponent->AddSplinePoint(FVector(TargetSplineLength, 0.f, 0.f), ESplineCoordinateSpace::Local, false);
+        SplineComponent->UpdateSpline();
+    }
+
     int32 Index = 0;
     for (AActor* Child : AttachedActors)
     {
         if (IsValid(Child) && Child->IsA(APropertyVisualizer::StaticClass()))
         {
-            float Distance = Index * VisualizerSpacing;
-            FVector SpawnLoc = SplineComponent->GetLocationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
-            FRotator SpawnRot = SplineComponent->GetRotationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
+            APropertyVisualizer* PropVis = Cast<APropertyVisualizer>(Child);
+            if (PropVis && !PropVis->bHasBeenManuallyMoved)
+            {
+                float Distance = Index * VisualizerSpacing;
+                FVector SpawnLoc = SplineComponent->GetLocationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
+                FRotator SpawnRot = SplineComponent->GetRotationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
 
-            Child->SetActorLocationAndRotation(SpawnLoc, SpawnRot + VisualizerRotationOffset);
-            Child->SetActorScale3D(VisualizerScaleOffset);
+                Child->SetActorLocationAndRotation(SpawnLoc, SpawnRot + VisualizerRotationOffset);
+                Child->SetActorScale3D(VisualizerScaleOffset);
+            }
             Index++;
         }
     }
 }
+
+#if WITH_EDITOR
+void ABlockSpline::PostEditMove(bool bFinished)
+{
+    Super::PostEditMove(bFinished);
+    bHasBeenManuallyMoved = true;
+}
+#endif

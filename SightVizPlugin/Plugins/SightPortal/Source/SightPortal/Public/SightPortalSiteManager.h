@@ -53,6 +53,14 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SightPortal|SiteManager")
     TMap<FString, AActor*> RegisteredPropertyVisualizers;
 
+    // Track if this site manager has been manually moved by the user in the editor
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|State")
+    bool bHasBeenManuallyMoved = false;
+
+#if WITH_EDITOR
+    virtual void PostEditMove(bool bFinished) override;
+#endif
+
     // --- Operations ---
 
     // Spawns and arranges Zone Managers dynamically
