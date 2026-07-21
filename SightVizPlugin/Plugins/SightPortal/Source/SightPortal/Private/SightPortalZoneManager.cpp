@@ -1,4 +1,5 @@
 #include "SightPortalZoneManager.h"
+#include "SightPortalBlockManager.h"
 #include "Engine/World.h"
 
 ASightPortalZoneManager::ASightPortalZoneManager()
@@ -6,21 +7,18 @@ ASightPortalZoneManager::ASightPortalZoneManager()
     PrimaryActorTick.bCanEverTick = false;
     BlockCount = 1;
     BlockSpacing = 1000.0f;
+    ZoneName = TEXT("1");
 }
 
 void ASightPortalZoneManager::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
-
-    // Spawns block managers dynamically in response to parameter updates in the Editor viewport
-    SpawnBlockManagers();
+    // Removed automatic spawning to prevent resetting manual transforms
 }
 
 void ASightPortalZoneManager::BeginPlay()
 {
     Super::BeginPlay();
-
-    SpawnBlockManagers();
 }
 
 void ASightPortalZoneManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -33,6 +31,8 @@ void ASightPortalZoneManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ASightPortalZoneManager::ClearBlockManagers()
 {
     UE_LOG(LogTemp, Log, TEXT("[SightPortal ZoneManager] Clearing %d active spawned Block Managers..."), ActiveBlockManagers.Num());
+
+    ClearPropertyVisualizers();
 
     for (AActor* Actor : ActiveBlockManagers)
     {
@@ -77,82 +77,106 @@ void ASightPortalZoneManager::SpawnBlockManagers()
     // 1. Scan attached children to recover any untracked valid Block Managers (preserves them across editor rebuilds/reloads)
     TArray<AActor*> AttachedActors;
     GetAttachedActors(AttachedActors);
+
+    TArray<ASightPortalBlockManager*> ExistingBlocks;
     for (AActor* Attached : AttachedActors)
     {
-        if (IsValid(Attached) && Attached->IsA(BlockManagerClass))
+        if (IsValid(Attached) && Attached->IsA(ASightPortalBlockManager::StaticClass()))
         {
-            if (!ActiveBlockManagers.Contains(Attached))
+            ExistingBlocks.Add(Cast<ASightPortalBlockManager>(Attached));
+        }
+    }
+
+    // 2. Destroy excess ones
+    while (ExistingBlocks.Num() > BlockCount)
+    {
+        ASightPortalBlockManager* Excess = ExistingBlocks.Last();
+        if (IsValid(Excess))
+        {
+            Excess->Destroy();
+        }
+        ExistingBlocks.RemoveAt(ExistingBlocks.Num() - 1);
+    }
+
+    // 3. Spawn missing and arrange ALL of them correctly along the spacing vector
+    FVector ManagerLocation = GetActorLocation();
+    FRotator ManagerRotation = GetActorRotation();
+
+    for (int32 Index = 0; Index < BlockCount; ++Index)
+    {
+        // Spacing aligned orthogonally along Forward Vector of the Zone Manager
+        FVector TargetLocation = ManagerLocation + (GetActorForwardVector() * (Index * BlockSpacing));
+
+        ASightPortalBlockManager* BlockManager = nullptr;
+        if (Index < ExistingBlocks.Num())
+        {
+            BlockManager = ExistingBlocks[Index];
+            if (IsValid(BlockManager))
             {
-                ActiveBlockManagers.Add(Attached);
+                BlockManager->SetActorLocation(TargetLocation);
+            }
+        }
+        else
+        {
+            FActorSpawnParameters SpawnParams;
+            SpawnParams.Owner = this;
+            SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+            BlockManager = World->SpawnActor<ASightPortalBlockManager>(
+                BlockManagerClass,
+                TargetLocation,
+                ManagerRotation,
+                SpawnParams
+            );
+
+            if (BlockManager)
+            {
+                // Attach SightPortalBlockManager to SightPortalZoneManager
+                BlockManager->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+                ExistingBlocks.Add(BlockManager);
+                UE_LOG(LogTemp, Log, TEXT("[SightPortal ZoneManager] Successfully spawned and attached Block Manager at location %s"), *TargetLocation.ToString());
+            }
+        }
+
+        if (BlockManager)
+        {
+            // Assign default Block Name based on index if not already custom set
+            if (BlockManager->BlockName.IsEmpty() || BlockManager->BlockName == TEXT("1"))
+            {
+                BlockManager->BlockName = FString::FromInt(Index + 1);
             }
         }
     }
 
-    // 2. Clean up invalid/destroyed actors from our array
-    for (int32 i = ActiveBlockManagers.Num() - 1; i >= 0; --i)
+    ActiveBlockManagers.Empty();
+    for (ASightPortalBlockManager* Block : ExistingBlocks)
     {
-        if (!IsValid(ActiveBlockManagers[i]))
-        {
-            ActiveBlockManagers.RemoveAt(i);
-        }
-    }
-
-    // 3. If any actor in our array is NOT an instance of the current BlockManagerClass, destroy and remove it
-    for (int32 i = ActiveBlockManagers.Num() - 1; i >= 0; --i)
-    {
-        if (IsValid(ActiveBlockManagers[i]) && !ActiveBlockManagers[i]->IsA(BlockManagerClass))
-        {
-            ActiveBlockManagers[i]->Destroy();
-            ActiveBlockManagers.RemoveAt(i);
-        }
-    }
-
-    // 4. If we have more than BlockCount, destroy excess ones from the end
-    while (ActiveBlockManagers.Num() > BlockCount)
-    {
-        AActor* ExcessActor = ActiveBlockManagers.Last();
-        if (IsValid(ExcessActor))
-        {
-            ExcessActor->Destroy();
-        }
-        ActiveBlockManagers.RemoveAt(ActiveBlockManagers.Num() - 1);
-    }
-
-    // 5. Spawn only the missing Block Managers, keeping existing ones (and their custom transforms!) completely intact
-    FVector ManagerLocation = GetActorLocation();
-    FRotator ManagerRotation = GetActorRotation();
-
-    for (int32 Index = ActiveBlockManagers.Num(); Index < BlockCount; ++Index)
-    {
-        // Spacing aligned orthogonally along Forward Vector of the Zone Manager
-        FVector SpawnLoc = ManagerLocation + (GetActorForwardVector() * (Index * BlockSpacing));
-
-        // Ensure SpawnLoc components are finite
-        if (SpawnLoc.ContainsNaN() || SpawnLoc.Size() > 1e12)
-        {
-            UE_LOG(LogTemp, Warning, TEXT("[SightPortal ZoneManager] Spawn location %s is invalid. Skipping spawn for Block index %d"), *SpawnLoc.ToString(), Index);
-            continue;
-        }
-
-        FActorSpawnParameters SpawnParams;
-        SpawnParams.Owner = this;
-        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-        #if WITH_EDITOR
-        if (!World->IsGameWorld())
-        {
-            SpawnParams.ObjectFlags |= RF_Transient;
-        }
-        #endif
-
-        AActor* NewBlockActor = World->SpawnActor<AActor>(BlockManagerClass, SpawnLoc, ManagerRotation, SpawnParams);
-        if (NewBlockActor)
-        {
-            // Attach SightPortalBlockManager to SightPortalZoneManager
-            NewBlockActor->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
-            ActiveBlockManagers.Add(NewBlockActor);
-            UE_LOG(LogTemp, Log, TEXT("[SightPortal ZoneManager] Successfully spawned and attached Block Manager at location %s"), *SpawnLoc.ToString());
-        }
+        ActiveBlockManagers.Add(Block);
     }
 
     bIsSpawning = false;
+}
+
+void ASightPortalZoneManager::SpawnPropertyVisualizers()
+{
+    for (AActor* BlockActor : ActiveBlockManagers)
+    {
+        ASightPortalBlockManager* Block = Cast<ASightPortalBlockManager>(BlockActor);
+        if (IsValid(Block))
+        {
+            Block->SpawnPropertyVisualizers();
+        }
+    }
+}
+
+void ASightPortalZoneManager::ClearPropertyVisualizers()
+{
+    for (AActor* BlockActor : ActiveBlockManagers)
+    {
+        ASightPortalBlockManager* Block = Cast<ASightPortalBlockManager>(BlockActor);
+        if (IsValid(Block))
+        {
+            Block->ClearPropertyVisualizers();
+        }
+    }
 }

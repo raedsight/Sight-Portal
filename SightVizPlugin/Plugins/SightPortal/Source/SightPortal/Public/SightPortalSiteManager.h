@@ -37,19 +37,55 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Configuration")
     TSubclassOf<AActor> ZoneManagerClass;
 
+    // Web Socket URL to stream live real-estate updates
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Network")
+    FString WebSocketURL;
+
+    // Remote Endpoint URL to poll current spreadsheet records
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Network")
+    FString RemoteEndpointURL;
+
     // List of active spawned Zone Managers representing zones in the level
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SightPortal|State")
     TArray<AActor*> ActiveZoneManagers;
 
+    // Map tracking active spawned property visualizers in the site, mapping Property Name to the Actor
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SightPortal|SiteManager")
+    TMap<FString, AActor*> RegisteredPropertyVisualizers;
+
     // --- Operations ---
 
     // Spawns and arranges Zone Managers dynamically
-    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
     void SpawnZoneManagers();
 
     // Cleans up all spawned Zone Managers
-    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
     void ClearZoneManagers();
+
+    // Spawns/updates Property Visualizers for all child zones (which in turn spawn for blocks)
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
+    void SpawnPropertyVisualizers();
+
+    // Clears Property Visualizers for all child zones (which in turn clear for blocks)
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
+    void ClearPropertyVisualizers();
+
+    // Force fetch spreadsheet data and update websocket connection
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
+    void ForceFetchData();
+
+    // Register a spawned property visualizer in the site-wide directory
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|SiteManager")
+    void RegisterPropertyVisualizer(const FString& PropertyName, AActor* VisualizerActor);
+
+    // Unregister a property visualizer from the site-wide directory
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|SiteManager")
+    void UnregisterPropertyVisualizer(const FString& PropertyName);
+
+    // Get a registered property visualizer by name
+    UFUNCTION(BlueprintPure, Category = "SightPortal|SiteManager")
+    AActor* GetRegisteredPropertyVisualizer(const FString& PropertyName) const;
 
 private:
     bool bIsSpawning = false;

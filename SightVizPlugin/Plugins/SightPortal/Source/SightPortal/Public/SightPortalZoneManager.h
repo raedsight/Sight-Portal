@@ -33,6 +33,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|ZoneConfiguration")
     float BlockSpacing = 1000.0f;
 
+    // Custom Zone Name identifier for property matching
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|ZoneConfiguration")
+    FString ZoneName = TEXT("1");
+
     // Blueprint-editable Template class to spawn for each Block Manager
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|ZoneConfiguration")
     TSubclassOf<AActor> BlockManagerClass;
@@ -44,12 +48,20 @@ public:
     // --- Operations ---
 
     // Spawns and arranges Block Managers dynamically
-    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
     void SpawnBlockManagers();
 
     // Cleans up all spawned Block Managers
-    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
     void ClearBlockManagers();
+
+    // Spawns/updates Property Visualizers for all child blocks (which in turn spawn for rows)
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
+    void SpawnPropertyVisualizers();
+
+    // Clears Property Visualizers for all child blocks (which in turn clear for rows)
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
+    void ClearPropertyVisualizers();
 
 private:
     bool bIsSpawning = false;
