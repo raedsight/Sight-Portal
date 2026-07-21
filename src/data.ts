@@ -11,10 +11,10 @@ export const SPREADSHEET_TEMPLATES: Record<string, SpreadsheetData> = {
   "ArchViz Real-Estate Portfolio": {
     headers: ["Name", "Zone", "Block", "Door No", "Price", "Surface", "Availability", "BuildingSurface", "BedroomsCount", "BathroomsCount"],
     rows: [
-      { Name: "Villa Bella Vista", Zone: "Luxury West", Block: "A", "Door No": "101", Price: "1250000", Surface: "450.0", Availability: "Available", BuildingSurface: "350.0", BedroomsCount: "5", BathroomsCount: "4" },
-      { Name: "Penthouse SkyLine", Zone: "Downtown", Block: "B", "Door No": "3202", Price: "2890000", Surface: "280.0", Availability: "Available", BuildingSurface: "220.0", BedroomsCount: "3", BathroomsCount: "3" },
-      { Name: "LakeSide Cottage", Zone: "North Basin", Block: "C", "Door No": "24", Price: "680000", Surface: "185.0", Availability: "Under Offer", BuildingSurface: "150.0", BedroomsCount: "4", BathroomsCount: "2" },
-      { Name: "Minimalist Loft", Zone: "Arts District", Block: "D", "Door No": "408", Price: "450000", Surface: "120.0", Availability: "Sold", BuildingSurface: "100.0", BedroomsCount: "2", BathroomsCount: "2" },
+      { Name: "Z1B11", Zone: "Z1", Block: "Z1B1", "Door No": "1", Price: "1250000", Surface: "450.0", Availability: "Available", BuildingSurface: "350.0", BedroomsCount: "5", BathroomsCount: "4" },
+      { Name: "Z1B12", Zone: "Z1", Block: "Z1B1", "Door No": "2", Price: "2890000", Surface: "280.0", Availability: "Available", BuildingSurface: "220.0", BedroomsCount: "3", BathroomsCount: "3" },
+      { Name: "Z1B21", Zone: "Z1", Block: "Z1B2", "Door No": "1", Price: "680000", Surface: "185.0", Availability: "Under Offer", BuildingSurface: "150.0", BedroomsCount: "4", BathroomsCount: "2" },
+      { Name: "Z2B11", Zone: "Z2", Block: "Z2B1", "Door No": "1", Price: "450000", Surface: "120.0", Availability: "Sold", BuildingSurface: "100.0", BedroomsCount: "2", BathroomsCount: "2" },
     ],
   },
   "Virtual Camera & Rig Parameters": {

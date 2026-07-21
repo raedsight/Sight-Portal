@@ -197,7 +197,7 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
     {
         for (const FSightPortalProperty& Prop : Connector->CachedProperties)
         {
-            if (Prop.Zone.Equals(ZoneName, ESearchCase::IgnoreCase) && Prop.Block.Equals(BlockName, ESearchCase::IgnoreCase))
+            if (Prop.Name.StartsWith(BlockName, ESearchCase::IgnoreCase))
             {
                 MatchedProperties.Add(Prop);
             }
@@ -338,6 +338,13 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
         {
             float ActiveSpacing = RowSpline->VisualizerSpacing;
 
+            // Ensure the length of the spline matches the Property Count multiplied by the spacing number
+            float TargetSplineLength = Row.PropertyCount * ActiveSpacing;
+            SplineComp->ClearSplinePoints(false);
+            SplineComp->AddSplinePoint(FVector(0.f, 0.f, 0.f), ESplineCoordinateSpace::Local, false);
+            SplineComp->AddSplinePoint(FVector(TargetSplineLength, 0.f, 0.f), ESplineCoordinateSpace::Local, false);
+            SplineComp->UpdateSpline();
+
             for (int32 i = 0; i < Row.PropertyCount; ++i)
             {
                 float Distance = i * ActiveSpacing;
@@ -346,7 +353,7 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
 
                 int32 VisualizerBlockIndex = CumulativeIndex + i;
 
-                FString ExpectedName = FString::Printf(TEXT("%s%d"), *BlockName, i + 1);
+                FString ExpectedName = FString::Printf(TEXT("%s%d"), *BlockName, VisualizerBlockIndex + 1);
 
                 // Determine unique real-estate property data to load
                 FSightPortalProperty AssignedProperty;
@@ -372,7 +379,7 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
                         {
                             if (Prop.Zone.Equals(ZoneName, ESearchCase::IgnoreCase) &&
                                 Prop.Block.Equals(BlockName, ESearchCase::IgnoreCase) &&
-                                Prop.DoorNo == (i + 1))
+                                Prop.DoorNo == (VisualizerBlockIndex + 1))
                             {
                                 AssignedProperty = Prop;
                                 bFoundMatch = true;
@@ -402,7 +409,7 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
                     AssignedProperty.Name = ExpectedName;
                     AssignedProperty.Zone = ZoneName;
                     AssignedProperty.Block = BlockName;
-                    AssignedProperty.DoorNo = i + 1;
+                    AssignedProperty.DoorNo = VisualizerBlockIndex + 1;
                     AssignedProperty.Price = 250000.0f + (VisualizerBlockIndex * 15000.0f);
                     AssignedProperty.Surface = 120.0f + (VisualizerBlockIndex * 10.0f);
                     AssignedProperty.Availability = TEXT("Available");

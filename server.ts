@@ -22,10 +22,10 @@ async function startServer() {
       target_class: "ArchViz Real-Estate Portfolio",
       attributes_matrix: [
         {
-          Name: "Villa Bella Vista",
-          Zone: "Luxury West",
-          Block: "A",
-          "Door No": "101",
+          Name: "Z1B11",
+          Zone: "Z1",
+          Block: "Z1B1",
+          "Door No": "1",
           Price: "1250000",
           Surface: "450.0",
           Availability: "Available",
@@ -35,10 +35,10 @@ async function startServer() {
           Class: "Residential"
         },
         {
-          Name: "Penthouse SkyLine",
-          Zone: "Downtown",
-          Block: "B",
-          "Door No": "3202",
+          Name: "Z1B12",
+          Zone: "Z1",
+          Block: "Z1B1",
+          "Door No": "2",
           Price: "2890000",
           Surface: "280.0",
           Availability: "Available",
@@ -48,10 +48,10 @@ async function startServer() {
           Class: "Residential"
         },
         {
-          Name: "LakeSide Cottage",
-          Zone: "North Basin",
-          Block: "C",
-          "Door No": "24",
+          Name: "Z1B21",
+          Zone: "Z1",
+          Block: "Z1B2",
+          "Door No": "1",
           Price: "680000",
           Surface: "185.0",
           Availability: "Under Offer",
@@ -61,10 +61,10 @@ async function startServer() {
           Class: "Residential"
         },
         {
-          Name: "Minimalist Loft",
-          Zone: "Arts District",
-          Block: "D",
-          "Door No": "408",
+          Name: "Z2B11",
+          Zone: "Z2",
+          Block: "Z2B1",
+          "Door No": "1",
           Price: "450000",
           Surface: "120.0",
           Availability: "Sold",

@@ -31,6 +31,24 @@ void ABlockSpline::OnConstruction(const FTransform& Transform)
     TArray<AActor*> AttachedActors;
     GetAttachedActors(AttachedActors);
 
+    int32 PropertyCount = 0;
+    for (AActor* Child : AttachedActors)
+    {
+        if (IsValid(Child) && Child->IsA(APropertyVisualizer::StaticClass()))
+        {
+            PropertyCount++;
+        }
+    }
+
+    if (PropertyCount > 0)
+    {
+        float TargetSplineLength = PropertyCount * VisualizerSpacing;
+        SplineComponent->ClearSplinePoints(false);
+        SplineComponent->AddSplinePoint(FVector(0.f, 0.f, 0.f), ESplineCoordinateSpace::Local, false);
+        SplineComponent->AddSplinePoint(FVector(TargetSplineLength, 0.f, 0.f), ESplineCoordinateSpace::Local, false);
+        SplineComponent->UpdateSpline();
+    }
+
     int32 Index = 0;
     for (AActor* Child : AttachedActors)
     {
