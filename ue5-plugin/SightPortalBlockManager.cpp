@@ -445,6 +445,12 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
                         PropertyVis->SetActorLocationAndRotation(SpawnLoc, SpawnRot);
                         PropertyVis->SetActorScale3D(RowSpline->VisualizerScaleOffset);
                     }
+                    else
+                    {
+                        FTransform DefaultTransform(SpawnRot, SpawnLoc, RowSpline->VisualizerScaleOffset);
+                        FTransform FinalTransform = PropertyVis->ManualRelativeTransform * DefaultTransform;
+                        PropertyVis->SetActorTransform(FinalTransform);
+                    }
                     PropertyVis->PropertyDetails = AssignedProperty;
 
 #if WITH_EDITOR

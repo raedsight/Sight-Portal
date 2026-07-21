@@ -29,6 +29,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|State")
     bool bHasBeenManuallyMoved = false;
 
+    // Relative transform offset from its default spline position when manually moved in the editor
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|State")
+    FTransform ManualRelativeTransform;
+
 #if WITH_EDITOR
     virtual void PostEditMove(bool bFinished) override;
 #endif
