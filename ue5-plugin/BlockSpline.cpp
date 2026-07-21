@@ -15,6 +15,7 @@ ABlockSpline::ABlockSpline()
     VisualizerSpacing = 350.0f;
     VisualizerRotationOffset = FRotator::ZeroRotator;
     VisualizerScaleOffset = FVector(1.0f, 1.0f, 1.0f);
+    bAutoManageSplinePoints = true;
 }
 
 void ABlockSpline::BeginPlay()
@@ -40,7 +41,7 @@ void ABlockSpline::OnConstruction(const FTransform& Transform)
         }
     }
 
-    if (PropertyCount > 0)
+    if (bAutoManageSplinePoints && PropertyCount > 0)
     {
         float TargetSplineLength = PropertyCount * VisualizerSpacing;
         SplineComponent->ClearSplinePoints(false);
