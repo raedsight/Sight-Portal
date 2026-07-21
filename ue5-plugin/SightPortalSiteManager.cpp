@@ -21,6 +21,22 @@ void ASightPortalSiteManager::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
     // Removed automatic spawning to prevent resetting manual transforms
+
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    if (Connector)
+    {
+        // Bind callback to ensure we receive updates dynamically in the editor
+        if (!Connector->OnRealEstateDataReceived.IsAlreadyBound(this, &ASightPortalSiteManager::HandleDataReceived))
+        {
+            Connector->OnRealEstateDataReceived.AddDynamic(this, &ASightPortalSiteManager::HandleDataReceived);
+        }
+
+        // Dynamically update property visualizers with latest cached data during construction
+        if (Connector->CachedProperties.Num() > 0)
+        {
+            HandleDataReceived(Connector->CachedProperties);
+        }
+    }
 }
 
 void ASightPortalSiteManager::BeginPlay()
@@ -37,7 +53,10 @@ void ASightPortalSiteManager::BeginPlay()
         Connector->RemoteEndpointURL = RemoteEndpointURL;
 
         // Bind callback for when data is fetched/updated
-        Connector->OnRealEstateDataReceived.AddDynamic(this, &ASightPortalSiteManager::HandleDataReceived);
+        if (!Connector->OnRealEstateDataReceived.IsAlreadyBound(this, &ASightPortalSiteManager::HandleDataReceived))
+        {
+            Connector->OnRealEstateDataReceived.AddDynamic(this, &ASightPortalSiteManager::HandleDataReceived);
+        }
         
         Connector->DisconnectWebSocket();
         Connector->ConnectWebSocket();
@@ -56,6 +75,17 @@ void ASightPortalSiteManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
     }
 
     Super::EndPlay(EndPlayReason);
+}
+
+void ASightPortalSiteManager::Destroyed()
+{
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    if (Connector)
+    {
+        Connector->OnRealEstateDataReceived.RemoveDynamic(this, &ASightPortalSiteManager::HandleDataReceived);
+    }
+
+    Super::Destroyed();
 }
 
 void ASightPortalSiteManager::ClearZoneManagers()
@@ -243,6 +273,18 @@ void ASightPortalSiteManager::ForceFetchData()
         Connector->WebSocketURL = WebSocketURL;
         Connector->RemoteEndpointURL = RemoteEndpointURL;
 
+        // Ensure we are bound to receive the update dynamically in the editor
+        if (!Connector->OnRealEstateDataReceived.IsAlreadyBound(this, &ASightPortalSiteManager::HandleDataReceived))
+        {
+            Connector->OnRealEstateDataReceived.AddDynamic(this, &ASightPortalSiteManager::HandleDataReceived);
+        }
+
+        // Apply any cached properties immediately for instant visual feedback in the editor
+        if (Connector->CachedProperties.Num() > 0)
+        {
+            HandleDataReceived(Connector->CachedProperties);
+        }
+
         // Force disconnect and reconnect WebSocket using the new URL
         Connector->DisconnectWebSocket();
         Connector->ConnectWebSocket();
@@ -270,20 +312,73 @@ void ASightPortalSiteManager::HandleDataReceived(const TArray<FSightPortalProper
 
     for (const FSightPortalProperty& Prop : PropertyPortfolio)
     {
+        APropertyVisualizer* TargetVis = nullptr;
+
+        // 1. Try exact lookup in the directory map
         AActor* VisualizerActor = GetRegisteredPropertyVisualizer(Prop.Name);
         if (IsValid(VisualizerActor))
         {
-            APropertyVisualizer* PropVis = Cast<APropertyVisualizer>(VisualizerActor);
-            if (PropVis)
+            TargetVis = Cast<APropertyVisualizer>(VisualizerActor);
+        }
+
+        // 2. If not found by name, try finding by Zone, Block, and DoorNo across all registered visualizers
+        if (!TargetVis)
+        {
+            for (auto& Elem : RegisteredPropertyVisualizers)
             {
-                PropVis->PropertyDetails = Prop;
-                
-                // Keep name in sync in the viewport
-#if WITH_EDITOR
-                PropVis->SetActorLabel(Prop.Name);
-#endif
-                UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Updated PropertyDetails for visualizer '%s'"), *Prop.Name);
+                AActor* Actor = Elem.Value;
+                if (IsValid(Actor))
+                {
+                    APropertyVisualizer* PropVis = Cast<APropertyVisualizer>(Actor);
+                    if (PropVis && 
+                        PropVis->PropertyDetails.Zone.Equals(Prop.Zone, ESearchCase::IgnoreCase) &&
+                        PropVis->PropertyDetails.Block.Equals(Prop.Block, ESearchCase::IgnoreCase) &&
+                        PropVis->PropertyDetails.DoorNo == Prop.DoorNo)
+                    {
+                        TargetVis = PropVis;
+                        break;
+                    }
+                }
             }
+        }
+
+        // 3. If still not found, search by exact name match in the registered visualizers' properties
+        if (!TargetVis)
+        {
+            for (auto& Elem : RegisteredPropertyVisualizers)
+            {
+                AActor* Actor = Elem.Value;
+                if (IsValid(Actor))
+                {
+                    APropertyVisualizer* PropVis = Cast<APropertyVisualizer>(Actor);
+                    if (PropVis && PropVis->PropertyDetails.Name.Equals(Prop.Name, ESearchCase::IgnoreCase))
+                    {
+                        TargetVis = PropVis;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // If we found the visualizer, update its details!
+        if (TargetVis)
+        {
+            FString OldName = TargetVis->PropertyDetails.Name;
+            
+            TargetVis->PropertyDetails = Prop;
+
+#if WITH_EDITOR
+            TargetVis->SetActorLabel(Prop.Name);
+#endif
+
+            // Keep the map registry updated if the name changes
+            if (!OldName.Equals(Prop.Name, ESearchCase::IgnoreCase))
+            {
+                UnregisterPropertyVisualizer(OldName);
+                RegisterPropertyVisualizer(Prop.Name, TargetVis);
+            }
+
+            UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Updated PropertyDetails for visualizer '%s'"), *Prop.Name);
         }
     }
 }
