@@ -35,7 +35,7 @@ void ASightPortalBlockManager::OnConstruction(const FTransform& Transform)
     }
 
     // Call SpawnPropertyVisualizers to allow live interactive updates of properties in real time
-    SpawnPropertyVisualizers();
+    //SpawnPropertyVisualizers();
 }
 
 void ASightPortalBlockManager::BeginPlay()
@@ -444,6 +444,12 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
                     {
                         PropertyVis->SetActorLocationAndRotation(SpawnLoc, SpawnRot);
                         PropertyVis->SetActorScale3D(RowSpline->VisualizerScaleOffset);
+                    }
+                    else
+                    {
+                        FTransform DefaultTransform(SpawnRot, SpawnLoc, RowSpline->VisualizerScaleOffset);
+                        FTransform FinalTransform = PropertyVis->ManualRelativeTransform * DefaultTransform;
+                        PropertyVis->SetActorTransform(FinalTransform);
                     }
                     PropertyVis->PropertyDetails = AssignedProperty;
 

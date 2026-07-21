@@ -56,14 +56,23 @@ void ABlockSpline::OnConstruction(const FTransform& Transform)
         if (IsValid(Child) && Child->IsA(APropertyVisualizer::StaticClass()))
         {
             APropertyVisualizer* PropVis = Cast<APropertyVisualizer>(Child);
-            if (PropVis && !PropVis->bHasBeenManuallyMoved)
+            if (PropVis)
             {
                 float Distance = Index * VisualizerSpacing;
                 FVector SpawnLoc = SplineComponent->GetLocationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
                 FRotator SpawnRot = SplineComponent->GetRotationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
 
-                Child->SetActorLocationAndRotation(SpawnLoc, SpawnRot + VisualizerRotationOffset);
-                Child->SetActorScale3D(VisualizerScaleOffset);
+                if (!PropVis->bHasBeenManuallyMoved)
+                {
+                    PropVis->SetActorLocationAndRotation(SpawnLoc, SpawnRot + VisualizerRotationOffset);
+                    PropVis->SetActorScale3D(VisualizerScaleOffset);
+                }
+                else
+                {
+                    FTransform DefaultTransform(SpawnRot + VisualizerRotationOffset, SpawnLoc, VisualizerScaleOffset);
+                    FTransform FinalTransform = PropVis->ManualRelativeTransform * DefaultTransform;
+                    PropVis->SetActorTransform(FinalTransform);
+                }
             }
             Index++;
         }
