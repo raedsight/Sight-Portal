@@ -33,6 +33,9 @@ void ASightPortalBlockManager::OnConstruction(const FTransform& Transform)
     {
         PropertyRowDetails.SetNum(PropertyRowCount);
     }
+
+    // Call SpawnPropertyVisualizers to allow live interactive updates of properties in real time
+    //SpawnPropertyVisualizers();
 }
 
 void ASightPortalBlockManager::BeginPlay()
@@ -249,7 +252,7 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
     {
         FPropertyBlockRowDetails& Row = PropertyRowDetails[RowIndex];
 
-        FVector SplineLocation = ManagerLocation + (GetActorForwardVector() * (RowIndex * RowSpacing)) + (SpawnOffset * RowIndex) + Row.PropertyLocation;
+        FVector SplineLocation = ManagerLocation + (GetActorForwardVector() * (RowIndex * RowSpacing)) + (SpawnOffset * RowIndex);
 
         ABlockSpline* RowSpline = nullptr;
         if (RowIndex < FoundSplines.Num())
@@ -287,10 +290,6 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
 #if WITH_EDITOR
         RowSpline->SetActorLabel(FString::Printf(TEXT("%s_Spline_R%d"), *BlockName, RowIndex + 1));
 #endif
-
-        // Apply visual settings to the spline
-        RowSpline->VisualizerRotationOffset = Row.PropertyRotation;
-        RowSpline->VisualizerScaleOffset = Row.PropertyScale;
 
         // Clean up destroyed/invalid visualizer references from the tracking array
         for (int32 i = Row.SpawnedVisualizers.Num() - 1; i >= 0; --i)
@@ -352,7 +351,7 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
             {
                 float Distance = i * ActiveSpacing;
                 FVector SpawnLoc = SplineComp->GetLocationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
-                FRotator SpawnRot = SplineComp->GetRotationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World) + Row.PropertyRotation;
+                FRotator SpawnRot = SplineComp->GetRotationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World) + RowSpline->VisualizerRotationOffset;
 
                 int32 VisualizerBlockIndex = CumulativeIndex + i;
 
@@ -444,7 +443,13 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
                     if (!PropertyVis->bHasBeenManuallyMoved)
                     {
                         PropertyVis->SetActorLocationAndRotation(SpawnLoc, SpawnRot);
-                        PropertyVis->SetActorScale3D(Row.PropertyScale);
+                        PropertyVis->SetActorScale3D(RowSpline->VisualizerScaleOffset);
+                    }
+                    else
+                    {
+                        FTransform DefaultTransform(SpawnRot, SpawnLoc, RowSpline->VisualizerScaleOffset);
+                        FTransform FinalTransform = PropertyVis->ManualRelativeTransform * DefaultTransform;
+                        PropertyVis->SetActorTransform(FinalTransform);
                     }
                     PropertyVis->PropertyDetails = AssignedProperty;
 
