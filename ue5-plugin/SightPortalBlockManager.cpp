@@ -197,7 +197,7 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
     {
         for (const FSightPortalProperty& Prop : Connector->CachedProperties)
         {
-            if (Prop.Zone.Equals(ZoneName, ESearchCase::IgnoreCase) && Prop.Block.Equals(BlockName, ESearchCase::IgnoreCase))
+            if (Prop.Name.StartsWith(BlockName, ESearchCase::IgnoreCase))
             {
                 MatchedProperties.Add(Prop);
             }
@@ -384,14 +384,14 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
                     // 3. If still not found, but we have some matched properties for this block, use index-based selection
                     if (!bFoundMatch && MatchedProperties.Num() > 0)
                     {
-                        AssignedProperty = MatchedProperties[VisualizerBlockIndex % MatchedProperties.Num()];
+                        AssignedProperty = MatchedProperties[i % MatchedProperties.Num()];
                         bFoundMatch = true;
                     }
 
                     // 4. Global index fallback as a last resort if cache has items but no specific match
                     if (!bFoundMatch && Connector->CachedProperties.Num() > 0)
                     {
-                        AssignedProperty = Connector->CachedProperties[VisualizerBlockIndex % Connector->CachedProperties.Num()];
+                        AssignedProperty = Connector->CachedProperties[i % Connector->CachedProperties.Num()];
                         bFoundMatch = true;
                     }
                 }
