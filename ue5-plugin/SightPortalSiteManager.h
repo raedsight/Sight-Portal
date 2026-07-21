@@ -95,6 +95,10 @@ public:
     UFUNCTION(BlueprintPure, Category = "SightPortal|SiteManager")
     AActor* GetRegisteredPropertyVisualizer(const FString& PropertyName) const;
 
+    // Callback when new spreadsheet data is fetched
+    UFUNCTION()
+    void HandleDataReceived(const TArray<FSightPortalProperty>& PropertyPortfolio);
+
 private:
     bool bIsSpawning = false;
 };
