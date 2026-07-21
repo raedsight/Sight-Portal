@@ -45,6 +45,14 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SightPortal|State")
     TArray<AActor*> ActiveBlockManagers;
 
+    // Track if this zone manager has been manually moved by the user in the editor
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|State")
+    bool bHasBeenManuallyMoved = false;
+
+#if WITH_EDITOR
+    virtual void PostEditMove(bool bFinished) override;
+#endif
+
     // --- Operations ---
 
     // Spawns and arranges Block Managers dynamically
