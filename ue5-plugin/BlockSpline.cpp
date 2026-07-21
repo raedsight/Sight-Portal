@@ -36,13 +36,25 @@ void ABlockSpline::OnConstruction(const FTransform& Transform)
     {
         if (IsValid(Child) && Child->IsA(APropertyVisualizer::StaticClass()))
         {
-            float Distance = Index * VisualizerSpacing;
-            FVector SpawnLoc = SplineComponent->GetLocationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
-            FRotator SpawnRot = SplineComponent->GetRotationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
+            APropertyVisualizer* PropVis = Cast<APropertyVisualizer>(Child);
+            if (PropVis && !PropVis->bHasBeenManuallyMoved)
+            {
+                float Distance = Index * VisualizerSpacing;
+                FVector SpawnLoc = SplineComponent->GetLocationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
+                FRotator SpawnRot = SplineComponent->GetRotationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
 
-            Child->SetActorLocationAndRotation(SpawnLoc, SpawnRot + VisualizerRotationOffset);
-            Child->SetActorScale3D(VisualizerScaleOffset);
+                Child->SetActorLocationAndRotation(SpawnLoc, SpawnRot + VisualizerRotationOffset);
+                Child->SetActorScale3D(VisualizerScaleOffset);
+            }
             Index++;
         }
     }
 }
+
+#if WITH_EDITOR
+void ABlockSpline::PostEditMove(bool bFinished)
+{
+    Super::PostEditMove(bFinished);
+    bHasBeenManuallyMoved = true;
+}
+#endif

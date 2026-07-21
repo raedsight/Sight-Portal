@@ -24,4 +24,12 @@ public:
     // A single variable of type FSightPortalProperty containing the real-estate data
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Property")
     FSightPortalProperty PropertyDetails;
+
+    // Track if this visualizer has been manually moved by the user in the editor
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|State")
+    bool bHasBeenManuallyMoved = false;
+
+#if WITH_EDITOR
+    virtual void PostEditMove(bool bFinished) override;
+#endif
 };

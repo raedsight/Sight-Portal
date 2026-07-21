@@ -15,6 +15,9 @@ ASightPortalBlockManager::ASightPortalBlockManager()
     RowSpacing = 500.0f;
     PropertyRowCount = 1;
     BlockName = TEXT("1");
+
+    USceneComponent* SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
+    RootComponent = SceneRoot;
 }
 
 void ASightPortalBlockManager::OnConstruction(const FTransform& Transform)
@@ -252,7 +255,7 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
         if (RowIndex < FoundSplines.Num())
         {
             RowSpline = FoundSplines[RowIndex];
-            if (IsValid(RowSpline))
+            if (IsValid(RowSpline) && !RowSpline->bHasBeenManuallyMoved)
             {
                 RowSpline->SetActorLocation(SplineLocation);
             }
@@ -428,8 +431,11 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
 
                 if (PropertyVis)
                 {
-                    PropertyVis->SetActorLocationAndRotation(SpawnLoc, SpawnRot);
-                    PropertyVis->SetActorScale3D(Row.PropertyScale);
+                    if (!PropertyVis->bHasBeenManuallyMoved)
+                    {
+                        PropertyVis->SetActorLocationAndRotation(SpawnLoc, SpawnRot);
+                        PropertyVis->SetActorScale3D(Row.PropertyScale);
+                    }
                     PropertyVis->PropertyDetails = AssignedProperty;
 
 #if WITH_EDITOR
@@ -451,3 +457,11 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
 
     bIsSpawning = false;
 }
+
+#if WITH_EDITOR
+void ASightPortalBlockManager::PostEditMove(bool bFinished)
+{
+    Super::PostEditMove(bFinished);
+    bHasBeenManuallyMoved = true;
+}
+#endif

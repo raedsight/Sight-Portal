@@ -11,6 +11,9 @@ ASightPortalSiteManager::ASightPortalSiteManager()
     ZoneSpacing = 1500.0f;
     WebSocketURL = TEXT("wss://ais-pre-4wjcvfkjzt7ohntjrl7gk5-405891248157.europe-west3.run.app/ws/hyperion-vis");
     RemoteEndpointURL = TEXT("https://sight-portal-1127775803.europe-west2.run.app/api/health");
+
+    USceneComponent* SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
+    RootComponent = SceneRoot;
 }
 
 void ASightPortalSiteManager::OnConstruction(const FTransform& Transform)
@@ -128,7 +131,7 @@ void ASightPortalSiteManager::SpawnZoneManagers()
         if (Index < ExistingZones.Num())
         {
             TargetZone = ExistingZones[Index];
-            if (IsValid(TargetZone))
+            if (IsValid(TargetZone) && !TargetZone->bHasBeenManuallyMoved)
             {
                 TargetZone->SetActorLocation(TargetLocation);
             }
@@ -242,3 +245,11 @@ void ASightPortalSiteManager::ForceFetchData()
         UE_LOG(LogTemp, Warning, TEXT("[SightPortal SiteManager] USightPortalConnector subsystem not found during ForceFetchData."));
     }
 }
+
+#if WITH_EDITOR
+void ASightPortalSiteManager::PostEditMove(bool bFinished)
+{
+    Super::PostEditMove(bFinished);
+    bHasBeenManuallyMoved = true;
+}
+#endif
