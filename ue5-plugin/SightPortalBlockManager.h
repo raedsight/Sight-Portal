@@ -23,18 +23,6 @@ struct FPropertyBlockRowDetails
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|BlockRow")
     TSubclassOf<APropertyVisualizer> PropertyVisualizer;
 
-    // Custom offset location to apply to properties in this row (Property Location)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|BlockRow")
-    FVector PropertyLocation = FVector::ZeroVector;
-
-    // Custom offset rotation to apply to properties in this row
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|BlockRow")
-    FRotator PropertyRotation = FRotator::ZeroRotator;
-
-    // Custom offset scale to apply to properties in this row
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|BlockRow")
-    FVector PropertyScale = FVector(1.0f, 1.0f, 1.0f);
-
     // List of active spawned property visualizers for this row
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SightPortal|BlockRow")
     TArray<AActor*> SpawnedVisualizers;
