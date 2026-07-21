@@ -140,11 +140,11 @@ void ASightPortalZoneManager::SpawnBlockManagers()
 
         if (BlockManager)
         {
-            // Assign default Block Name based on index if not already custom set
-            if (BlockManager->BlockName.IsEmpty() || BlockManager->BlockName == TEXT("1"))
-            {
-                BlockManager->BlockName = FString::FromInt(Index + 1);
-            }
+            // Assign Block Name based on parent zone name and index (e.g. Z1B1, Z1B2...)
+            BlockManager->BlockName = FString::Printf(TEXT("%sB%d"), *ZoneName, Index + 1);
+#if WITH_EDITOR
+            BlockManager->SetActorLabel(BlockManager->BlockName);
+#endif
         }
     }
 
