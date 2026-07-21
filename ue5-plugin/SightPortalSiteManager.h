@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "SightPortalConnector.h"
 #include "SightPortalSiteManager.generated.h"
 
 /**
@@ -96,8 +97,12 @@ public:
     UFUNCTION(BlueprintPure, Category = "SightPortal|SiteManager")
     AActor* GetRegisteredPropertyVisualizer(const FString& PropertyName) const;
 
+    // Delegate/callback to handle data received events elsewhere in Blueprints
+    UPROPERTY(BlueprintAssignable, Category = "SightPortal|SiteManager")
+    FOnSightPortalDataReceived OnDataReceived;
+
     // Callback when new spreadsheet data is fetched
-    UFUNCTION()
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|SiteManager")
     void HandleDataReceived(const TArray<FSightPortalProperty>& PropertyPortfolio);
 
 private:

@@ -381,4 +381,7 @@ void ASightPortalSiteManager::HandleDataReceived(const TArray<FSightPortalProper
             UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Updated PropertyDetails for visualizer '%s'"), *Prop.Name);
         }
     }
+
+    // Broadcast the callback to Blueprint listeners so they can handle the data elsewhere
+    OnDataReceived.Broadcast(PropertyPortfolio);
 }
