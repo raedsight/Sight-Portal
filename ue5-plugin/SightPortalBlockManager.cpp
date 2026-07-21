@@ -35,7 +35,7 @@ void ASightPortalBlockManager::OnConstruction(const FTransform& Transform)
     }
 
     // Call SpawnPropertyVisualizers to allow live interactive updates of properties in real time
-    SpawnPropertyVisualizers();
+    //SpawnPropertyVisualizers();
 }
 
 void ASightPortalBlockManager::BeginPlay()
