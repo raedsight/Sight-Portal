@@ -1,27 +1,186 @@
 @import "tailwindcss";
 
+:root {
+  --bg: #1a1c1f;
+  --surface: #141619;
+  --ink: #e2e8f0;
+  --accent: #f59e0b;
+  --secondary: #263e5f;
+  --border: rgba(245, 158, 11, 0.2);
+  --ink-faint: rgba(255, 255, 255, 0.08);
+  --ink-muted: rgba(226, 232, 240, 0.5);
+  --sidebar-w: 300px;
+}
+
 @theme {
-  --color-unreal-blue: #0070FF;
+  --color-unreal-blue: #f59e0b;
+  --font-syne: 'Syne', sans-serif;
+  --font-mono: 'Space Mono', monospace;
+  --font-sans: 'Inter', sans-serif;
 }
 
 @layer utilities {
-  .glass {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(10px);
+  .mono {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--accent);
   }
-  
-  .status-pulse {
-    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  }
-}
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  .label {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+  }
+
+  .h-display {
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 0.95;
+  }
+
+  .btn {
+    background: var(--accent);
+    color: #000;
+    padding: 0.75rem 1.5rem;
+    border-radius: 2px;
+    font-weight: 700;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+
+  .btn-outline {
+    background: transparent;
+    border: 1px solid var(--secondary);
+    color: var(--accent);
+    padding: 0.75rem 1.5rem;
+    border-radius: 2px;
+    font-weight: 700;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-outline:hover {
+    background: rgba(38, 62, 95, 0.3);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .tag {
+    padding: 2px 6px;
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 2px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    display: inline-block;
+  }
+
+  .data-card {
+    border: 1px solid var(--secondary);
+    padding: 1.5rem;
+    border-radius: 2px;
+    background: rgba(38, 62, 95, 0.15);
+    transition: all 0.2s ease;
+  }
+
+  .data-card:hover {
+    border-color: var(--accent);
+    background: rgba(38, 62, 95, 0.25);
+  }
+
+  .portal-select {
+    background: var(--surface);
+    border: 1px solid var(--secondary);
+    color: var(--ink);
+    padding: 0.6rem 1rem;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.75rem;
+    border-radius: 2px;
+  }
+
+  .client-card {
+    border: 1px solid var(--secondary);
+    padding: 1.5rem;
+    margin-bottom: 0.75rem;
+    border-radius: 2px;
+    background: rgba(38, 62, 95, 0.15);
+    position: relative;
+    transition: all 0.2s ease;
+  }
+
+  .client-card.active {
+    border-color: var(--accent);
+    background: rgba(245, 158, 11, 0.08);
+  }
+
+  .log-line {
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem;
+  }
+
+  .logs-panel {
+    background: var(--surface);
+    border-top: 2px solid var(--secondary);
+  }
+
+  .logs-stream {
+    background: #0d0e10;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem;
+  }
+
+  .glass {
+    background: rgba(38, 62, 95, 0.15);
+    border: 1px solid var(--secondary);
+  }
+
+  .pane {
+    border-right: 1px solid var(--secondary);
+    overflow-y: auto;
+    padding: 2rem;
+  }
+
+  .pane-alt {
+    background: #141619;
+  }
 }
 
 body {
-  background-color: #050505;
-  color: #e5e5e5;
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--bg);
 }
