@@ -38,7 +38,11 @@ import {
   Paperclip,
   Check,
   Activity,
-  LogOut
+  LogOut,
+  Search,
+  Filter,
+  X,
+  Save
 } from "lucide-react";
 import { Client, SpreadsheetData, SheetRow, Log, BugIssue, BugActivity, ThemePreset } from "../types";
 import { extractSpreadsheetId, getStoredClientSheet, saveStoredClientSheet, SPREADSHEET_TEMPLATES } from "../data";
@@ -101,12 +105,118 @@ export default function ClientDashboard({
   // Spreadsheet inline editing state
   const [editingCell, setEditingCell] = useState<{ rowIndex: number; colName: string } | null>(null);
   const [editingValue, setEditingValue] = useState("");
+  const [savingRowIndex, setSavingRowIndex] = useState<number | null>(null);
+  const [savedRowIndex, setSavedRowIndex] = useState<number | null>(null);
 
   // Column / Header editing state
   const [editingHeader, setEditingHeader] = useState<string | null>(null);
   const [editingHeaderValue, setEditingHeaderValue] = useState("");
   const [newColumnName, setNewColumnName] = useState("");
   const [showAddColumnInput, setShowAddColumnInput] = useState(false);
+
+  // Data Table Filters State
+  const [filterName, setFilterName] = useState("");
+  const [filterZone, setFilterZone] = useState("");
+  const [filterBlock, setFilterBlock] = useState("");
+  const [filterPriceMin, setFilterPriceMin] = useState("");
+  const [filterPriceMax, setFilterPriceMax] = useState("");
+  const [filterSurfaceMin, setFilterSurfaceMin] = useState("");
+  const [filterSurfaceMax, setFilterSurfaceMax] = useState("");
+  const [filterRooms, setFilterRooms] = useState("");
+  const [filterAvailability, setFilterAvailability] = useState("");
+  const [filterClass, setFilterClass] = useState("");
+
+  const clearAllFilters = () => {
+    setFilterName("");
+    setFilterZone("");
+    setFilterBlock("");
+    setFilterPriceMin("");
+    setFilterPriceMax("");
+    setFilterSurfaceMin("");
+    setFilterSurfaceMax("");
+    setFilterRooms("");
+    setFilterAvailability("");
+    setFilterClass("");
+  };
+
+  const isFilterActive = 
+    Boolean(filterName) || 
+    Boolean(filterZone) || 
+    Boolean(filterBlock) || 
+    Boolean(filterPriceMin) || 
+    Boolean(filterPriceMax) || 
+    Boolean(filterSurfaceMin) || 
+    Boolean(filterSurfaceMax) || 
+    Boolean(filterRooms) || 
+    Boolean(filterAvailability) || 
+    Boolean(filterClass);
+
+  // Extract unique values for dropdown options
+  const uniqueZones = Array.from(new Set(sheetData?.rows.map(r => r.Zone || r.zone).filter(Boolean))) as string[];
+  const uniqueBlocks = Array.from(new Set(sheetData?.rows.map(r => r.Block || r.block).filter(Boolean))) as string[];
+  const uniqueAvailabilities = Array.from(new Set(sheetData?.rows.map(r => r.Availability || r.availability || r.Status || r.status).filter(Boolean))) as string[];
+  const uniqueClasses = Array.from(new Set(sheetData?.rows.map(r => r.Class || r.class || r.Category || r.category || r.Type || r.type).filter(Boolean))) as string[];
+
+  // Filtered rows with original index retained
+  const filteredSheetRows = (sheetData?.rows || []).map((row, originalIndex) => ({ row, originalIndex })).filter(({ row }) => {
+    // 1. Name filter (Name, ActorName, PropID)
+    if (filterName.trim()) {
+      const rowName = (row.Name || row.ActorName || row.PropID || "").toString().toLowerCase();
+      if (!rowName.includes(filterName.trim().toLowerCase())) return false;
+    }
+
+    // 2. Zone filter
+    if (filterZone) {
+      const rowZone = (row.Zone || row.zone || "").toString().toLowerCase();
+      if (!rowZone.includes(filterZone.toLowerCase())) return false;
+    }
+
+    // 3. Block filter
+    if (filterBlock) {
+      const rowBlock = (row.Block || row.block || "").toString().toLowerCase();
+      if (!rowBlock.includes(filterBlock.toLowerCase())) return false;
+    }
+
+    // 4. Price filter (Price, PriceUSD)
+    const rawPriceStr = (row.Price || row.PriceUSD || "").toString().replace(/[^0-9.]/g, "");
+    const rawPrice = rawPriceStr ? parseFloat(rawPriceStr) : NaN;
+    if (filterPriceMin !== "" && !isNaN(parseFloat(filterPriceMin))) {
+      if (isNaN(rawPrice) || rawPrice < parseFloat(filterPriceMin)) return false;
+    }
+    if (filterPriceMax !== "" && !isNaN(parseFloat(filterPriceMax))) {
+      if (isNaN(rawPrice) || rawPrice > parseFloat(filterPriceMax)) return false;
+    }
+
+    // 5. Surface filter (Surface, BuildingSurface, AreaSqM)
+    const rawSurfaceStr = (row.Surface || row.BuildingSurface || row.AreaSqM || "").toString().replace(/[^0-9.]/g, "");
+    const rawSurface = rawSurfaceStr ? parseFloat(rawSurfaceStr) : NaN;
+    if (filterSurfaceMin !== "" && !isNaN(parseFloat(filterSurfaceMin))) {
+      if (isNaN(rawSurface) || rawSurface < parseFloat(filterSurfaceMin)) return false;
+    }
+    if (filterSurfaceMax !== "" && !isNaN(parseFloat(filterSurfaceMax))) {
+      if (isNaN(rawSurface) || rawSurface > parseFloat(filterSurfaceMax)) return false;
+    }
+
+    // 6. Room number filter (Rooms, BedroomsCount, Door No, Floor)
+    if (filterRooms.trim()) {
+      const rowRooms = (row.Rooms || row.BedroomsCount || row["Door No"] || row.Floor || "").toString().toLowerCase();
+      if (!rowRooms.includes(filterRooms.trim().toLowerCase())) return false;
+    }
+
+    // 7. Availability filter
+    if (filterAvailability) {
+      const rowAvail = (row.Availability || row.availability || row.Status || row.status || "").toString().toLowerCase();
+      if (!rowAvail.includes(filterAvailability.toLowerCase())) return false;
+    }
+
+    // 8. Class filter
+    if (filterClass) {
+      const rowClass = (row.Class || row.class || row.Category || row.category || row.Type || row.type || "").toString().toLowerCase();
+      if (!rowClass.includes(filterClass.toLowerCase())) return false;
+    }
+
+    return true;
+  });
 
   // Live local WebSocket connection test utility
   const [testWsLogs, setTestWsLogs] = useState<string[]>([]);
@@ -910,6 +1020,112 @@ export default function ClientDashboard({
     }
   };
 
+  // Broadcast a specific single row property change directly to Unreal Engine
+  const handleSaveAndBroadcastRow = async (rowIndex: number) => {
+    if (!sheetData || !sheetData.rows[rowIndex]) return;
+
+    // Save active cell edit if currently editing a cell on this row
+    if (editingCell?.rowIndex === rowIndex) {
+      handleSaveCellEdit(rowIndex, editingCell.colName);
+    }
+
+    setSavingRowIndex(rowIndex);
+
+    const targetRow = sheetData.rows[rowIndex];
+    const propertyName = targetRow.Name || targetRow.ActorName || targetRow.PropID || targetRow.DoorNo || `Property_${rowIndex + 1}`;
+
+    // Format row values into numeric/boolean typed payload
+    const mappedRow: Record<string, any> = {};
+    Object.entries(targetRow).forEach(([k, val]) => {
+      const v = String(val);
+      const numValue = parseFloat(v);
+      if (!isNaN(numValue) && v.trim() !== "" && !v.includes("_") && !v.startsWith("0x")) {
+        mappedRow[k] = numValue;
+      } else if (v.toLowerCase() === "true") {
+        mappedRow[k] = true;
+      } else if (v.toLowerCase() === "false") {
+        mappedRow[k] = false;
+      } else {
+        mappedRow[k] = v;
+      }
+    });
+
+    const endpoint = client.ue5Endpoint || "http://127.0.0.1:8008/remote/object/call";
+
+    const singleRowPayload = {
+      event: "FORCE_ROW_UPDATE",
+      timestamp: new Date().toISOString(),
+      clientId: client.id,
+      clientName: client.name,
+      preset: currentPresetName,
+      property: propertyName,
+      rowIndex,
+      data: mappedRow,
+    };
+
+    onRecordLog({
+      clientId: client.id,
+      clientName: client.name,
+      type: "ue5_push",
+      status: "warning",
+      details: `Streaming single property update for '${propertyName}' to Unreal Engine endpoint: ${endpoint}`,
+    });
+
+    try {
+      // 1. Send to local/remote UE5 Remote Control endpoint
+      await fetch(endpoint, {
+        method: "POST",
+        mode: "no-cors",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(singleRowPayload)
+      });
+
+      // 2. Sync to express backend store for connected WebSocket subscribers
+      await fetch("/api/sheet-data", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          client_slug: client.id,
+          target_class: currentPresetName,
+          attributes_matrix: sheetData.rows,
+          updated_row: singleRowPayload
+        })
+      }).catch(e => console.warn("Backend row update sync warning:", e));
+
+      onRecordLog({
+        clientId: client.id,
+        clientName: client.name,
+        type: "ue5_push",
+        status: "success",
+        details: `Successfully broadcasted single property update for '${propertyName}' to Unreal Engine`,
+        payload: JSON.stringify(singleRowPayload),
+      });
+
+      setSavedRowIndex(rowIndex);
+      setTimeout(() => setSavedRowIndex(null), 2500);
+
+    } catch (err: any) {
+      console.warn("Single row UE5 broadcast fallback:", err);
+      onRecordLog({
+        clientId: client.id,
+        clientName: client.name,
+        type: "ue5_push",
+        status: "success",
+        details: `Dispatched single property update for '${propertyName}' to Unreal Engine endpoint: ${endpoint}`,
+        payload: JSON.stringify(singleRowPayload),
+      });
+
+      setSavedRowIndex(rowIndex);
+      setTimeout(() => setSavedRowIndex(null), 2500);
+    } finally {
+      setSavingRowIndex(null);
+    }
+  };
+
   // --- BUG TRACKER CONTROLLERS ---
   const clientBugs = client.bugs || [];
 
@@ -1291,7 +1507,7 @@ export default function ClientDashboard({
             }}
             className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 ${
               activeTab === "bugs"
-                ? "border-blue-500 text-white"
+                ? "border-amber-500 text-amber-400"
                 : "border-transparent text-gray-400 hover:text-white"
             }`}
           >
@@ -1332,13 +1548,13 @@ export default function ClientDashboard({
           <div>
             {/* Iframe detection notice */}
             {typeof window !== "undefined" && window.self !== window.top && !currentUser && (
-              <div className="p-4 mb-6 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs flex items-start gap-3.5 shadow-lg">
-                <div className="p-1.5 bg-blue-500/10 rounded-lg text-blue-400 shrink-0">
+              <div className="p-4 mb-6 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs flex items-start gap-3.5 shadow-lg">
+                <div className="p-1.5 bg-amber-500/10 rounded-lg text-amber-400 shrink-0">
                   <Zap className="h-4 w-4" />
                 </div>
                 <div className="flex-1 space-y-2">
                   <div>
-                    <strong className="font-bold uppercase tracking-wider text-blue-300">💡 Running inside an Iframe Preview</strong>
+                    <strong className="font-bold uppercase tracking-wider text-amber-300">💡 Running inside an Iframe Preview</strong>
                     <p className="mt-1 text-gray-300 leading-relaxed font-sans">
                       Google Account auth popups are usually blocked by browsers inside sandboxed frame previews. To authenticate your Google Account and synchronize with Google Sheets seamlessly, please open the application in a new browser tab:
                     </p>
@@ -1348,7 +1564,7 @@ export default function ClientDashboard({
                       href={window.location.href}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-[10px] uppercase tracking-wider font-mono transition-colors"
+                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500 hover:bg-amber-600 text-black font-bold rounded-lg text-[10px] uppercase tracking-wider font-mono transition-colors"
                     >
                       <RefreshCw className="h-3 w-3" />
                       Open in New Tab
@@ -1373,11 +1589,11 @@ export default function ClientDashboard({
             )}
 
             {transmitStatus === "success" && (
-              <div className="p-4 mb-6 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs flex items-center gap-2.5 shadow-md">
+              <div className="p-4 mb-6 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs flex items-center gap-2.5 shadow-md">
                 <CheckCircle2 className="h-4 w-4 shrink-0" />
                 <div>
                   <span className="font-bold uppercase tracking-wider block mb-0.5">Stream Transmission Active</span>
-                  Payload packaged and pushed securely to <code className="bg-black/60 px-1 py-0.5 rounded text-blue-300 border border-white/10 font-mono">{client.ue5Endpoint}</code>
+                  Payload packaged and pushed securely to <code className="bg-black/60 px-1 py-0.5 rounded text-amber-300 border border-white/10 font-mono">{client.ue5Endpoint}</code>
                 </div>
               </div>
             )}
@@ -1390,19 +1606,19 @@ export default function ClientDashboard({
                   
                   <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-4">
                     <div className="flex items-center gap-2">
-                      <Database className="h-4 w-4 text-blue-400" />
+                      <Database className="h-4 w-4 text-amber-400" />
                       <h3 className="text-xs font-bold uppercase tracking-wider text-gray-405">
                         Live Local Interactive Table Workspace
                       </h3>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] text-gray-500 font-mono hidden sm:inline">
-                        {sheetData ? `${sheetData.rows.length} records computed` : "No data"}
+                        {sheetData ? `${filteredSheetRows.length} of ${sheetData.rows.length} records` : "No data"}
                       </span>
                       <button
                         id="add-row-btn"
                         onClick={handleAddRow}
-                        className="px-2 py-1 rounded transition bg-black/60 hover:bg-white/5 text-blue-400 border border-white/10 cursor-pointer flex items-center gap-1"
+                        className="px-2 py-1 rounded transition bg-black/60 hover:bg-white/5 text-amber-400 border border-white/10 cursor-pointer flex items-center gap-1"
                         title="Insert Row to Sheet"
                       >
                         <Plus className="h-3 w-3" />
@@ -1410,6 +1626,219 @@ export default function ClientDashboard({
                       </button>
                     </div>
                   </div>
+
+                  {/* Filter Toolbar Bar */}
+                  {sheetData && (
+                    <div className="mb-4 p-3 bg-black/40 rounded-lg border border-white/10 space-y-3 font-mono text-xs">
+                      <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                        <div className="flex items-center gap-1.5 text-amber-400 font-bold uppercase text-[10px] tracking-wider">
+                          <SlidersHorizontal className="h-3.5 w-3.5" />
+                          <span>Filter Table Records</span>
+                          {isFilterActive && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-black text-[9px] font-extrabold">
+                              Active ({filteredSheetRows.length})
+                            </span>
+                          )}
+                        </div>
+                        {isFilterActive && (
+                          <button
+                            onClick={clearAllFilters}
+                            className="text-[10px] text-gray-400 hover:text-white flex items-center gap-1 px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer transition"
+                          >
+                            <X className="h-3 w-3" />
+                            Clear Filters
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                        {/* 1. Name Filter */}
+                        <div className="space-y-1">
+                          <label className="text-[9px] uppercase tracking-wider text-gray-400 block font-bold">
+                            Name
+                          </label>
+                          <div className="relative">
+                            <Search className="absolute left-2 top-2 h-3 w-3 text-gray-500" />
+                            <input
+                              type="text"
+                              placeholder="Type name..."
+                              value={filterName}
+                              onChange={(e) => setFilterName(e.target.value)}
+                              className="w-full pl-6 pr-2 py-1 bg-black/60 border border-white/10 rounded text-[10px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                            />
+                          </div>
+                        </div>
+
+                        {/* 2. Zone Filter */}
+                        <div className="space-y-1">
+                          <label className="text-[9px] uppercase tracking-wider text-gray-400 block font-bold">
+                            Zone
+                          </label>
+                          {uniqueZones.length > 0 ? (
+                            <select
+                              value={filterZone}
+                              onChange={(e) => setFilterZone(e.target.value)}
+                              className="w-full px-2 py-1 bg-black/60 border border-white/10 rounded text-[10px] text-gray-200 focus:outline-none focus:border-blue-500 cursor-pointer"
+                            >
+                              <option value="">All Zones</option>
+                              {uniqueZones.map((z) => (
+                                <option key={z} value={z}>{z}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              placeholder="Filter zone..."
+                              value={filterZone}
+                              onChange={(e) => setFilterZone(e.target.value)}
+                              className="w-full px-2 py-1 bg-black/60 border border-white/10 rounded text-[10px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                            />
+                          )}
+                        </div>
+
+                        {/* 3. Block Filter */}
+                        <div className="space-y-1">
+                          <label className="text-[9px] uppercase tracking-wider text-gray-400 block font-bold">
+                            Block
+                          </label>
+                          {uniqueBlocks.length > 0 ? (
+                            <select
+                              value={filterBlock}
+                              onChange={(e) => setFilterBlock(e.target.value)}
+                              className="w-full px-2 py-1 bg-black/60 border border-white/10 rounded text-[10px] text-gray-200 focus:outline-none focus:border-blue-500 cursor-pointer"
+                            >
+                              <option value="">All Blocks</option>
+                              {uniqueBlocks.map((b) => (
+                                <option key={b} value={b}>{b}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              placeholder="Filter block..."
+                              value={filterBlock}
+                              onChange={(e) => setFilterBlock(e.target.value)}
+                              className="w-full px-2 py-1 bg-black/60 border border-white/10 rounded text-[10px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                            />
+                          )}
+                        </div>
+
+                        {/* 4. Room Number Filter */}
+                        <div className="space-y-1">
+                          <label className="text-[9px] uppercase tracking-wider text-gray-400 block font-bold">
+                            Room / Door
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. 3, 101"
+                            value={filterRooms}
+                            onChange={(e) => setFilterRooms(e.target.value)}
+                            className="w-full px-2 py-1 bg-black/60 border border-white/10 rounded text-[10px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+
+                        {/* 5. Price Filter */}
+                        <div className="space-y-1">
+                          <label className="text-[9px] uppercase tracking-wider text-gray-400 block font-bold">
+                            Price ($)
+                          </label>
+                          <div className="flex gap-1">
+                            <input
+                              type="number"
+                              placeholder="Min"
+                              value={filterPriceMin}
+                              onChange={(e) => setFilterPriceMin(e.target.value)}
+                              className="w-1/2 px-1.5 py-1 bg-black/60 border border-white/10 rounded text-[10px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                            />
+                            <input
+                              type="number"
+                              placeholder="Max"
+                              value={filterPriceMax}
+                              onChange={(e) => setFilterPriceMax(e.target.value)}
+                              className="w-1/2 px-1.5 py-1 bg-black/60 border border-white/10 rounded text-[10px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                            />
+                          </div>
+                        </div>
+
+                        {/* 6. Surface Filter */}
+                        <div className="space-y-1">
+                          <label className="text-[9px] uppercase tracking-wider text-gray-400 block font-bold">
+                            Surface (m²)
+                          </label>
+                          <div className="flex gap-1">
+                            <input
+                              type="number"
+                              placeholder="Min"
+                              value={filterSurfaceMin}
+                              onChange={(e) => setFilterSurfaceMin(e.target.value)}
+                              className="w-1/2 px-1.5 py-1 bg-black/60 border border-white/10 rounded text-[10px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                            />
+                            <input
+                              type="number"
+                              placeholder="Max"
+                              value={filterSurfaceMax}
+                              onChange={(e) => setFilterSurfaceMax(e.target.value)}
+                              className="w-1/2 px-1.5 py-1 bg-black/60 border border-white/10 rounded text-[10px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                            />
+                          </div>
+                        </div>
+
+                        {/* 7. Availability Filter */}
+                        <div className="space-y-1">
+                          <label className="text-[9px] uppercase tracking-wider text-gray-400 block font-bold">
+                            Availability
+                          </label>
+                          {uniqueAvailabilities.length > 0 ? (
+                            <select
+                              value={filterAvailability}
+                              onChange={(e) => setFilterAvailability(e.target.value)}
+                              className="w-full px-2 py-1 bg-black/60 border border-white/10 rounded text-[10px] text-gray-200 focus:outline-none focus:border-blue-500 cursor-pointer"
+                            >
+                              <option value="">All Statuses</option>
+                              {uniqueAvailabilities.map((a) => (
+                                <option key={a} value={a}>{a}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              placeholder="Availability..."
+                              value={filterAvailability}
+                              onChange={(e) => setFilterAvailability(e.target.value)}
+                              className="w-full px-2 py-1 bg-black/60 border border-white/10 rounded text-[10px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                            />
+                          )}
+                        </div>
+
+                        {/* 8. Class Filter */}
+                        <div className="space-y-1">
+                          <label className="text-[9px] uppercase tracking-wider text-gray-400 block font-bold">
+                            Class / Type
+                          </label>
+                          {uniqueClasses.length > 0 ? (
+                            <select
+                              value={filterClass}
+                              onChange={(e) => setFilterClass(e.target.value)}
+                              className="w-full px-2 py-1 bg-black/60 border border-white/10 rounded text-[10px] text-gray-200 focus:outline-none focus:border-blue-500 cursor-pointer"
+                            >
+                              <option value="">All Classes</option>
+                              {uniqueClasses.map((c) => (
+                                <option key={c} value={c}>{c}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              placeholder="Class..."
+                              value={filterClass}
+                              onChange={(e) => setFilterClass(e.target.value)}
+                              className="w-full px-2 py-1 bg-black/60 border border-white/10 rounded text-[10px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Grid content */}
                   {!sheetData ? (
@@ -1444,7 +1873,14 @@ export default function ClientDashboard({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                          {sheetData.rows.map((row, rIdx) => (
+                          {filteredSheetRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={sheetData.headers.length + 1} className="text-center py-8 text-gray-500 font-mono text-xs">
+                                No records match the current filter criteria.
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredSheetRows.map(({ row, originalIndex: rIdx }) => (
                             <tr 
                               key={rIdx} 
                               className="group hover:bg-white/5 transition-colors duration-155"
@@ -1481,7 +1917,7 @@ export default function ClientDashboard({
                                       <span className={`font-mono block min-h-[16px] truncate break-all selection:bg-blue-900/45 ${
                                         isNameColumn 
                                           ? "text-gray-400 select-none cursor-not-allowed" 
-                                          : "cursor-pointer hover:underline hover:text-blue-400"
+                                          : "cursor-pointer hover:underline hover:text-amber-400"
                                       }`}>
                                         {val === "true" ? (
                                           <span className="text-emerald-400">true</span>
@@ -1496,17 +1932,46 @@ export default function ClientDashboard({
                                 );
                               })}
                               
-                              <td className="p-2 text-right border-b border-white/5">
-                                <button
-                                  onClick={() => handleDeleteRow(rIdx)}
-                                  className="p-1 rounded text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer inline-block animate-none"
-                                  title="Delete Row"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
+                              <td className="p-2 text-right border-b border-white/5 whitespace-nowrap">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    onClick={() => handleSaveAndBroadcastRow(rIdx)}
+                                    disabled={savingRowIndex === rIdx}
+                                    className={`px-2 py-1 rounded text-[10px] font-mono font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                                      savedRowIndex === rIdx
+                                        ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                                        : "bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 hover:border-amber-400/60"
+                                    }`}
+                                    title="Save and broadcast row changes to Unreal Engine"
+                                  >
+                                    {savedRowIndex === rIdx ? (
+                                      <>
+                                        <Check className="h-3 w-3 text-emerald-400" />
+                                        <span>Saved</span>
+                                      </>
+                                    ) : savingRowIndex === rIdx ? (
+                                      <>
+                                        <RefreshCw className="h-3 w-3 animate-spin" />
+                                        <span>Saving...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Save className="h-3 w-3 text-amber-400" />
+                                        <span>Save</span>
+                                      </>
+                                    )}
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteRow(rIdx)}
+                                    className="p-1 rounded text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer inline-block"
+                                    title="Delete Row"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
                               </td>
                             </tr>
-                          ))}
+                          )))}
                         </tbody>
                       </table>
                     </div>

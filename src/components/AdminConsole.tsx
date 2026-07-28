@@ -238,16 +238,16 @@ export default function AdminConsole({
       
       {/* Admin Header & Stats */}
       <div className="glass border border-white/10 rounded-xl p-6 sm:p-8 relative overflow-hidden shadow-2xl" id="admin-hero">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
-        <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-500/5 rounded-full blur-2xl -ml-20 -mb-20 pointer-events-none"></div>
+        <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-amber-500/5 rounded-full blur-2xl -ml-20 -mb-20 pointer-events-none"></div>
         
         <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <span className="px-2.5 py-1 text-xs font-mono font-medium rounded-full bg-blue-600/10 text-blue-400 border border-blue-500/20">
+              <span className="px-2.5 py-1 text-xs font-mono font-medium rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
                 ADMINISTRATION PANEL
               </span>
-              <span className="flex h-2 w-2 rounded-full bg-blue-500 status-pulse"></span>
+              <span className="flex h-2 w-2 rounded-full bg-amber-500 status-pulse"></span>
               <span className="text-xs text-gray-500 font-mono">Role: {currentUserProfile?.role.toUpperCase()} GRP</span>
             </div>
             <h1 className="text-3xl font-sans font-bold text-white tracking-tight">
@@ -266,7 +266,7 @@ export default function AdminConsole({
                 setEditingClient(null);
                 setShowAddForm(!showAddForm);
               }}
-              className="flex items-center gap-2 px-5 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium shadow-md transition-all duration-200 text-sm cursor-pointer"
+              className="flex items-center gap-2 px-5 py-3 rounded-lg bg-amber-500 hover:bg-amber-600 text-black font-bold shadow-md transition-all duration-200 text-sm cursor-pointer"
             >
               {showAddForm ? <Minimize2 className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
               {showAddForm ? "Close Form" : "Register Client"}
@@ -280,7 +280,7 @@ export default function AdminConsole({
             onClick={() => setActiveTab("portals")}
             className={`px-4 py-2 text-xs font-mono uppercase tracking-wider font-bold transition border-b-2 -mb-[2px] cursor-pointer ${
               activeTab === "portals"
-                ? "border-blue-500 text-white"
+                ? "border-amber-500 text-amber-400"
                 : "border-transparent text-gray-500 hover:text-gray-300"
             }`}
           >
@@ -290,12 +290,12 @@ export default function AdminConsole({
             onClick={() => setActiveTab("users")}
             className={`px-4 py-2 text-xs font-mono uppercase tracking-wider font-bold transition border-b-2 -mb-[2px] cursor-pointer flex items-center gap-1.5 ${
               activeTab === "users"
-                ? "border-blue-500 text-white"
+                ? "border-amber-500 text-amber-400"
                 : "border-transparent text-gray-500 hover:text-gray-300"
             }`}
           >
             User Group Directory
-            <span className="px-1.5 py-0.5 text-[9px] bg-white/10 rounded-full text-blue-300 font-sans">
+            <span className="px-1.5 py-0.5 text-[9px] bg-amber-500/20 text-amber-300 rounded-full font-sans font-bold">
               {userProfiles.length}
             </span>
           </button>
@@ -303,12 +303,12 @@ export default function AdminConsole({
             onClick={() => setActiveTab("themes")}
             className={`px-4 py-2 text-xs font-mono uppercase tracking-wider font-bold transition border-b-2 -mb-[2px] cursor-pointer flex items-center gap-1.5 ${
               activeTab === "themes"
-                ? "border-blue-500 text-white"
+                ? "border-amber-500 text-amber-400"
                 : "border-transparent text-gray-500 hover:text-gray-300"
             }`}
           >
             Branding Presets
-            <span className="px-1.5 py-0.5 text-[9px] bg-white/10 rounded-full text-blue-300 font-sans">
+            <span className="px-1.5 py-0.5 text-[9px] bg-amber-500/20 text-amber-300 rounded-full font-sans font-bold">
               {themePresets.length}
             </span>
           </button>
@@ -324,7 +324,7 @@ export default function AdminConsole({
         >
           <div className="flex items-center justify-between pb-4 mb-6 border-b border-white/10">
             <div className="flex items-center gap-2">
-              <Palette className="h-5 w-5 text-blue-400" />
+              <Palette className="h-5 w-5 text-amber-500" />
               <h2 className="text-lg font-bold text-white font-sans">
                 {editingClient ? `Editing Client Profile: ${editingClient.name}` : "Register New Client Portal"}
               </h2>
@@ -344,7 +344,7 @@ export default function AdminConsole({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Column 1: Core credentials */}
             <div className="lg:col-span-6 space-y-4">
-              <div className="border-l-2 border-blue-500 pl-3 py-1 mb-2">
+              <div className="border-l-2 border-amber-500 pl-3 py-1 mb-2">
                 <span className="text-xs font-bold text-gray-300 tracking-wider uppercase">1. Core Information & Sheet Bindings</span>
               </div>
 
@@ -359,7 +359,7 @@ export default function AdminConsole({
                     if (!logoText) setLogoText(e.target.value.toUpperCase() + " SYSTEM");
                   }}
                   placeholder="e.g. Neon Horizon Interactive"
-                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors font-sans"
+                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-sans"
                 />
               </div>
 
@@ -371,7 +371,7 @@ export default function AdminConsole({
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
                   placeholder="e.g. Horizon Media Group Ltd"
-                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors font-sans"
+                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-sans"
                 />
               </div>
 
@@ -382,7 +382,7 @@ export default function AdminConsole({
                   value={sheetId}
                   onChange={(e) => setSheetId(e.target.value)}
                   placeholder="e.g. 1BxiMVs0XRA5nFMd... or full shareable link"
-                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors font-sans"
+                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-sans"
                 />
               </div>
 
@@ -394,7 +394,7 @@ export default function AdminConsole({
                     value={sheetTab}
                     onChange={(e) => setSheetTab(e.target.value)}
                     placeholder="Sheet1"
-                    className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors font-sans"
+                    className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-sans"
                   />
                 </div>
                 <div>
@@ -405,7 +405,7 @@ export default function AdminConsole({
                     value={ue5Endpoint}
                     onChange={(e) => setUe5Endpoint(e.target.value)}
                     placeholder="http://127.0.0.1:8008/remote/object/call"
-                    className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors font-mono"
+                    className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-mono"
                   />
                 </div>
               </div>
@@ -417,14 +417,14 @@ export default function AdminConsole({
                   value={webSocketEndpoint}
                   onChange={(e) => setWebSocketEndpoint(e.target.value)}
                   placeholder="e.g. ws://127.0.0.1:8009 or leave empty for dynamic default"
-                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors font-mono"
+                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-mono"
                 />
               </div>
             </div>
 
             {/* Column 2: Branding */}
             <div className="lg:col-span-6 space-y-4">
-              <div className="border-l-2 border-blue-500 pl-3 py-1 mb-2">
+              <div className="border-l-2 border-amber-500 pl-3 py-1 mb-2">
                 <span className="text-xs font-bold text-gray-300 tracking-wider uppercase">2. Brand Themes & Staged Layouts</span>
               </div>
 
@@ -441,7 +441,7 @@ export default function AdminConsole({
                       setFontFamily(preset.branding.fontFamily);
                     }
                   }}
-                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 cursor-pointer"
                 >
                   <option value="">Select a preset...</option>
                   {themePresets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -455,7 +455,7 @@ export default function AdminConsole({
                   value={logoText}
                   onChange={(e) => setLogoText(e.target.value)}
                   placeholder="e.g. HORIZON PORTAL"
-                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors font-sans"
+                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-sans"
                 />
               </div>
 
@@ -474,7 +474,7 @@ export default function AdminConsole({
                       type="text"
                       value={primaryColor}
                       onChange={(e) => setPrimaryColor(e.target.value)}
-                      className="w-full px-3 py-1.5 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 font-mono"
+                      className="w-full px-3 py-1.5 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 font-mono"
                     />
                   </div>
                 </div>
@@ -491,7 +491,7 @@ export default function AdminConsole({
                       type="text"
                       value={accentColor}
                       onChange={(e) => setAccentColor(e.target.value)}
-                      className="w-full px-3 py-1.5 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 font-mono"
+                      className="w-full px-3 py-1.5 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 font-mono"
                     />
                   </div>
                 </div>
@@ -522,7 +522,7 @@ export default function AdminConsole({
                   <select
                     value={bgStyle}
                     onChange={(e) => setBgStyle(e.target.value as BgStyleType)}
-                    className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                    className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 cursor-pointer"
                   >
                     <option value="cyber">Cyberpunk Space (Dark Theme)</option>
                     <option value="dark">Immersive Carbon (Sleek Theme)</option>
@@ -534,7 +534,7 @@ export default function AdminConsole({
                   <select
                     value={fontFamily}
                     onChange={(e) => setFontFamily(e.target.value as "sans" | "mono" | "grotesk")}
-                    className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                    className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 cursor-pointer"
                   >
                     <option value="grotesk">Space Grotesk (Tech-forward)</option>
                     <option value="sans">Inter (Modern Clean UI)</option>
@@ -559,7 +559,7 @@ export default function AdminConsole({
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all shadow-md cursor-pointer font-mono uppercase tracking-wider"
+              className="px-6 py-2.5 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-black rounded-lg transition-all shadow-md cursor-pointer font-mono uppercase tracking-wider"
             >
               {editingClient ? "Overwrite Client Profile" : "Activate Client Portal"}
             </button>
@@ -569,299 +569,269 @@ export default function AdminConsole({
 
       {/* RENDER VIEW ACCORDING TO SELECTED TAB */}
       {activeTab === "portals" && (
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 animate-fadeIn" id="admin-columns-container">
+        <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[calc(100vh-110px)] border-t border-[var(--ink-faint)]" id="admin-columns-container">
           
-          {/* Left Column: Client Management */}
-          <div className="xl:col-span-7 space-y-6">
-            <div className="glass rounded-xl p-5 shadow-lg">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                <div className="flex items-center gap-2">
-                  <Users className="h-5 w-5 text-blue-400" />
-                  <h2 className="text-lg font-bold text-white font-sans">Registered Client Portals</h2>
-                </div>
-                <div className="relative w-full sm:w-64">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+          {/* Pane 1: Transmission Hub Sidebar */}
+          <aside className="lg:col-span-3 pane pane-alt flex flex-col justify-between">
+            <div>
+              <div className="label mb-6">Transmission Hub</div>
+              <div className="h-display text-4xl mb-3 text-[var(--ink)]">Admin</div>
+              <p className="text-xs text-[var(--ink-muted)] mb-8 leading-relaxed font-sans">
+                Secure staging configuration and UE5 transmission telemetry for active viewport links.
+              </p>
+
+              <button
+                id="register-client-btn"
+                onClick={() => {
+                  resetForm();
+                  setEditingClient(null);
+                  setShowAddForm(!showAddForm);
+                }}
+                className="btn-primary w-full py-3 mb-6"
+              >
+                {showAddForm ? "Close Form" : "Register Client"}
+              </button>
+
+              {/* Navigation Tabs */}
+              <div className="space-y-1 mb-8">
+                <button
+                  onClick={() => setActiveTab("portals")}
+                  className={`w-full text-left px-3 py-2 text-xs font-mono uppercase tracking-wider font-bold rounded transition ${
+                    activeTab === "portals"
+                      ? "bg-[var(--accent-soft)] text-[var(--accent)] border border-[var(--accent)]"
+                      : "text-[var(--ink-muted)] hover:text-white"
+                  }`}
+                >
+                  Client Portals ({clients.length})
+                </button>
+                <button
+                  onClick={() => setActiveTab("users")}
+                  className={`w-full text-left px-3 py-2 text-xs font-mono uppercase tracking-wider font-bold rounded transition flex items-center justify-between ${
+                    activeTab === "users"
+                      ? "bg-[var(--accent-soft)] text-[var(--accent)] border border-[var(--accent)]"
+                      : "text-[var(--ink-muted)] hover:text-white"
+                  }`}
+                >
+                  <span>User Directory</span>
+                  <span className="text-[10px] px-1.5 py-0.5 bg-[var(--ink-faint)] rounded">
+                    {userProfiles.length}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setActiveTab("themes")}
+                  className={`w-full text-left px-3 py-2 text-xs font-mono uppercase tracking-wider font-bold rounded transition flex items-center justify-between ${
+                    activeTab === "themes"
+                      ? "bg-[var(--accent-soft)] text-[var(--accent)] border border-[var(--accent)]"
+                      : "text-[var(--ink-muted)] hover:text-white"
+                  }`}
+                >
+                  <span>Branding Presets</span>
+                  <span className="text-[10px] px-1.5 py-0.5 bg-[var(--ink-faint)] rounded">
+                    {themePresets.length}
+                  </span>
+                </button>
+              </div>
+
+              {/* Client Search Filter */}
+              <div className="mb-8">
+                <div className="label mb-2">Search Filter</div>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-[var(--ink-muted)]" />
                   <input
                     type="text"
                     placeholder="Filter clients..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-3 py-1.5 bg-black/60 border border-white/10 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-blue-500 placeholder-gray-600 font-sans"
+                    className="w-full pl-8 pr-3 py-1.5 bg-[var(--bg)] border border-[var(--ink-faint)] rounded text-xs text-[var(--ink)] focus:outline-none focus:border-[var(--accent)] font-mono"
                   />
                 </div>
               </div>
+            </div>
 
-              {filteredClients.length === 0 ? (
-                <div className="text-center py-12 border border-dashed border-white/10 rounded-lg bg-black/20">
-                  <Building2 className="h-10 w-10 text-gray-700 mx-auto mb-3" />
-                  <span className="text-gray-400 text-sm block font-sans">No Client Portals Match Filter</span>
-                  <span className="text-gray-600 text-xs font-mono mt-1 block">Register a client to activate a live UE5 connection bridge</span>
+            {/* Hub Metrics */}
+            <div className="pt-6 border-t border-[var(--ink-faint)] grid gap-4">
+              <div>
+                <div className="label">Directories</div>
+                <div className="flex justify-between mt-2 font-mono text-xs">
+                  <span className="opacity-70">User Groups</span>
+                  <span className="text-[var(--accent)] font-bold">{userProfiles.length.toString().padStart(2, "0")}</span>
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-4" id="clients-list">
-                  {filteredClients.map((client) => {
-                    const isCopied = copiedClientId === client.id;
-                    return (
-                      <div
-                        key={client.id}
-                        id={`client-card-${client.id}`}
-                        className="p-4 rounded-xl bg-black/40 border border-white/5 hover:border-white/10 hover:bg-black/60 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm"
-                      >
-                        <div className="space-y-2 max-w-full md:max-w-[65%]">
-                          <div className="flex items-center gap-2.5 flex-wrap">
-                            <span 
-                              className="w-2.5 h-2.5 rounded-full ring-4 ring-black shadow-md shrink-0"
-                              style={{ backgroundColor: client.branding.primaryColor }}
-                            ></span>
-                            <h3 className="text-sm font-bold text-white font-sans truncate max-w-[200px]" title={client.name}>
-                              {client.name}
-                            </h3>
-                            <span className="px-1.5 py-0.5 text-[10px] bg-white/5 border border-white/10 text-gray-400 font-mono rounded">
-                              {client.id}
-                            </span>
-                          </div>
-                          <span className="text-xs text-gray-400 block font-sans truncate">
-                            {client.company}
-                          </span>
+              </div>
+              <div className="pt-3 border-t border-[var(--ink-faint)]">
+                <div className="label">Branding</div>
+                <div className="flex justify-between mt-2 font-mono text-xs">
+                  <span className="opacity-70">Presets</span>
+                  <span className="text-[var(--accent)] font-bold">{themePresets.length.toString().padStart(2, "0")}</span>
+                </div>
+              </div>
+            </div>
+          </aside>
 
-                          <div className="flex flex-wrap gap-y-1 gap-x-4 pt-1 font-mono text-[10px] text-gray-500">
-                            <span className="flex items-center gap-1.5 min-w-[180px] max-w-[240px]">
-                              <FileSpreadsheet className="h-3 w-3 text-cyan-500 shrink-0" />
-                              <span className="truncate" title={client.sheetId}>Sheet: {client.sheetId}</span>
-                            </span>
-                            <span className="flex items-center gap-1.5 max-w-[200px]">
-                              <Cpu className="h-3 w-3 text-emerald-400 shrink-0" />
-                              <span className="truncate" title={client.ue5Endpoint}>UE5: {client.ue5Endpoint}</span>
-                            </span>
-                          </div>
+          {/* Pane 2: Client Portals Main Center */}
+          <main className="lg:col-span-6 pane">
+            <div className="flex justify-between items-baseline mb-8">
+              <div className="h-display text-2xl text-[var(--ink)]">Client Portals</div>
+              <div className="label">Count: [{filteredClients.length.toString().padStart(2, "0")}]</div>
+            </div>
+
+            {filteredClients.length === 0 ? (
+              <div className="text-center py-16 border border-dashed border-[var(--ink-faint)] rounded-lg bg-black/20">
+                <Building2 className="h-10 w-10 text-[var(--ink-muted)] mx-auto mb-3" />
+                <span className="text-[var(--ink-muted)] text-sm block font-sans">No Client Portals Match Filter</span>
+                <span className="text-[var(--ink-muted)] text-xs font-mono mt-1 block">Register a client to activate a live UE5 connection bridge</span>
+              </div>
+            ) : (
+              <div className="grid gap-4" id="clients-list">
+                {filteredClients.map((client, idx) => {
+                  const isCopied = copiedClientId === client.id;
+                  const isActiveCard = idx === 0; // Highlight top portal
+                  return (
+                    <div
+                      key={client.id}
+                      id={`client-card-${client.id}`}
+                      className={`client-card ${isActiveCard ? "active" : ""}`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h3 className="h-display text-xl text-[var(--accent)]">{client.name}</h3>
+                          <p className="text-xs text-[var(--ink-muted)] mt-1 font-mono">
+                            Sheet: {client.sheetId.length > 28 ? client.sheetId.substring(0, 28) + "..." : client.sheetId}
+                          </p>
+                          <p className="text-[11px] text-[var(--ink-muted)] mt-0.5">
+                            {client.company} • UE5: {client.ue5Endpoint}
+                          </p>
                         </div>
+                        <span className="label text-[var(--accent)]">
+                          {isActiveCard ? "Active" : "Staged"}
+                        </span>
+                      </div>
 
-                        {/* Actions and Client portal preview launching */}
-                        <div className="flex flex-wrap items-center gap-2 border-t md:border-t-0 pt-3 md:pt-0 border-white/5 shrink-0">
-                          {/* Copy dedicated portal link */}
-                          <button
-                            title="Copy Dedicated Client Link"
-                            onClick={() => handleCopyLink(client.id)}
-                            className="p-2 border border-white/10 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5 text-xs font-mono"
-                          >
-                            {isCopied ? <Check className="h-3.5 w-3.5 text-emerald-400 animate-pulse" /> : <Copy className="h-3.5 w-3.5" />}
-                            <span className="hidden sm:inline">{isCopied ? "Copied" : "Link"}</span>
-                          </button>
+                      <div className="mt-6 flex flex-wrap gap-2 items-center">
+                        <button
+                          title="Edit Configuration"
+                          id={`edit-client-btn-${client.id}`}
+                          onClick={() => handleStartEdit(client)}
+                          className="btn-ghost flex items-center gap-1.5"
+                        >
+                          <Edit3 className="h-3 w-3" />
+                          Edit
+                        </button>
 
-                          <button
-                            title="Edit Configuration"
-                            id={`edit-client-btn-${client.id}`}
-                            onClick={() => handleStartEdit(client)}
-                            className="p-2 border border-white/10 bg-white/5 hover:bg-white/10 text-blue-400 rounded-lg transition-colors cursor-pointer"
-                          >
-                            <Edit3 className="h-3.5 w-3.5" />
-                          </button>
+                        <button
+                          title="Copy Dedicated Client Link"
+                          onClick={() => handleCopyLink(client.id)}
+                          className="btn-ghost flex items-center gap-1.5"
+                        >
+                          {isCopied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                          {isCopied ? "Copied" : "Link"}
+                        </button>
 
-                          {/* Deletion locked to Owner GRP only */}
+                        {/* Deletion locked to Owner GRP only */}
+                        {isOwner && (
                           <button
-                            title={isOwner ? "Delete Client Portal" : "Owner GRP privilege only"}
+                            title="Delete Client Portal"
                             id={`delete-client-btn-${client.id}`}
                             onClick={() => {
-                              if (!isOwner) return;
                               if (confirm(`Remove custom bridge and portal for client '${client.name}'?`)) {
-                                 onDeleteClient(client.id);
+                                onDeleteClient(client.id);
                               }
                             }}
-                            disabled={!isOwner}
-                            className={`p-2 border rounded-lg transition-colors cursor-pointer ${
-                              isOwner 
-                                ? "border-white/10 bg-white/5 hover:bg-red-950/30 text-red-400 hover:border-red-900/50" 
-                                : "opacity-40 border-white/5 bg-transparent text-gray-600 cursor-not-allowed"
-                            }`}
+                            className="btn-ghost text-rose-400 border-rose-500/20 hover:border-rose-500"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Trash2 className="h-3 w-3" />
                           </button>
+                        )}
 
-                          <button
-                            id={`launch-portal-btn-${client.id}`}
-                            onClick={() => onSelectClientView(client)}
-                            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white rounded-lg transition shadow-md select-none cursor-pointer font-mono"
-                            style={{ backgroundColor: client.branding.primaryColor }}
-                          >
-                            <ExternalLink className="h-3 w-3" />
-                            Go to Portal
-                          </button>
-                        </div>
+                        <button
+                          id={`launch-portal-btn-${client.id}`}
+                          onClick={() => onSelectClientView(client)}
+                          className="btn-primary py-1.5 px-4 text-[0.65rem] ml-auto flex items-center gap-1.5"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Go to Portal
+                        </button>
                       </div>
-                    );
-                  })}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Instruction Box */}
+            <div className="instruction-box">
+              <div className="label mb-3 text-[var(--accent)]">System Integration</div>
+              <p className="opacity-90 mb-3 text-xs leading-relaxed">
+                To connect UE5: Import <code>/ue5-plugin</code> classes into your project Source. Update <code>Build.cs</code> with <code>"WebSockets"</code>. Use <code>ASightPortalSiteManager</code> actor for real-time telemetry streaming.
+              </p>
+              <div className="p-3 bg-black/30 rounded border border-[var(--accent-soft)] font-mono text-[0.65rem] text-[var(--accent)] break-all select-all">
+                WSS://ais-pre-4wjcvfkjzt7ohntjrl7gk5-405891248157.europe-west3.run.app/ws/{filteredClients[0]?.id || "hyperion-vis"}
+              </div>
+            </div>
+          </main>
+
+          {/* Pane 3: System Audit Logs Terminal */}
+          <aside className="lg:col-span-3 pane flex flex-col h-full">
+            <div className="flex justify-between items-center mb-6">
+              <div className="label">System Audit Logs</div>
+              <button
+                id="clear-logs-btn"
+                onClick={onClearLogs}
+                disabled={!isOwner}
+                title={isOwner ? "Flush audit log streams" : "Owner GRP privilege only"}
+                className="btn-ghost px-2 py-0.5 text-[0.55rem] rounded"
+              >
+                FLUSH
+              </button>
+            </div>
+
+            {/* Log Filters */}
+            <div className="mb-4 space-y-2">
+              <select
+                value={logTypeFilter}
+                onChange={(e) => setLogTypeFilter(e.target.value)}
+                className="portal-select w-full py-1 text-[0.65rem]"
+              >
+                <option value="all">All Log Types</option>
+                <option value="fetch_sheet">Google Sheet Fetch</option>
+                <option value="ue5_push">Unreal Transmission</option>
+                <option value="config_change">Design Configurations</option>
+                <option value="error">System Errors</option>
+              </select>
+
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-3 w-3 text-[var(--ink-muted)]" />
+                <input
+                  type="text"
+                  placeholder="Filter logs..."
+                  value={logSearchQuery}
+                  onChange={(e) => setLogSearchQuery(e.target.value)}
+                  className="w-full pl-7 pr-2 py-1 bg-[var(--bg)] border border-[var(--ink-faint)] rounded text-[0.65rem] text-[var(--ink)] font-mono focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Logs stream list */}
+            <div className="flex-1 overflow-y-auto font-mono text-[0.65rem] bg-[#0d0e10] p-3 rounded border border-[var(--secondary)]" id="logs-panel">
+              {filteredLogs.length === 0 ? (
+                <div className="text-center py-16 text-[var(--ink-muted)] italic text-xs">
+                  No logs recorded yet.
                 </div>
+              ) : (
+                filteredLogs.map((log) => {
+                  const formattedTime = new Date(log.timestamp).toLocaleTimeString();
+                  return (
+                    <div key={log.id} className="log-line">
+                      <span className="text-[var(--accent)] mr-2">[{formattedTime}]</span>
+                      <span className="uppercase text-[0.6rem] px-1 py-0.5 rounded bg-[var(--border)] mr-2 text-[var(--accent)] font-bold">
+                        {log.type}
+                      </span>
+                      <span className="text-[var(--ink)] opacity-90">{log.details}</span>
+                    </div>
+                  );
+                })
               )}
             </div>
-            
-            {/* Quick Unreal Control Setup instructions Card */}
-            <div className="glass rounded-xl p-5 shadow-lg text-gray-300">
-              <h3 className="text-sm font-bold text-white font-sans mb-3 flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-emerald-400" />
-                How to Connect Unreal Engine 5 via Real-Time WebSockets
-              </h3>
-              <div className="space-y-3 text-xs opacity-90 font-sans">
-                <p>
-                  To sync spreadsheets to active 3D Scene actors, integrate our modern C++ connection modules that link directly to the Live Cloud WebSocket:
-                </p>
-                <ol className="list-decimal pl-5 space-y-2 font-mono text-[11px] text-gray-400">
-                  <li>
-                    <strong className="text-white">Import Subsystem Classes</strong>: Open the <code className="text-emerald-400 font-sans bg-black/40 px-1 py-0.5 rounded border border-white/5 font-mono">/ue5-plugin</code> directory in the code workspace and copy the <strong className="text-white">SightPortalConnector</strong> and the three manager classes (<strong className="text-white">SightPortalSiteManager</strong>, <strong className="text-white">SightPortalZoneManager</strong>, and <strong className="text-white">SightPortalBlockManager</strong>) into your project's Source folder.
-                  </li>
-                  <li>
-                    <strong className="text-white">Configure Build Dependencies</strong>: In your project's <code className="text-blue-400 font-sans bg-black/40 px-1 py-0.5 rounded border border-white/5 font-mono">YourProject.Build.cs</code> file, append <code className="text-emerald-400">"WebSockets"</code>, <code className="text-emerald-400">"Http"</code>, <code className="text-emerald-400">"Json"</code>, <code className="text-emerald-400">"JsonUtilities"</code>, and <code className="text-emerald-400">"Spline"</code> (or standard engine splines) to <code className="text-white">PublicDependencyModuleNames</code>.
-                  </li>
-                  <li>
-                    <strong className="text-white">Set Up Blueprint Site Manager</strong>: Place an <code className="text-blue-400">ASightPortalSiteManager</code> actor in your level. Set your desired <strong className="text-white">ZoneCount</strong>, choose your <strong className="text-white">ZoneManagerClass</strong>, and customize your layout in real-time. The zone manager will spawn blocks, and block managers will arrange your visualizer templates along custom spline paths!
-                  </li>
-                  <li>
-                    <strong className="text-white">Real-Time Data Streaming</strong>: When editing parameters or triggering a <strong className="text-blue-400 font-semibold">Force Refresh</strong>, updates are pushed instantly. The active client ID's isolated WebSocket path (<code className="text-emerald-400">/ws/&lt;client_slug&gt;</code>) handles individual portfolio synchronization!
-                  </li>
-                </ol>
-
-                <div className="mt-4 pt-4 border-t border-white/10 space-y-2.5">
-                  <div className="rounded-lg bg-black/40 p-3 border border-white/5 space-y-1.5 font-mono text-[10px]">
-                    <div className="text-gray-400 font-bold tracking-wide text-[9px] uppercase text-blue-400">Environment Credentials</div>
-                    <div>
-                      <span className="text-gray-500 block text-[9px] uppercase">Remote Endpoint URL (HTTP Poll)</span>
-                      <code className="text-emerald-400 break-all select-all">https://sight-portal-1127775803.europe-west2.run.app/api/health</code>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 block text-[9px] uppercase">Web Socket URL (Live Stream)</span>
-                      <code className="text-emerald-400 break-all select-all">wss://ais-pre-4wjcvfkjzt7ohntjrl7gk5-405891248157.europe-west3.run.app/ws/hyperion-vis</code>
-                      <p className="text-gray-500 text-[8.5px] mt-0.5 font-sans leading-normal">
-                        * Note: Replace <code className="text-gray-300">hyperion-vis</code> at the end of the WebSocket URL with your active client's unique slug id.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column: Dynamic System Log Terminal */}
-          <div className="xl:col-span-5 space-y-6">
-            <div className="glass rounded-xl p-5 shadow-lg flex flex-col h-[640px]">
-              {/* Terminal Header */}
-              <div className="flex items-center justify-between pb-4 border-b border-b-white/10 flex-none">
-                <div className="flex items-center gap-2">
-                  <Terminal className="h-4 w-4 text-blue-400" />
-                  <h2 className="text-sm font-bold text-white font-mono tracking-wider">SYSTEM CENTRAL AUDIT LOGS</h2>
-                </div>
-                {/* Clear Logs: Owner GRP only */}
-                <button
-                  id="clear-logs-btn"
-                  onClick={onClearLogs}
-                  disabled={!isOwner}
-                  title={isOwner ? "Flush audit log streams" : "Owner GRP privilege only"}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-mono border rounded transition ${
-                    isOwner 
-                      ? "bg-white/5 hover:bg-white/10 border-white/10 text-gray-400 hover:text-red-400 cursor-pointer"
-                      : "opacity-40 bg-transparent border-white/5 text-gray-600 cursor-not-allowed"
-                  }`}
-                >
-                  Clear
-                </button>
-              </div>
-
-              {/* Filter toolbar */}
-              <div className="py-3 flex flex-col sm:flex-row gap-2 border-b border-white/10 flex-none">
-                <select
-                  value={logTypeFilter}
-                  onChange={(e) => setLogTypeFilter(e.target.value)}
-                  className="px-2 py-1.5 text-[10px] bg-[#050505] border border-white/10 text-gray-300 font-mono rounded focus:outline-none"
-                >
-                  <option value="all">Filters: All Log Types</option>
-                  <option value="fetch_sheet">Type: Google Sheet Fetch</option>
-                  <option value="ue5_push">Type: Unreal Transmission</option>
-                  <option value="config_change">Type: Design Configurations</option>
-                  <option value="error">Type: System Errors</option>
-                </select>
-
-                <div className="relative flex-1">
-                  <Search className="absolute left-2.5 top-2.5 h-3 w-3 text-gray-500" />
-                  <input
-                    type="text"
-                    placeholder="Filter logs by client/text..."
-                    value={logSearchQuery}
-                    onChange={(e) => setLogSearchQuery(e.target.value)}
-                    className="w-full pl-7 pr-2 py-1 bg-[#050505] border border-white/10 rounded text-[10px] text-gray-400 font-mono focus:outline-none placeholder-gray-750"
-                  />
-                </div>
-              </div>
-
-              {/* Logs stream body */}
-              <div className="flex-1 overflow-y-auto pt-4 space-y-3 font-mono text-[11px] scrollbar-thin" id="logs-panel">
-                {filteredLogs.length === 0 ? (
-                  <div className="text-center py-20 text-gray-600">
-                    <Database className="h-8 w-8 text-gray-800 mx-auto mb-2" />
-                    <span className="block italic">No logs recorded yet.</span>
-                    <span className="block text-[10px] mt-1 text-gray-700 font-sans">Client activities will list here in real-time</span>
-                  </div>
-                ) : (
-                  filteredLogs.map((log) => {
-                    const isExpanded = expandedLogId === log.id;
-                    const formattedTime = new Date(log.timestamp).toLocaleTimeString();
-                    
-                    return (
-                      <div 
-                        key={log.id} 
-                        className={`p-2.5 rounded border border-white/5 transition-colors ${
-                          log.status === "error" ? "bg-red-950/15 border-red-900/40" :
-                          log.status === "warning" ? "bg-amber-950/15 border-amber-900/40" :
-                          "bg-black/40 hover:bg-black/60"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="space-y-1">
-                            <div className="flex items-center flex-wrap gap-1.5">
-                              <span className="text-[10px] text-gray-500">{formattedTime}</span>
-                              <span 
-                                className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-bold shrink-0 ${
-                                  log.type === "fetch_sheet" ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/10" :
-                                  log.type === "ue5_push" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/10" :
-                                  log.type === "config_change" ? "bg-purple-500/10 text-purple-400 border border-purple-500/10" :
-                                  "bg-red-500/10 text-red-400 border border-red-500/10"
-                                }`}
-                              >
-                                {log.type}
-                              </span>
-                              <span className="text-gray-300 font-bold max-w-[120px] truncate">{log.clientName}</span>
-                            </div>
-                            <p className="text-gray-400 text-[10.5px] leading-relaxed font-sans">{log.details}</p>
-                          </div>
-
-                          {/* Expand Button */}
-                          {log.payload && (
-                            <button
-                              onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
-                              className="p-1 text-gray-500 hover:text-gray-300 transition-colors shrink-0 cursor-pointer"
-                            >
-                              {isExpanded ? <Minimize2 className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Expanded Payload Viewer */}
-                        {isExpanded && log.payload && (
-                          <div className="mt-2.5 pt-2.5 border-t border-white/10 overflow-x-auto">
-                            <span className="text-[9px] text-gray-500 block mb-1 uppercase font-bold tracking-wider">Payload Content:</span>
-                            <pre className="text-[10px] bg-[#050505] p-2.5 rounded text-blue-300 leading-normal max-h-48 overflow-y-auto whitespace-pre-wrap select-text border border-white/5">
-                              {JSON.stringify(JSON.parse(log.payload), null, 2)}
-                            </pre>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-              
-              <div className="pt-2 text-center text-[10px] text-gray-600 font-mono border-t border-white/10 flex-none">
-                Auto-scrolling stream active • Cloud database synced
-              </div>
-            </div>
-          </div>
+          </aside>
         </div>
       )}
       {activeTab === "themes" && <ThemePresets presets={themePresets} />}
@@ -870,7 +840,7 @@ export default function AdminConsole({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
             <div>
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <Lock className="h-5 w-5 text-blue-400" />
+                <Lock className="h-5 w-5 text-amber-500" />
                 User Authentication & Role Directory
               </h2>
               <p className="text-xs text-gray-400 mt-1 font-sans">
@@ -885,7 +855,7 @@ export default function AdminConsole({
                 placeholder="Search user profile records..."
                 value={userSearchQuery}
                 onChange={(e) => setUserSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 bg-black/60 border border-white/10 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-blue-500 placeholder-gray-600 font-sans"
+                className="w-full pl-9 pr-3 py-1.5 bg-black/60 border border-white/10 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-amber-500 placeholder-gray-600 font-sans"
               />
             </div>
           </div>
@@ -920,7 +890,7 @@ export default function AdminConsole({
                         {/* User identity info */}
                         <td className="py-4 px-4 font-sans">
                           <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-full bg-blue-600/10 border border-blue-500/20 flex items-center justify-center font-bold text-blue-400 text-xs shrink-0 uppercase">
+                            <div className="h-8 w-8 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-amber-400 text-xs shrink-0 uppercase">
                               {profile.email.substring(0, 2)}
                             </div>
                             <div>
@@ -947,7 +917,7 @@ export default function AdminConsole({
                                 }
                               });
                             }}
-                            className="px-2 py-1 bg-[#050505] border border-white/10 rounded text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                            className="px-2 py-1 bg-[#050505] border border-white/10 rounded text-xs text-white focus:outline-none focus:border-amber-500 cursor-pointer"
                           >
                             <option value="owner">Owner GRP (All / Delete)</option>
                             <option value="admin">Admin GRP (Edit / Create)</option>
@@ -969,7 +939,7 @@ export default function AdminConsole({
                                   }
                                 });
                               }}
-                              className="px-2 py-1 bg-[#050505] border border-white/10 rounded text-xs text-white focus:outline-none focus:border-blue-500 max-w-[200px] cursor-pointer"
+                              className="px-2 py-1 bg-[#050505] border border-white/10 rounded text-xs text-white focus:outline-none focus:border-amber-500 max-w-[200px] cursor-pointer"
                             >
                               <option value="">Awaiting Allocation...</option>
                               {clients.map(c => (
@@ -979,7 +949,7 @@ export default function AdminConsole({
                               ))}
                             </select>
                           ) : (
-                            <span className="text-blue-400 text-[10px] uppercase font-bold tracking-wider flex items-center gap-1">
+                            <span className="text-amber-400 text-[10px] uppercase font-bold tracking-wider flex items-center gap-1">
                               <Sparkles className="h-3 w-3 animate-pulse" />
                               Unlimited Access
                             </span>

@@ -559,7 +559,7 @@ export default function App() {
   if (authLoading) {
     return (
       <div className="min-h-screen bg-[#050505] flex flex-col items-center justify-center font-mono">
-        <Compass className="h-10 w-10 text-blue-500 animate-spin mb-4" />
+        <Compass className="h-10 w-10 text-amber-500 animate-spin mb-4" />
         <span className="text-xs text-gray-400 tracking-widest uppercase">Initializing Secure Stage Channels...</span>
       </div>
     );
@@ -568,18 +568,18 @@ export default function App() {
   // Not Logged In View: Render Beautiful Glass Authentication Card with Email/Password Form
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-[#050505] text-[#e5e5e5] flex flex-col font-sans relative overflow-hidden selection:bg-blue-600">
+      <div className="min-h-screen bg-[#050505] text-[#e5e5e5] flex flex-col font-sans relative overflow-hidden selection:bg-amber-500 selection:text-black">
         {/* Dynamic ambient backgrounds */}
-        <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-blue-600/5 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-[600px] h-[600px] bg-purple-600/5 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-amber-500/5 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-[600px] h-[600px] bg-orange-600/5 rounded-full blur-3xl pointer-events-none"></div>
 
         <div className="flex-1 flex items-center justify-center p-4 z-10">
           <div className="w-full max-w-md bg-black/60 border border-white/10 p-8 rounded-2xl relative shadow-2xl backdrop-blur-xl">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-blue-500/20 to-transparent blur-xl pointer-events-none"></div>
+            <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-amber-500/20 to-transparent blur-xl pointer-events-none"></div>
             
             <div className="text-center space-y-4">
-              <div className="inline-flex h-12 w-12 bg-blue-600 rounded-xl items-center justify-center shadow-lg shadow-blue-500/20 border border-blue-400/30 mx-auto">
-                <Cpu className="h-6 w-6 text-white" />
+              <div className="inline-flex h-12 w-12 bg-amber-500 rounded-xl items-center justify-center shadow-lg shadow-amber-500/20 border border-amber-400/30 mx-auto">
+                <Cpu className="h-6 w-6 text-black" />
               </div>
 
               <div>
@@ -601,7 +601,7 @@ export default function App() {
                   }}
                   className={`py-2 rounded-lg text-xs font-mono font-bold uppercase transition ${
                     authMode === "signin"
-                      ? "bg-blue-600 text-white shadow"
+                      ? "bg-amber-500 text-black shadow"
                       : "text-gray-400 hover:text-white"
                   }`}
                 >
@@ -615,7 +615,7 @@ export default function App() {
                   }}
                   className={`py-2 rounded-lg text-xs font-mono font-bold uppercase transition ${
                     authMode === "signup"
-                      ? "bg-blue-600 text-white shadow"
+                      ? "bg-amber-500 text-black shadow"
                       : "text-gray-400 hover:text-white"
                   }`}
                 >
@@ -643,7 +643,7 @@ export default function App() {
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="name@example.com"
                     required
-                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all"
                   />
                 </div>
 
@@ -657,17 +657,17 @@ export default function App() {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     required
-                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all"
                   />
                 </div>
 
                 <button
                   type="submit"
                   disabled={formLoading}
-                  className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-600/20 active:scale-[0.98] transition-all rounded-xl text-white font-bold text-xs font-mono uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer border border-blue-400/20 disabled:opacity-50"
+                  className="w-full py-3.5 px-4 bg-amber-500 hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-500/20 active:scale-[0.98] transition-all rounded-xl text-black font-bold text-xs font-mono uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer border border-amber-400/20 disabled:opacity-50"
                 >
                   {formLoading ? (
-                    <Compass className="h-4 w-4 text-white animate-spin" />
+                    <Compass className="h-4 w-4 text-black animate-spin" />
                   ) : authMode === "signin" ? (
                     <>
                       Sign In Account
@@ -703,7 +703,7 @@ export default function App() {
 
               {/* Iframe Warning and New Tab helper */}
               {typeof window !== "undefined" && window.self !== window.top && (
-                <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-left text-[11px] text-blue-400 space-y-2">
+                <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-left text-[11px] text-amber-400 space-y-2">
                   <p className="font-sans leading-normal">
                     ⚠️ <strong>Iframe Sandbox Warning:</strong> Google Sign-In popups are blocked by browsers inside sandboxed preview frames.
                   </p>
@@ -712,7 +712,7 @@ export default function App() {
                       href={window.location.href}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-[10px] uppercase tracking-wider font-mono transition-colors"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-black font-bold rounded-lg text-[10px] uppercase tracking-wider font-mono transition-colors"
                     >
                       <Monitor className="h-3 w-3" />
                       Open in New Tab
@@ -761,7 +761,7 @@ export default function App() {
                     setDeepLinkPortal(null);
                     window.location.search = "";
                   }}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs font-mono text-white transition cursor-pointer"
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 rounded-lg text-xs font-mono text-black font-bold transition cursor-pointer"
                 >
                   Return Home
                 </button>
@@ -776,85 +776,74 @@ export default function App() {
   const isDeveloperUser = userProfile?.role === "owner" || userProfile?.role === "admin";
 
   return (
-    <div className="min-h-screen bg-[#050505] text-[#e5e5e5] flex flex-col font-sans selection:bg-blue-600 selection:text-white" id="app-wrapper">
+    <div className="min-h-screen bg-[#050505] text-[#e5e5e5] flex flex-col font-sans selection:bg-amber-500 selection:text-black" id="app-wrapper">
       
       {/* Universal Sticky Glass Top Bar */}
-      <header className="bg-[#0A0A0A] border-b border-white/10 sticky top-0 z-55 flex-none" id="app-nav-bar">
-        <div className="w-full px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+      <header className="bg-[var(--surface)] border-b border-[var(--ink-faint)] sticky top-0 z-55 flex-none" id="app-nav-bar">
+        <div className="w-full px-6 py-3 flex items-center justify-between gap-4">
           
           {/* Logo & Platform Name */}
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 bg-blue-600 rounded flex items-center justify-center shadow-md select-none">
-              <span className="text-sm font-black text-white">U</span>
+            <div className="w-9 h-9 bg-[var(--accent)] text-[#1e2025] grid place-items-center rounded select-none">
+              <span className="font-['Syne'] font-extrabold text-sm">U</span>
             </div>
             <div>
-              <span className="text-sm font-semibold tracking-wider text-white uppercase">
-                UE5 MULTI-BRIDGE
-              </span>
-              <span className="text-[10px] block font-mono text-gray-500 uppercase">Interactive Stage Hub</span>
+              <div className="h-display text-[1.1rem] text-[var(--accent)]">Multi-Bridge</div>
+              <div className="label text-[0.55rem]">Stage Hub Control</div>
             </div>
           </div>
 
           {/* Quick View Swap Buttons (Hidden from restricted clients) */}
           {isDeveloperUser && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center gap-3">
               <button
                 id="admin-view-toggle"
                 onClick={() => setActiveView("admin")}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition select-none ${
-                  activeView === "admin"
-                    ? "bg-white/5 border border-white/10 text-white shadow-lg"
-                    : "text-gray-400 hover:text-white hover:bg-white/5"
-                }`}
+                className={`btn-ghost ${activeView === "admin" ? "border-[var(--accent)] text-[var(--ink)]" : ""}`}
               >
-                <Monitor className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Admin Console</span>
+                Admin Console
               </button>
 
-              <div className="h-4 w-px bg-white/10"></div>
-
-              <div className="relative inline-block">
-                <select
-                  id="portal-quick-selector"
-                  value={activeView === "client" && selectedClient ? selectedClient.id : ""}
-                  onChange={(e) => {
-                    const clientObj = clients.find(c => c.id === e.target.value);
-                    if (clientObj) {
-                      handleLaunchClientWorkspace(clientObj);
-                    } else {
-                      setActiveView("admin");
-                    }
-                  }}
-                  className="px-2.5 py-1.5 text-xs bg-[#0A0A0A] hover:bg-white/5 border border-white/10 text-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500/50 cursor-pointer text-ellipsis max-w-[150px] sm:max-w-[200px]"
-                >
-                  <option value="">Select Portal...</option>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      Portal: {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <select
+                id="portal-quick-selector"
+                value={activeView === "client" && selectedClient ? selectedClient.id : ""}
+                onChange={(e) => {
+                  const clientObj = clients.find(c => c.id === e.target.value);
+                  if (clientObj) {
+                    handleLaunchClientWorkspace(clientObj);
+                  } else {
+                    setActiveView("admin");
+                  }
+                }}
+                className="portal-select w-[200px] sm:w-[240px]"
+              >
+                <option value="">Select Portal...</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    Portal: {c.name}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 
           {/* Dynamic User Profile Menu & Log Out */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <div className="text-right">
-              <span className="text-xs text-gray-300 block font-semibold leading-none truncate max-w-[150px]" title={currentUser.email || ""}>
+              <div className="font-semibold text-[0.75rem] text-[var(--ink)] truncate max-w-[160px]" title={currentUser.email || ""}>
                 {currentUser.email}
-              </span>
-              <span className="text-[9px] font-mono text-blue-400 uppercase tracking-widest mt-0.5 block">
-                {userProfile?.role} GRP
-              </span>
+              </div>
+              <div className="label text-[var(--accent)] text-[0.55rem]">
+                {userProfile?.role?.toUpperCase()} GRP
+              </div>
             </div>
 
             <button 
               onClick={handleLogout}
-              className="p-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-rose-400 transition-colors cursor-pointer"
+              className="btn-ghost px-3 py-1.5"
               title="Sign Out of Stage Hub"
             >
-              <LogOut className="h-3.5 w-3.5" />
+              LOGOUT
             </button>
           </div>
 
@@ -862,7 +851,7 @@ export default function App() {
       </header>
 
       {/* Main Container */}
-      <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-8" id="app-main-content">
+      <main className="flex-1 w-full" id="app-main-content">
         {activeView === "admin" && isDeveloperUser ? (
           <AdminConsole
             clients={clients}
@@ -886,75 +875,42 @@ export default function App() {
             showBackToAdmin={isDeveloperUser}
           />
         ) : (
-          <div className="text-center py-24 glass rounded-2xl border border-white/10 shadow-xl max-w-lg mx-auto">
-            <Compass className="h-12 w-12 text-gray-600 mx-auto mb-4 animate-spin-slow" />
-            <h2 className="text-lg font-bold text-white">No Staging Portal Assigned</h2>
-            <p className="text-gray-500 text-xs mt-1.5 px-4 font-mono">
+          <div className="text-center py-24 glass rounded-2xl border border-[var(--ink-faint)] shadow-xl max-w-lg mx-auto my-12">
+            <Compass className="h-12 w-12 text-[var(--accent)] mx-auto mb-4 animate-spin-slow" />
+            <h2 className="h-display text-lg text-white">No Staging Portal Assigned</h2>
+            <p className="text-[var(--ink-muted)] text-xs mt-2 px-4 font-mono">
               Awaiting Developer configurations. If your profile was recently registered, ask the Owner or Admin to delegate a portal slug.
             </p>
           </div>
         )}
       </main>
 
-      {/* Sticky Universal Footer */}
-      <footer className="bg-[#070707] border-t border-white/5 py-3 text-xs text-gray-500 font-mono mt-auto flex-none">
-        <div className="w-full px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.6)] animate-pulse"></span>
-            <span>
-              SightPortal UE5 Multi-Bridge v1.4.2 • Cloud DB Integration Enabled
+      {/* Universal Footer */}
+      <footer className="bg-[var(--surface)] border-t border-[var(--ink-faint)] px-8 py-3 text-xs flex-none flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="flex items-center text-[0.7rem]">
+          <span className="status-dot bg-pulse"></span>
+          <span className="label text-[var(--ink)] tracking-wide">SightPortal v1.4.2</span>
+          <span className="ml-6 opacity-40 font-mono text-[0.65rem]">CLOUD_DB_INTEGRATION: ACTIVE</span>
+        </div>
+
+        {/* Real-Time Connectivity Diagnostic Indicators */}
+        <div className="flex items-center gap-6">
+          <div className="label text-[0.6rem]">
+            Pipeline:{" "}
+            <span className={ue5Alive ? "text-emerald-400" : "text-amber-400"}>
+              {ue5Alive ? "Linked Engine" : "Awaiting Engine"}
             </span>
           </div>
 
-          {/* Real-Time Connectivity Diagnostic Indicators */}
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] md:text-[11px]">
-            {/* 1. Dashboard API Server Indicator */}
-            <div className="flex items-center gap-2 px-2.5 py-1 bg-white/5 border border-white/10 rounded-lg">
-              <span className="text-gray-400">Database Status:</span>
-              <span className="flex items-center gap-1.5">
-                <span className={`h-2 w-2 rounded-full ${
-                  backendAlive 
-                    ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]" 
-                    : "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)] animate-pulse"
-                }`}></span>
-                <span className={backendAlive ? "text-emerald-400 font-medium animate-pulse" : "text-rose-400 font-medium"}>
-                  {backendAlive ? "Cloud Sync" : "Local Fallback"}
-                </span>
-              </span>
-            </div>
-
-            {/* 2. Unreal Engine Direct Pipeline Link */}
-            <div className="flex items-center gap-2 px-2.5 py-1 bg-white/5 border border-white/10 rounded-lg">
-              <Server className="h-3 w-3 text-gray-400" />
-              <span className="text-gray-400">Unreal Pipeline:</span>
-              <span className="flex items-center gap-1.5">
-                <span className={`h-2 w-2 rounded-full ${
-                  ue5Alive 
-                    ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]" 
-                    : "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)] animate-pulse"
-                }`}></span>
-                <span className={ue5Alive ? "text-emerald-400 font-medium" : "text-amber-400 font-medium"}>
-                  {ue5Alive ? "Linked (Direct IPC)" : "Awaiting Engine"}
-                </span>
-              </span>
-              {ue5Alive ? (
-                <Wifi className="h-3.5 w-3.5 text-emerald-400 animate-pulse ml-0.5" />
-              ) : (
-                <WifiOff className="h-3.5 w-3.5 text-amber-500 opacity-60 ml-0.5" />
-              )}
-            </div>
-
-            {/* 3. Force Refresh Action Button */}
-            <button
-              onClick={handleForceSync}
-              disabled={syncing}
-              title="Force trigger a manual re-sync of active client parameters to the Unreal Engine 5 instance"
-              className="flex items-center gap-1.5 px-3 py-1 bg-blue-600/10 hover:bg-blue-600 border border-blue-500/20 hover:border-blue-400 text-blue-400 hover:text-white rounded-lg cursor-pointer transition-all disabled:opacity-50 text-[10px] md:text-[11px] font-semibold select-none font-mono"
-            >
-              <RefreshCw className={`h-3 w-3 ${syncing ? "animate-spin" : ""}`} />
-              <span>{syncing ? "Syncing..." : "Force Refresh"}</span>
-            </button>
-          </div>
+          <button
+            onClick={handleForceSync}
+            disabled={syncing}
+            title="Force trigger a manual re-sync of active client parameters to the Unreal Engine 5 instance"
+            className="btn-primary py-1.5 px-4 text-[0.65rem] flex items-center gap-2"
+          >
+            <RefreshCw className={`h-3 w-3 ${syncing ? "animate-spin" : ""}`} />
+            <span>{syncing ? "Syncing..." : "Force Refresh"}</span>
+          </button>
         </div>
       </footer>
     </div>
