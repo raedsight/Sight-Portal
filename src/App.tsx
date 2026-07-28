@@ -559,7 +559,7 @@ export default function App() {
   if (authLoading) {
     return (
       <div className="min-h-screen bg-[#050505] flex flex-col items-center justify-center font-mono">
-        <Compass className="h-10 w-10 text-blue-500 animate-spin mb-4" />
+        <Compass className="h-10 w-10 text-amber-500 animate-spin mb-4" />
         <span className="text-xs text-gray-400 tracking-widest uppercase">Initializing Secure Stage Channels...</span>
       </div>
     );
@@ -568,18 +568,18 @@ export default function App() {
   // Not Logged In View: Render Beautiful Glass Authentication Card with Email/Password Form
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-[#050505] text-[#e5e5e5] flex flex-col font-sans relative overflow-hidden selection:bg-blue-600">
+      <div className="min-h-screen bg-[#050505] text-[#e5e5e5] flex flex-col font-sans relative overflow-hidden selection:bg-amber-500 selection:text-black">
         {/* Dynamic ambient backgrounds */}
-        <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-blue-600/5 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-[600px] h-[600px] bg-purple-600/5 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-amber-500/5 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-[600px] h-[600px] bg-orange-600/5 rounded-full blur-3xl pointer-events-none"></div>
 
         <div className="flex-1 flex items-center justify-center p-4 z-10">
           <div className="w-full max-w-md bg-black/60 border border-white/10 p-8 rounded-2xl relative shadow-2xl backdrop-blur-xl">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-blue-500/20 to-transparent blur-xl pointer-events-none"></div>
+            <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-amber-500/20 to-transparent blur-xl pointer-events-none"></div>
             
             <div className="text-center space-y-4">
-              <div className="inline-flex h-12 w-12 bg-blue-600 rounded-xl items-center justify-center shadow-lg shadow-blue-500/20 border border-blue-400/30 mx-auto">
-                <Cpu className="h-6 w-6 text-white" />
+              <div className="inline-flex h-12 w-12 bg-amber-500 rounded-xl items-center justify-center shadow-lg shadow-amber-500/20 border border-amber-400/30 mx-auto">
+                <Cpu className="h-6 w-6 text-black" />
               </div>
 
               <div>
@@ -601,7 +601,7 @@ export default function App() {
                   }}
                   className={`py-2 rounded-lg text-xs font-mono font-bold uppercase transition ${
                     authMode === "signin"
-                      ? "bg-blue-600 text-white shadow"
+                      ? "bg-amber-500 text-black shadow"
                       : "text-gray-400 hover:text-white"
                   }`}
                 >
@@ -615,7 +615,7 @@ export default function App() {
                   }}
                   className={`py-2 rounded-lg text-xs font-mono font-bold uppercase transition ${
                     authMode === "signup"
-                      ? "bg-blue-600 text-white shadow"
+                      ? "bg-amber-500 text-black shadow"
                       : "text-gray-400 hover:text-white"
                   }`}
                 >
@@ -643,7 +643,7 @@ export default function App() {
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="name@example.com"
                     required
-                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all"
                   />
                 </div>
 
@@ -657,17 +657,17 @@ export default function App() {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     required
-                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all"
                   />
                 </div>
 
                 <button
                   type="submit"
                   disabled={formLoading}
-                  className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-600/20 active:scale-[0.98] transition-all rounded-xl text-white font-bold text-xs font-mono uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer border border-blue-400/20 disabled:opacity-50"
+                  className="w-full py-3.5 px-4 bg-amber-500 hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-500/20 active:scale-[0.98] transition-all rounded-xl text-black font-bold text-xs font-mono uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer border border-amber-400/20 disabled:opacity-50"
                 >
                   {formLoading ? (
-                    <Compass className="h-4 w-4 text-white animate-spin" />
+                    <Compass className="h-4 w-4 text-black animate-spin" />
                   ) : authMode === "signin" ? (
                     <>
                       Sign In Account
@@ -703,7 +703,7 @@ export default function App() {
 
               {/* Iframe Warning and New Tab helper */}
               {typeof window !== "undefined" && window.self !== window.top && (
-                <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-left text-[11px] text-blue-400 space-y-2">
+                <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-left text-[11px] text-amber-400 space-y-2">
                   <p className="font-sans leading-normal">
                     ⚠️ <strong>Iframe Sandbox Warning:</strong> Google Sign-In popups are blocked by browsers inside sandboxed preview frames.
                   </p>
@@ -712,7 +712,7 @@ export default function App() {
                       href={window.location.href}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-[10px] uppercase tracking-wider font-mono transition-colors"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-black font-bold rounded-lg text-[10px] uppercase tracking-wider font-mono transition-colors"
                     >
                       <Monitor className="h-3 w-3" />
                       Open in New Tab
@@ -761,7 +761,7 @@ export default function App() {
                     setDeepLinkPortal(null);
                     window.location.search = "";
                   }}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs font-mono text-white transition cursor-pointer"
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 rounded-lg text-xs font-mono text-black font-bold transition cursor-pointer"
                 >
                   Return Home
                 </button>
@@ -776,7 +776,7 @@ export default function App() {
   const isDeveloperUser = userProfile?.role === "owner" || userProfile?.role === "admin";
 
   return (
-    <div className="min-h-screen bg-[#050505] text-[#e5e5e5] flex flex-col font-sans selection:bg-blue-600 selection:text-white" id="app-wrapper">
+    <div className="min-h-screen bg-[#050505] text-[#e5e5e5] flex flex-col font-sans selection:bg-amber-500 selection:text-black" id="app-wrapper">
       
       {/* Universal Sticky Glass Top Bar */}
       <header className="bg-[var(--surface)] border-b border-[var(--ink-faint)] sticky top-0 z-55 flex-none" id="app-nav-bar">

@@ -451,7 +451,7 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
                         FTransform FinalTransform = PropertyVis->ManualRelativeTransform * DefaultTransform;
                         PropertyVis->SetActorTransform(FinalTransform);
                     }
-                    PropertyVis->PropertyDetails = AssignedProperty;
+                    PropertyVis->SetPropertyDetails(AssignedProperty);
 
 #if WITH_EDITOR
                     PropertyVis->SetActorLabel(AssignedProperty.Name);

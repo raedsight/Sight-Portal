@@ -35,7 +35,7 @@ export default function ThemePresets({ presets }: { presets: ThemePreset[] }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <div className="space-y-4">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <Palette className="h-5 w-5 text-blue-400" />
+            <Palette className="h-5 w-5 text-amber-500" />
             Create New Preset
           </h2>
           <input
@@ -43,14 +43,14 @@ export default function ThemePresets({ presets }: { presets: ThemePreset[] }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Preset Name"
-            className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white"
+            className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500"
           />
           <input
             type="text"
             value={logoText}
             onChange={(e) => setLogoText(e.target.value)}
             placeholder="Logo Text"
-            className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white"
+            className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500"
           />
           <div className="grid grid-cols-2 gap-4">
             <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className="w-full h-10 rounded cursor-pointer" />
@@ -60,7 +60,7 @@ export default function ThemePresets({ presets }: { presets: ThemePreset[] }) {
             <select
               value={bgStyle}
               onChange={(e) => setBgStyle(e.target.value as BgStyleType)}
-              className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white cursor-pointer"
+              className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 cursor-pointer"
             >
               <option value="cyber">Cyberpunk</option>
               <option value="dark">Dark</option>
@@ -70,14 +70,14 @@ export default function ThemePresets({ presets }: { presets: ThemePreset[] }) {
             <select
               value={fontFamily}
               onChange={(e) => setFontFamily(e.target.value as "sans" | "mono" | "grotesk")}
-              className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white cursor-pointer"
+              className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 cursor-pointer"
             >
               <option value="grotesk">Grotesk</option>
               <option value="sans">Sans</option>
               <option value="mono">Mono</option>
             </select>
           </div>
-          <button onClick={handleSave} className="flex items-center gap-2 px-4 py-2 bg-blue-600 rounded-lg text-white text-sm font-bold">
+          <button onClick={handleSave} className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 rounded-lg text-black text-sm font-bold transition-all cursor-pointer">
             <Save className="h-4 w-4" /> Save Preset
           </button>
         </div>

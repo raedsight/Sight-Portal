@@ -238,16 +238,16 @@ export default function AdminConsole({
       
       {/* Admin Header & Stats */}
       <div className="glass border border-white/10 rounded-xl p-6 sm:p-8 relative overflow-hidden shadow-2xl" id="admin-hero">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
-        <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-500/5 rounded-full blur-2xl -ml-20 -mb-20 pointer-events-none"></div>
+        <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-amber-500/5 rounded-full blur-2xl -ml-20 -mb-20 pointer-events-none"></div>
         
         <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <span className="px-2.5 py-1 text-xs font-mono font-medium rounded-full bg-blue-600/10 text-blue-400 border border-blue-500/20">
+              <span className="px-2.5 py-1 text-xs font-mono font-medium rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
                 ADMINISTRATION PANEL
               </span>
-              <span className="flex h-2 w-2 rounded-full bg-blue-500 status-pulse"></span>
+              <span className="flex h-2 w-2 rounded-full bg-amber-500 status-pulse"></span>
               <span className="text-xs text-gray-500 font-mono">Role: {currentUserProfile?.role.toUpperCase()} GRP</span>
             </div>
             <h1 className="text-3xl font-sans font-bold text-white tracking-tight">
@@ -266,7 +266,7 @@ export default function AdminConsole({
                 setEditingClient(null);
                 setShowAddForm(!showAddForm);
               }}
-              className="flex items-center gap-2 px-5 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium shadow-md transition-all duration-200 text-sm cursor-pointer"
+              className="flex items-center gap-2 px-5 py-3 rounded-lg bg-amber-500 hover:bg-amber-600 text-black font-bold shadow-md transition-all duration-200 text-sm cursor-pointer"
             >
               {showAddForm ? <Minimize2 className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
               {showAddForm ? "Close Form" : "Register Client"}
@@ -280,7 +280,7 @@ export default function AdminConsole({
             onClick={() => setActiveTab("portals")}
             className={`px-4 py-2 text-xs font-mono uppercase tracking-wider font-bold transition border-b-2 -mb-[2px] cursor-pointer ${
               activeTab === "portals"
-                ? "border-blue-500 text-white"
+                ? "border-amber-500 text-amber-400"
                 : "border-transparent text-gray-500 hover:text-gray-300"
             }`}
           >
@@ -290,12 +290,12 @@ export default function AdminConsole({
             onClick={() => setActiveTab("users")}
             className={`px-4 py-2 text-xs font-mono uppercase tracking-wider font-bold transition border-b-2 -mb-[2px] cursor-pointer flex items-center gap-1.5 ${
               activeTab === "users"
-                ? "border-blue-500 text-white"
+                ? "border-amber-500 text-amber-400"
                 : "border-transparent text-gray-500 hover:text-gray-300"
             }`}
           >
             User Group Directory
-            <span className="px-1.5 py-0.5 text-[9px] bg-white/10 rounded-full text-blue-300 font-sans">
+            <span className="px-1.5 py-0.5 text-[9px] bg-amber-500/20 text-amber-300 rounded-full font-sans font-bold">
               {userProfiles.length}
             </span>
           </button>
@@ -303,12 +303,12 @@ export default function AdminConsole({
             onClick={() => setActiveTab("themes")}
             className={`px-4 py-2 text-xs font-mono uppercase tracking-wider font-bold transition border-b-2 -mb-[2px] cursor-pointer flex items-center gap-1.5 ${
               activeTab === "themes"
-                ? "border-blue-500 text-white"
+                ? "border-amber-500 text-amber-400"
                 : "border-transparent text-gray-500 hover:text-gray-300"
             }`}
           >
             Branding Presets
-            <span className="px-1.5 py-0.5 text-[9px] bg-white/10 rounded-full text-blue-300 font-sans">
+            <span className="px-1.5 py-0.5 text-[9px] bg-amber-500/20 text-amber-300 rounded-full font-sans font-bold">
               {themePresets.length}
             </span>
           </button>
@@ -324,7 +324,7 @@ export default function AdminConsole({
         >
           <div className="flex items-center justify-between pb-4 mb-6 border-b border-white/10">
             <div className="flex items-center gap-2">
-              <Palette className="h-5 w-5 text-blue-400" />
+              <Palette className="h-5 w-5 text-amber-500" />
               <h2 className="text-lg font-bold text-white font-sans">
                 {editingClient ? `Editing Client Profile: ${editingClient.name}` : "Register New Client Portal"}
               </h2>
@@ -344,7 +344,7 @@ export default function AdminConsole({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Column 1: Core credentials */}
             <div className="lg:col-span-6 space-y-4">
-              <div className="border-l-2 border-blue-500 pl-3 py-1 mb-2">
+              <div className="border-l-2 border-amber-500 pl-3 py-1 mb-2">
                 <span className="text-xs font-bold text-gray-300 tracking-wider uppercase">1. Core Information & Sheet Bindings</span>
               </div>
 
@@ -359,7 +359,7 @@ export default function AdminConsole({
                     if (!logoText) setLogoText(e.target.value.toUpperCase() + " SYSTEM");
                   }}
                   placeholder="e.g. Neon Horizon Interactive"
-                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors font-sans"
+                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-sans"
                 />
               </div>
 
@@ -371,7 +371,7 @@ export default function AdminConsole({
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
                   placeholder="e.g. Horizon Media Group Ltd"
-                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors font-sans"
+                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-sans"
                 />
               </div>
 
@@ -382,7 +382,7 @@ export default function AdminConsole({
                   value={sheetId}
                   onChange={(e) => setSheetId(e.target.value)}
                   placeholder="e.g. 1BxiMVs0XRA5nFMd... or full shareable link"
-                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors font-sans"
+                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-sans"
                 />
               </div>
 
@@ -394,7 +394,7 @@ export default function AdminConsole({
                     value={sheetTab}
                     onChange={(e) => setSheetTab(e.target.value)}
                     placeholder="Sheet1"
-                    className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors font-sans"
+                    className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-sans"
                   />
                 </div>
                 <div>
@@ -405,7 +405,7 @@ export default function AdminConsole({
                     value={ue5Endpoint}
                     onChange={(e) => setUe5Endpoint(e.target.value)}
                     placeholder="http://127.0.0.1:8008/remote/object/call"
-                    className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors font-mono"
+                    className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-mono"
                   />
                 </div>
               </div>
@@ -417,14 +417,14 @@ export default function AdminConsole({
                   value={webSocketEndpoint}
                   onChange={(e) => setWebSocketEndpoint(e.target.value)}
                   placeholder="e.g. ws://127.0.0.1:8009 or leave empty for dynamic default"
-                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors font-mono"
+                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-mono"
                 />
               </div>
             </div>
 
             {/* Column 2: Branding */}
             <div className="lg:col-span-6 space-y-4">
-              <div className="border-l-2 border-blue-500 pl-3 py-1 mb-2">
+              <div className="border-l-2 border-amber-500 pl-3 py-1 mb-2">
                 <span className="text-xs font-bold text-gray-300 tracking-wider uppercase">2. Brand Themes & Staged Layouts</span>
               </div>
 
@@ -441,7 +441,7 @@ export default function AdminConsole({
                       setFontFamily(preset.branding.fontFamily);
                     }
                   }}
-                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 cursor-pointer"
                 >
                   <option value="">Select a preset...</option>
                   {themePresets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -455,7 +455,7 @@ export default function AdminConsole({
                   value={logoText}
                   onChange={(e) => setLogoText(e.target.value)}
                   placeholder="e.g. HORIZON PORTAL"
-                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors font-sans"
+                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-sans"
                 />
               </div>
 
@@ -474,7 +474,7 @@ export default function AdminConsole({
                       type="text"
                       value={primaryColor}
                       onChange={(e) => setPrimaryColor(e.target.value)}
-                      className="w-full px-3 py-1.5 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 font-mono"
+                      className="w-full px-3 py-1.5 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 font-mono"
                     />
                   </div>
                 </div>
@@ -491,7 +491,7 @@ export default function AdminConsole({
                       type="text"
                       value={accentColor}
                       onChange={(e) => setAccentColor(e.target.value)}
-                      className="w-full px-3 py-1.5 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 font-mono"
+                      className="w-full px-3 py-1.5 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 font-mono"
                     />
                   </div>
                 </div>
@@ -522,7 +522,7 @@ export default function AdminConsole({
                   <select
                     value={bgStyle}
                     onChange={(e) => setBgStyle(e.target.value as BgStyleType)}
-                    className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                    className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 cursor-pointer"
                   >
                     <option value="cyber">Cyberpunk Space (Dark Theme)</option>
                     <option value="dark">Immersive Carbon (Sleek Theme)</option>
@@ -534,7 +534,7 @@ export default function AdminConsole({
                   <select
                     value={fontFamily}
                     onChange={(e) => setFontFamily(e.target.value as "sans" | "mono" | "grotesk")}
-                    className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                    className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 cursor-pointer"
                   >
                     <option value="grotesk">Space Grotesk (Tech-forward)</option>
                     <option value="sans">Inter (Modern Clean UI)</option>
@@ -559,7 +559,7 @@ export default function AdminConsole({
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all shadow-md cursor-pointer font-mono uppercase tracking-wider"
+              className="px-6 py-2.5 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-black rounded-lg transition-all shadow-md cursor-pointer font-mono uppercase tracking-wider"
             >
               {editingClient ? "Overwrite Client Profile" : "Activate Client Portal"}
             </button>
@@ -840,7 +840,7 @@ export default function AdminConsole({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
             <div>
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <Lock className="h-5 w-5 text-blue-400" />
+                <Lock className="h-5 w-5 text-amber-500" />
                 User Authentication & Role Directory
               </h2>
               <p className="text-xs text-gray-400 mt-1 font-sans">
@@ -855,7 +855,7 @@ export default function AdminConsole({
                 placeholder="Search user profile records..."
                 value={userSearchQuery}
                 onChange={(e) => setUserSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 bg-black/60 border border-white/10 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-blue-500 placeholder-gray-600 font-sans"
+                className="w-full pl-9 pr-3 py-1.5 bg-black/60 border border-white/10 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-amber-500 placeholder-gray-600 font-sans"
               />
             </div>
           </div>
@@ -890,7 +890,7 @@ export default function AdminConsole({
                         {/* User identity info */}
                         <td className="py-4 px-4 font-sans">
                           <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-full bg-blue-600/10 border border-blue-500/20 flex items-center justify-center font-bold text-blue-400 text-xs shrink-0 uppercase">
+                            <div className="h-8 w-8 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-amber-400 text-xs shrink-0 uppercase">
                               {profile.email.substring(0, 2)}
                             </div>
                             <div>
@@ -917,7 +917,7 @@ export default function AdminConsole({
                                 }
                               });
                             }}
-                            className="px-2 py-1 bg-[#050505] border border-white/10 rounded text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                            className="px-2 py-1 bg-[#050505] border border-white/10 rounded text-xs text-white focus:outline-none focus:border-amber-500 cursor-pointer"
                           >
                             <option value="owner">Owner GRP (All / Delete)</option>
                             <option value="admin">Admin GRP (Edit / Create)</option>
@@ -939,7 +939,7 @@ export default function AdminConsole({
                                   }
                                 });
                               }}
-                              className="px-2 py-1 bg-[#050505] border border-white/10 rounded text-xs text-white focus:outline-none focus:border-blue-500 max-w-[200px] cursor-pointer"
+                              className="px-2 py-1 bg-[#050505] border border-white/10 rounded text-xs text-white focus:outline-none focus:border-amber-500 max-w-[200px] cursor-pointer"
                             >
                               <option value="">Awaiting Allocation...</option>
                               {clients.map(c => (
@@ -949,7 +949,7 @@ export default function AdminConsole({
                               ))}
                             </select>
                           ) : (
-                            <span className="text-blue-400 text-[10px] uppercase font-bold tracking-wider flex items-center gap-1">
+                            <span className="text-amber-400 text-[10px] uppercase font-bold tracking-wider flex items-center gap-1">
                               <Sparkles className="h-3 w-3 animate-pulse" />
                               Unlimited Access
                             </span>
