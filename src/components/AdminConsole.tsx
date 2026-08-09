@@ -104,6 +104,7 @@ export default function AdminConsole({
   }, []);
 
   const isOwner = currentUserProfile?.role === "owner";
+  const canManageClients = currentUserProfile?.role === "owner" || currentUserProfile?.role === "admin";
 
   const colorPresets = [
     { name: "Unreal Blue", primary: "#0070FF", accent: "#38bdf8" },
@@ -545,24 +546,46 @@ export default function AdminConsole({
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 mt-8 pt-4 border-t border-white/10">
-            <button
-              type="button"
-              onClick={() => {
-                setShowAddForm(false);
-                setEditingClient(null);
-                resetForm();
-              }}
-              className="px-4 py-2 text-xs font-semibold text-gray-400 hover:text-white transition-colors cursor-pointer font-sans"
-            >
-              Cancel Setup
-            </button>
-            <button
-              type="submit"
-              className="px-6 py-2.5 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-black rounded-lg transition-all shadow-md cursor-pointer font-mono uppercase tracking-wider"
-            >
-              {editingClient ? "Overwrite Client Profile" : "Activate Client Portal"}
-            </button>
+          <div className="flex items-center justify-between gap-3 mt-8 pt-4 border-t border-white/10">
+            <div>
+              {editingClient && canManageClients && (
+                <button
+                  type="button"
+                  id={`delete-client-form-btn-${editingClient.id}`}
+                  onClick={() => {
+                    if (confirm(`Remove custom bridge and portal for client '${editingClient.name}'?`)) {
+                      onDeleteClient(editingClient.id);
+                      setShowAddForm(false);
+                      setEditingClient(null);
+                      resetForm();
+                    }
+                  }}
+                  className="px-3 py-2 text-xs font-semibold text-rose-400 hover:text-rose-300 border border-rose-500/20 hover:border-rose-500/40 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete Client Portal
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddForm(false);
+                  setEditingClient(null);
+                  resetForm();
+                }}
+                className="px-4 py-2 text-xs font-semibold text-gray-400 hover:text-white transition-colors cursor-pointer font-sans"
+              >
+                Cancel Setup
+              </button>
+              <button
+                type="submit"
+                className="px-6 py-2.5 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-black rounded-lg transition-all shadow-md cursor-pointer font-mono uppercase tracking-wider"
+              >
+                {editingClient ? "Overwrite Client Profile" : "Activate Client Portal"}
+              </button>
+            </div>
           </div>
         </form>
       )}
@@ -726,8 +749,8 @@ export default function AdminConsole({
                           {isCopied ? "Copied" : "Link"}
                         </button>
 
-                        {/* Deletion locked to Owner GRP only */}
-                        {isOwner && (
+                        {/* Deletion accessible to Owner and Admin GRP */}
+                        {canManageClients && (
                           <button
                             title="Delete Client Portal"
                             id={`delete-client-btn-${client.id}`}

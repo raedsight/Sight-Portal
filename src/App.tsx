@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.5
  */
 
-import { useState, useEffect, FormEvent } from "react";
+import { useState, useEffect, useRef, FormEvent } from "react";
 import { 
   auth, 
   db, 
@@ -58,6 +58,7 @@ import {
 export default function App() {
   const [activeView, setActiveView] = useState<"admin" | "client">("admin");
   const [clients, setClients] = useState<Client[]>([]);
+  const hasSeededInitialRef = useRef<boolean>(false);
   const [logs, setLogs] = useState<Log[]>([]);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
 
@@ -163,13 +164,14 @@ export default function App() {
     const setupSync = async () => {
       if (userProfile.role === "owner" || userProfile.role === "admin") {
         unsubscribe = await syncClients((updatedClients) => {
-          // Seed initial presets if collection is empty
-          if (updatedClients.length === 0) {
+          if (updatedClients.length === 0 && !hasSeededInitialRef.current) {
+            hasSeededInitialRef.current = true;
             console.log("[Firestore] Seeding initial client portal profiles...");
             DEFAULT_CLIENTS.forEach(async (c) => {
               await createOrUpdateClient(c);
             });
           } else {
+            hasSeededInitialRef.current = true;
             setClients(updatedClients);
           }
         });
@@ -390,18 +392,26 @@ export default function App() {
   };
 
   const handleDeleteClient = async (id: string) => {
-    // Only Owner GRP can delete portals/clients
-    if (userProfile?.role !== "owner") {
-      alert("Unauthorized Operation: Only members of the Owner GRP can delete portal configurations.");
+    // Only Owner or Admin GRP can delete portals/clients
+    if (userProfile?.role !== "owner" && userProfile?.role !== "admin") {
+      alert("Unauthorized Operation: Only members of the Owner or Admin GRP can delete portal configurations.");
       return;
     }
 
     const target = clients.find(c => c.id === id);
-    await removeClient(id);
+
+    // Optimistically remove from local state
+    setClients(prev => prev.filter(c => c.id !== id));
 
     if (selectedClient && selectedClient.id === id) {
       setSelectedClient(null);
       setActiveView("admin");
+    }
+
+    try {
+      await removeClient(id);
+    } catch (err) {
+      console.error("Failed to remove client from database:", err);
     }
 
     await handleRecordLog({
