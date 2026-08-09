@@ -14,9 +14,9 @@
 	{
 		"MajorVersion": 5,
 		"MinorVersion": 8,
-		"PatchVersion": 0,
-		"Changelist": 55116800,
-		"CompatibleChangelist": 0,
+		"PatchVersion": 1,
+		"Changelist": 56057345,
+		"CompatibleChangelist": 55116800,
 		"IsLicenseeVersion": 0,
 		"IsPromotedBuild": 0,
 		"BranchName": "++UE5+Release-5.8",
@@ -8769,6 +8769,18 @@
 		},
 		{
 			"Path": "$(EngineDir)/Plugins/Marketplace/RuntimeDb08c7479ee8dV14/Binaries/Win64/UnrealEditor.modules",
+			"Type": "RequiredResource"
+		},
+		{
+			"Path": "$(EngineDir)/Plugins/Marketplace/Unrealtoca94895ad369V6/Binaries/Win64/UnrealEditor-UnrealToColmap.dll",
+			"Type": "DynamicLibrary"
+		},
+		{
+			"Path": "$(EngineDir)/Plugins/Marketplace/Unrealtoca94895ad369V6/Binaries/Win64/UnrealEditor-UnrealToColmap.pdb",
+			"Type": "SymbolFile"
+		},
+		{
+			"Path": "$(EngineDir)/Plugins/Marketplace/Unrealtoca94895ad369V6/Binaries/Win64/UnrealEditor.modules",
 			"Type": "RequiredResource"
 		},
 		{
@@ -39554,10 +39566,6 @@
 			"Type": "UFS"
 		},
 		{
-			"Path": "$(EngineDir)/Plugins/Experimental/ToolsetRegistry/ToolsetRegistry.uplugin",
-			"Type": "UFS"
-		},
-		{
 			"Path": "$(EngineDir)/Plugins/Experimental/Water/Water.uplugin",
 			"Type": "UFS"
 		},
@@ -40318,7 +40326,6 @@
 		"TemplateSequence",
 		"TmvMedia",
 		"ToolPresets",
-		"ToolsetRegistry",
 		"TraceUtilities",
 		"TweeningUtils",
 		"UMGWidgetPreview",

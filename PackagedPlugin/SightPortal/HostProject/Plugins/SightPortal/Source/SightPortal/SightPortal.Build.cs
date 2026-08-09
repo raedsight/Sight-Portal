@@ -42,6 +42,7 @@ public class SightPortal : ModuleRules
 				"Http",
 				"Json",
 				"JsonUtilities",
+				"UMG"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

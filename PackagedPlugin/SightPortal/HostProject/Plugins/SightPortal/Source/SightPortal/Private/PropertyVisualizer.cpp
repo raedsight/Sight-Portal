@@ -1,5 +1,7 @@
 #include "PropertyVisualizer.h"
 #include "BlockSpline.h"
+#include "Blueprint/UserWidget.h"
+#include "Kismet/GameplayStatics.h"
 
 APropertyVisualizer::APropertyVisualizer()
 {
@@ -8,12 +10,100 @@ APropertyVisualizer::APropertyVisualizer()
     USceneComponent* SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
     RootComponent = SceneRoot;
 
+    // Create and attach 3D World Space Widget Component
+    Widget3DComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("Widget3DComponent"));
+    Widget3DComponent->SetupAttachment(RootComponent);
+    Widget3DComponent->SetWidgetSpace(EWidgetSpace::World);
+    Widget3DComponent->SetDrawSize(FVector2D(320.0f, 160.0f));
+    Widget3DComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 200.0f)); // Floating above actor
+    Widget3DComponent->SetTwoSided(true);
+
+    // Default Widget Classes
+    Widget3DClass = USightPortal3DPropertyWidget::StaticClass();
+    Detail2DWidgetClass = USightPortal2DPropertyDetailWidget::StaticClass();
+
     ManualRelativeTransform = FTransform::Identity;
 }
 
 void APropertyVisualizer::BeginPlay()
 {
     Super::BeginPlay();
+
+    // Set 3D widget class if specified
+    if (Widget3DComponent && Widget3DClass)
+    {
+        Widget3DComponent->SetWidgetClass(Widget3DClass);
+        Widget3DComponent->InitWidget();
+
+        // Bind Explore button event from 3D Widget instance
+        if (USightPortal3DPropertyWidget* Widget3D = Cast<USightPortal3DPropertyWidget>(Widget3DComponent->GetUserWidgetObject()))
+        {
+            Widget3D->SetPropertyData(PropertyDetails);
+            Widget3D->OnExploreRequested.AddUniqueDynamic(this, &APropertyVisualizer::OnExploreRequestedFrom3DWidget);
+        }
+    }
+}
+
+void APropertyVisualizer::SetPropertyDetails(const FSightPortalProperty& InDetails)
+{
+    PropertyDetails = InDetails;
+
+    if (Widget3DComponent)
+    {
+        if (USightPortal3DPropertyWidget* Widget3D = Cast<USightPortal3DPropertyWidget>(Widget3DComponent->GetUserWidgetObject()))
+        {
+            Widget3D->SetPropertyData(InDetails);
+        }
+    }
+
+    if (Active2DDetailWidget && Active2DDetailWidget->IsInViewport())
+    {
+        Active2DDetailWidget->DisplayPropertyDetails(InDetails);
+    }
+}
+
+USightPortal2DPropertyDetailWidget* APropertyVisualizer::OpenPropertyDetail2DWidget()
+{
+    APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+    if (!PC)
+    {
+        return nullptr;
+    }
+
+    if (!Detail2DWidgetClass)
+    {
+        Detail2DWidgetClass = USightPortal2DPropertyDetailWidget::StaticClass();
+    }
+
+    if (Detail2DWidgetClass)
+    {
+        // Remove existing detail widget if open
+        if (Active2DDetailWidget && Active2DDetailWidget->IsInViewport())
+        {
+            Active2DDetailWidget->RemoveFromParent();
+        }
+
+        Active2DDetailWidget = CreateWidget<USightPortal2DPropertyDetailWidget>(PC, Detail2DWidgetClass);
+        if (Active2DDetailWidget)
+        {
+            Active2DDetailWidget->AddToViewport(100);
+            Active2DDetailWidget->DisplayPropertyDetails(PropertyDetails);
+
+            // Set UI Input mode so user can interact with the 2D detail popup
+            FInputModeGameAndUI InputMode;
+            InputMode.SetWidgetToFocus(Active2DDetailWidget->TakeWidget());
+            InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+            PC->SetInputMode(InputMode);
+            PC->bShowMouseCursor = true;
+        }
+    }
+
+    return Active2DDetailWidget;
+}
+
+void APropertyVisualizer::OnExploreRequestedFrom3DWidget(const FSightPortalProperty& InProperty)
+{
+    OpenPropertyDetail2DWidget();
 }
 
 #if WITH_EDITOR

@@ -365,7 +365,7 @@ void ASightPortalSiteManager::HandleDataReceived(const TArray<FSightPortalProper
         {
             FString OldName = TargetVis->PropertyDetails.Name;
             
-            TargetVis->PropertyDetails = Prop;
+            TargetVis->SetPropertyDetails(Prop);
 
 #if WITH_EDITOR
             TargetVis->SetActorLabel(Prop.Name);
