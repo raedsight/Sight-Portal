@@ -54,6 +54,18 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SightPortal|Property")
     void SetPropertyDetails(const FSightPortalProperty& InDetails);
 
+    // Show/display the 3D world space widget
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|UI")
+    void Show3DWidget();
+
+    // Hide/collapse the 3D world space widget
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|UI")
+    void Hide3DWidget();
+
+    // Set 3D widget visibility
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|UI")
+    void Set3DWidgetVisible(bool bVisible);
+
     // Open/Show the 2D Detail Widget on player viewport displaying full property details
     UFUNCTION(BlueprintCallable, Category = "SightPortal|UI")
     USightPortal2DPropertyDetailWidget* OpenPropertyDetail2DWidget();
@@ -61,6 +73,10 @@ public:
     // Callback bound to 3D widget's Explore button
     UFUNCTION()
     void OnExploreRequestedFrom3DWidget(const FSightPortalProperty& InProperty);
+
+    // Callback bound to 3D widget's Close button
+    UFUNCTION()
+    void OnCloseRequestedFrom3DWidget();
 
     // Track if this visualizer has been manually moved by the user in the editor
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|State")

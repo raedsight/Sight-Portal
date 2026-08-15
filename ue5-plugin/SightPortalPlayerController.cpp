@@ -397,6 +397,11 @@ void ASightPortalPlayerController::SelectPropertyVisualizer(APropertyVisualizer*
 {
     if (CurrentSelectedVisualizer == TargetVisualizer)
     {
+        // If clicking the same visualizer again, ensure its 3D widget is visible
+        if (TargetVisualizer)
+        {
+            TargetVisualizer->Show3DWidget();
+        }
         return;
     }
 
@@ -404,6 +409,7 @@ void ASightPortalPlayerController::SelectPropertyVisualizer(APropertyVisualizer*
 
     if (TargetVisualizer)
     {
+        TargetVisualizer->Show3DWidget();
         OnPropertySelected.Broadcast(TargetVisualizer);
     }
     else
@@ -487,6 +493,9 @@ USightPortal2DPropertyDetailWidget* ASightPortalPlayerController::ShowPropertyDe
 
     if (Active2DDetailWidget)
     {
+        // Hide floating 3D world widget when 2D detail popup is opened
+        TargetVisualizer->Hide3DWidget();
+
         if (!Active2DDetailWidget->IsInViewport())
         {
             Active2DDetailWidget->AddToViewport(100);

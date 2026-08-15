@@ -33,7 +33,8 @@ A specialized Unreal Engine 5 Player Controller enabling intuitive viewport expl
 A lightweight 3D UMG Widget attached directly to `APropertyVisualizer` actors floating in world space.
 * **Surface Area Display:** Reads `FSightPortalProperty::Surface` (e.g. `185.0 m²`).
 * **Bedrooms Count:** Reads `FSightPortalProperty::BedroomsCount` (e.g. `3 Beds`).
-* **Explore Button:** Interactive UButton triggering `OnExploreRequested` dynamic delegate when clicked.
+* **Explore Button:** Interactive UButton triggering `OnExploreRequested` dynamic delegate and auto-hiding the 3D widget while opening the 2D detail popup.
+* **Close Button:** Interactive UButton (`CloseButton` with `OnCloseRequested` delegate) allowing users to dismiss/hide the floating 3D widget.
 * **Property Name:** Reads `FSightPortalProperty::Name` (e.g. `Z1B11`).
 
 ### 3. 🖥️ `USightPortal2DPropertyDetailWidget` (2D Full Detail HUD Widget)

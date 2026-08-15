@@ -45,11 +45,12 @@ void APropertyVisualizer::BeginPlay()
         Widget3DComponent->SetWidgetClass(Widget3DClass);
         Widget3DComponent->InitWidget();
 
-        // Bind Explore button event from 3D Widget instance
+        // Bind Explore and Close button events from 3D Widget instance
         if (USightPortal3DPropertyWidget* Widget3D = Cast<USightPortal3DPropertyWidget>(Widget3DComponent->GetUserWidgetObject()))
         {
             Widget3D->SetPropertyData(PropertyDetails);
             Widget3D->OnExploreRequested.AddUniqueDynamic(this, &APropertyVisualizer::OnExploreRequestedFrom3DWidget);
+            Widget3D->OnCloseRequested.AddUniqueDynamic(this, &APropertyVisualizer::OnCloseRequestedFrom3DWidget);
         }
     }
 }
@@ -72,6 +73,42 @@ void APropertyVisualizer::SetPropertyDetails(const FSightPortalProperty& InDetai
     }
 }
 
+void APropertyVisualizer::Show3DWidget()
+{
+    if (Widget3DComponent)
+    {
+        Widget3DComponent->SetVisibility(true);
+        if (USightPortal3DPropertyWidget* Widget3D = Cast<USightPortal3DPropertyWidget>(Widget3DComponent->GetUserWidgetObject()))
+        {
+            Widget3D->ShowWidget();
+        }
+    }
+}
+
+void APropertyVisualizer::Hide3DWidget()
+{
+    if (Widget3DComponent)
+    {
+        if (USightPortal3DPropertyWidget* Widget3D = Cast<USightPortal3DPropertyWidget>(Widget3DComponent->GetUserWidgetObject()))
+        {
+            Widget3D->HideWidget();
+        }
+        Widget3DComponent->SetVisibility(false);
+    }
+}
+
+void APropertyVisualizer::Set3DWidgetVisible(bool bVisible)
+{
+    if (bVisible)
+    {
+        Show3DWidget();
+    }
+    else
+    {
+        Hide3DWidget();
+    }
+}
+
 USightPortal2DPropertyDetailWidget* APropertyVisualizer::OpenPropertyDetail2DWidget()
 {
     APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
@@ -79,6 +116,9 @@ USightPortal2DPropertyDetailWidget* APropertyVisualizer::OpenPropertyDetail2DWid
     {
         return nullptr;
     }
+
+    // Hide 3D widget when opening 2D detail popup
+    Hide3DWidget();
 
     // If active player controller is SightPortal Player Controller, delegate selection & display
     if (ASightPortalPlayerController* SightPC = Cast<ASightPortalPlayerController>(PC))
@@ -120,7 +160,15 @@ USightPortal2DPropertyDetailWidget* APropertyVisualizer::OpenPropertyDetail2DWid
 
 void APropertyVisualizer::OnExploreRequestedFrom3DWidget(const FSightPortalProperty& InProperty)
 {
+    // Hide 3D widget and open 2D detail modal
+    Hide3DWidget();
     OpenPropertyDetail2DWidget();
+}
+
+void APropertyVisualizer::OnCloseRequestedFrom3DWidget()
+{
+    // Hide 3D widget when close button is clicked
+    Hide3DWidget();
 }
 
 #if WITH_EDITOR
