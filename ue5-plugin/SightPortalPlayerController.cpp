@@ -29,10 +29,15 @@ ASightPortalPlayerController::ASightPortalPlayerController()
     TouchMoveSensitivity = 8.0f;
     TouchTapMaxDistance = 15.0f;
     bInvertLookPitch = false;
+    CameraTransitionSpeed = 10.0f;
 
     CurrentMovementInput = FVector::ZeroVector;
     bIsSprinting = false;
     bIsMouseLooking = false;
+    bIsMovementLocked = false;
+    bIsTransitioningCamera = false;
+    TargetFocusLocation = FVector::ZeroVector;
+    TargetFocusRotation = FRotator::ZeroRotator;
 
     Detail2DWidgetClass = USightPortal2DPropertyDetailWidget::StaticClass();
     Active2DDetailWidget = nullptr;
@@ -61,6 +66,55 @@ void ASightPortalPlayerController::BeginPlay()
 void ASightPortalPlayerController::PlayerTick(float DeltaTime)
 {
     Super::PlayerTick(DeltaTime);
+
+    // --- Fast Camera Travel to LookAt Point ---
+    if (bIsTransitioningCamera)
+    {
+        AActor* TargetActor = GetPawn();
+        if (!TargetActor)
+        {
+            TargetActor = GetSpectatorPawn();
+        }
+        if (!TargetActor)
+        {
+            TargetActor = GetViewTarget();
+        }
+
+        if (TargetActor)
+        {
+            const FVector CurrentLoc = TargetActor->GetActorLocation();
+            const FRotator CurrentRot = GetControlRotation();
+
+            const FVector NewLoc = FMath::VInterpTo(CurrentLoc, TargetFocusLocation, DeltaTime, CameraTransitionSpeed);
+            const FRotator NewRot = FMath::RInterpTo(CurrentRot, TargetFocusRotation, DeltaTime, CameraTransitionSpeed);
+
+            TargetActor->SetActorLocation(NewLoc, true);
+            SetControlRotation(NewRot);
+
+            const float DistSq = FVector::DistSquared(NewLoc, TargetFocusLocation);
+            const float RotDiff = FMath::Abs(FMath::FindDeltaAngleDegrees(NewRot.Pitch, TargetFocusRotation.Pitch)) +
+                                  FMath::Abs(FMath::FindDeltaAngleDegrees(NewRot.Yaw, TargetFocusRotation.Yaw));
+
+            // Snap when sufficiently close
+            if (DistSq < 64.0f && RotDiff < 0.5f)
+            {
+                TargetActor->SetActorLocation(TargetFocusLocation, true);
+                SetControlRotation(TargetFocusRotation);
+                bIsTransitioningCamera = false;
+            }
+        }
+        else
+        {
+            bIsTransitioningCamera = false;
+        }
+    }
+
+    // If movement is locked (static at LookAt point), skip WASD navigation polling
+    if (bIsMovementLocked)
+    {
+        CurrentMovementInput = FVector::ZeroVector;
+        return;
+    }
 
     // --- Direct Keyboard Polling for WASD, Arrows, Elevation & Sprint ---
     FVector KeyMovement = FVector::ZeroVector;
@@ -154,6 +208,11 @@ void ASightPortalPlayerController::StopSprint()
 
 void ASightPortalPlayerController::StartMouseLook()
 {
+    if (bIsMovementLocked)
+    {
+        return;
+    }
+
     bIsMouseLooking = true;
     bShowMouseCursor = false;
 
@@ -174,7 +233,7 @@ void ASightPortalPlayerController::StopMouseLook()
 
 void ASightPortalPlayerController::OnMouseMoveX(float Value)
 {
-    if (bIsMouseLooking && FMath::Abs(Value) > KINDA_SMALL_NUMBER)
+    if (!bIsMovementLocked && bIsMouseLooking && FMath::Abs(Value) > KINDA_SMALL_NUMBER)
     {
         AddYawInput(Value * MouseLookSensitivity);
     }
@@ -182,7 +241,7 @@ void ASightPortalPlayerController::OnMouseMoveX(float Value)
 
 void ASightPortalPlayerController::OnMouseMoveY(float Value)
 {
-    if (bIsMouseLooking && FMath::Abs(Value) > KINDA_SMALL_NUMBER)
+    if (!bIsMovementLocked && bIsMouseLooking && FMath::Abs(Value) > KINDA_SMALL_NUMBER)
     {
         const float PitchFactor = bInvertLookPitch ? 1.0f : -1.0f;
         AddPitchInput(Value * MouseLookSensitivity * PitchFactor);
@@ -191,7 +250,7 @@ void ASightPortalPlayerController::OnMouseMoveY(float Value)
 
 void ASightPortalPlayerController::OnMouseWheelZoom(float Value)
 {
-    if (FMath::Abs(Value) > KINDA_SMALL_NUMBER)
+    if (!bIsMovementLocked && FMath::Abs(Value) > KINDA_SMALL_NUMBER)
     {
         // Adjust movement speed or move forward along camera direction
         if (APawn* TargetPawn = GetPawn())
@@ -278,6 +337,12 @@ void ASightPortalPlayerController::HandleTouchMoved(ETouchIndex::Type FingerInde
     if (TotalDeltaFromStart.Size() > TouchTapMaxDistance)
     {
         Data->bMovedBeyondTap = true;
+    }
+
+    // If movement is locked (focusing on property), do not rotate or pan camera
+    if (bIsMovementLocked)
+    {
+        return;
     }
 
     const int32 ActiveFingerCount = ActiveTouches.Num();
@@ -393,14 +458,78 @@ void ASightPortalPlayerController::HandleActorClicked(AActor* ClickedActor)
     }
 }
 
+void ASightPortalPlayerController::FocusOnPropertyVisualizer(APropertyVisualizer* TargetVisualizer)
+{
+    if (!TargetVisualizer)
+    {
+        return;
+    }
+
+    TargetFocusLocation = TargetVisualizer->GetLookAtLocation();
+    TargetFocusRotation = TargetVisualizer->GetLookAtRotation();
+    TargetFocusRotation.Roll = 0.0f; // Keep camera upright and level with horizon
+
+    bIsTransitioningCamera = true;
+    bIsMovementLocked = true;
+
+    // Stop mouse look if active and clear current movement input
+    if (bIsMouseLooking)
+    {
+        StopMouseLook();
+    }
+    CurrentMovementInput = FVector::ZeroVector;
+}
+
+void ASightPortalPlayerController::LockMovement()
+{
+    bIsMovementLocked = true;
+    CurrentMovementInput = FVector::ZeroVector;
+}
+
+void ASightPortalPlayerController::UnlockMovement()
+{
+    bIsMovementLocked = false;
+    bIsTransitioningCamera = false;
+
+    // Reset Roll rotation to 0.0f so the camera is upright and level with horizon
+    FRotator ControlRot = GetControlRotation();
+    ControlRot.Roll = 0.0f;
+    SetControlRotation(ControlRot);
+
+    AActor* TargetActor = GetPawn();
+    if (!TargetActor)
+    {
+        TargetActor = GetSpectatorPawn();
+    }
+    if (!TargetActor)
+    {
+        TargetActor = GetViewTarget();
+    }
+
+    if (TargetActor)
+    {
+        FRotator ActorRot = TargetActor->GetActorRotation();
+        ActorRot.Roll = 0.0f;
+        TargetActor->SetActorRotation(ActorRot);
+    }
+
+    // Restore standard Game & UI input mode
+    FInputModeGameAndUI InputMode;
+    InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+    InputMode.SetHideCursorDuringCapture(false);
+    SetInputMode(InputMode);
+    bShowMouseCursor = true;
+}
+
 void ASightPortalPlayerController::SelectPropertyVisualizer(APropertyVisualizer* TargetVisualizer)
 {
     if (CurrentSelectedVisualizer == TargetVisualizer)
     {
-        // If clicking the same visualizer again, ensure its 3D widget is visible
+        // If clicking the same visualizer again, ensure its 3D widget is visible and re-focus camera
         if (TargetVisualizer)
         {
             TargetVisualizer->Show3DWidget();
+            FocusOnPropertyVisualizer(TargetVisualizer);
         }
         return;
     }
@@ -410,10 +539,12 @@ void ASightPortalPlayerController::SelectPropertyVisualizer(APropertyVisualizer*
     if (TargetVisualizer)
     {
         TargetVisualizer->Show3DWidget();
+        FocusOnPropertyVisualizer(TargetVisualizer);
         OnPropertySelected.Broadcast(TargetVisualizer);
     }
     else
     {
+        UnlockMovement();
         OnPropertyDeselected.Broadcast();
     }
 }
@@ -423,6 +554,7 @@ void ASightPortalPlayerController::DeselectPropertyVisualizer()
     if (CurrentSelectedVisualizer)
     {
         CurrentSelectedVisualizer = nullptr;
+        UnlockMovement();
         OnPropertyDeselected.Broadcast();
     }
 }
@@ -525,6 +657,7 @@ void ASightPortalPlayerController::HidePropertyDetailWidget()
     }
 
     CurrentSelectedVisualizer = nullptr;
+    UnlockMovement();
     OnPropertyDeselected.Broadcast();
 }
 
@@ -536,6 +669,7 @@ bool ASightPortalPlayerController::IsPropertyDetailWidgetOpen() const
 void ASightPortalPlayerController::OnDetailWidgetClosed()
 {
     CurrentSelectedVisualizer = nullptr;
+    UnlockMovement();
     OnPropertyDeselected.Broadcast();
 }
 

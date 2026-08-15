@@ -23,9 +23,11 @@ A specialized Unreal Engine 5 Player Controller enabling intuitive viewport expl
   * **1-Finger Drag:** Rotate camera view / look around.
   * **2-Finger Pinch:** Zoom forward / backward.
   * **2-Finger Drag:** Pan camera horizontally and vertically.
-* **Click to Select:** Left-clicking or tapping any `APropertyVisualizer` (or its `SelectionCollisionBox`) selects/highlights the property visualizer and broadcasts `OnPropertySelected`.
+* **Click to Select & Fast Travel to LookAt Arrow:** Left-clicking or tapping any `APropertyVisualizer` (or its `SelectionCollisionBox`) selects/highlights the property, smoothly fast-travels the player controller camera to the `LookAtArrowComponent` location and rotation, displays the floating 3D widget, and locks player navigation movement.
+* **Movement Lock & Static State:** While focused on a selected property, player navigation (WASD, mouse look, touch swipe/pinch) is locked so the camera remains perfectly static in front of the property.
+* **Unlock on Close or Explore:** Clicking either the **Close** button or the **Explore** button on the 3D widget automatically unlocks player navigation movement and resets the camera's Roll rotation to 0.0° (level with the horizon).
 * **Explore to Open 2D Details:** The full 2D detail popup (`USightPortal2DPropertyDetailWidget`) opens when clicking the **Explore** button on the floating 3D World Space Widget (`USightPortal3DPropertyWidget`).
-* **Click Away to Dismiss:** Clicking on empty space, background terrain, or non-property geometry automatically dismisses / hides the active 2D detail popup and clears selection.
+* **Click Away to Dismiss:** Clicking on empty space, background terrain, or non-property geometry automatically dismisses / hides the active 2D detail popup, unlocks movement, and clears selection.
 * **Selection State & Delegates:** Exposes `OnPropertySelected` and `OnPropertyDeselected` dynamic Blueprint delegates for custom camera framing, audio cues, or lighting highlights.
 
 

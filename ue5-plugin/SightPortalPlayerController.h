@@ -65,6 +65,18 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Camera")
     bool bInvertLookPitch;
 
+    // Interpolation speed for fast camera travel to LookAt point (Default: 10.0f)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Camera")
+    float CameraTransitionSpeed;
+
+    // Whether player movement (WASD, mouse look, touch pan) is currently locked
+    UPROPERTY(BlueprintReadOnly, Category = "SightPortal|State")
+    bool bIsMovementLocked;
+
+    // Whether camera is currently animating towards a property's LookAt point
+    UPROPERTY(BlueprintReadOnly, Category = "SightPortal|State")
+    bool bIsTransitioningCamera;
+
     // --- UI & Interaction Properties ---
 
     // 2D Widget Class to spawn for property details (Defaults to USightPortal2DPropertyDetailWidget)
@@ -126,7 +138,37 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SightPortal|Touch")
     void HandleTouchEnded(ETouchIndex::Type FingerIndex, FVector Location);
 
-    // --- Interactive Selection Functions ---
+    // --- Interactive Selection & Focus Functions ---
+
+    /**
+     * Fast travel camera to property's LookAt Arrow location and rotation, locking movement.
+     */
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Camera")
+    void FocusOnPropertyVisualizer(APropertyVisualizer* TargetVisualizer);
+
+    /**
+     * Lock player WASD and mouse/touch navigation movement.
+     */
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Movement")
+    void LockMovement();
+
+    /**
+     * Unlock player WASD and mouse/touch navigation movement.
+     */
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Movement")
+    void UnlockMovement();
+
+    /**
+     * Check if player navigation movement is currently locked.
+     */
+    UFUNCTION(BlueprintPure, Category = "SightPortal|Movement")
+    bool IsMovementLocked() const { return bIsMovementLocked; }
+
+    /**
+     * Check if camera is currently transitioning to a LookAt target.
+     */
+    UFUNCTION(BlueprintPure, Category = "SightPortal|Camera")
+    bool IsTransitioningCamera() const { return bIsTransitioningCamera; }
 
     /**
      * Set the selected property visualizer (focuses/highlights without opening 2D detail popup).
@@ -203,6 +245,10 @@ private:
     FVector CurrentMovementInput;
     bool bIsSprinting;
     bool bIsMouseLooking;
+
+    // Camera Focus Target state
+    FVector TargetFocusLocation;
+    FRotator TargetFocusRotation;
 
     // Touch tracking state
     struct FTouchData

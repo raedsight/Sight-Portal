@@ -5,6 +5,7 @@
 #include "SightPortalConnector.h"
 #include "Components/WidgetComponent.h"
 #include "Components/BoxComponent.h"
+#include "Components/ArrowComponent.h"
 #include "SightPortal3DPropertyWidget.h"
 #include "SightPortal2DPropertyDetailWidget.h"
 #include "PropertyVisualizer.generated.h"
@@ -12,7 +13,8 @@
 /**
  * APropertyVisualizer
  * A dedicated property visualizer actor with a single variable of type FSightPortalProperty.
- * Integrates 3D World Space Widget (surface, bedrooms, explore button), 2D Detail HUD Widget, and raycast selection collision.
+ * Integrates LookAt Arrow Component for camera framing, 3D World Space Widget (surface, bedrooms, explore/close button), 
+ * 2D Detail HUD Widget, and raycast selection collision.
  */
 UCLASS(Blueprintable, BlueprintType, Category = "SightPortal|PropertyVisualizer")
 class SIGHTPORTAL_API APropertyVisualizer : public AActor
@@ -33,6 +35,10 @@ public:
     // Collision box for mouse cursor picking and selection interaction
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SightPortal|Collision")
     UBoxComponent* SelectionCollisionBox;
+
+    // LookAt Arrow Component indicating target camera location and orientation when this property is selected
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SightPortal|Camera")
+    UArrowComponent* LookAtArrowComponent;
 
     // 3D Widget Component attached to this actor in world space
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SightPortal|UI")
@@ -65,6 +71,18 @@ public:
     // Set 3D widget visibility
     UFUNCTION(BlueprintCallable, Category = "SightPortal|UI")
     void Set3DWidgetVisible(bool bVisible);
+
+    // Get the world location of the LookAt Arrow component
+    UFUNCTION(BlueprintPure, Category = "SightPortal|Camera")
+    FVector GetLookAtLocation() const;
+
+    // Get the world rotation (direction) of the LookAt Arrow component
+    UFUNCTION(BlueprintPure, Category = "SightPortal|Camera")
+    FRotator GetLookAtRotation() const;
+
+    // Get the LookAt Arrow component
+    UFUNCTION(BlueprintPure, Category = "SightPortal|Camera")
+    UArrowComponent* GetLookAtArrowComponent() const { return LookAtArrowComponent; }
 
     // Open/Show the 2D Detail Widget on player viewport displaying full property details
     UFUNCTION(BlueprintCallable, Category = "SightPortal|UI")

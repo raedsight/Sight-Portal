@@ -20,6 +20,14 @@ APropertyVisualizer::APropertyVisualizer()
     SelectionCollisionBox->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
     SelectionCollisionBox->SetCollisionResponseToChannel(ECC_Camera, ECR_Block);
 
+    // Create LookAt Arrow Component for camera framing when property is selected
+    LookAtArrowComponent = CreateDefaultSubobject<UArrowComponent>(TEXT("LookAtArrow"));
+    LookAtArrowComponent->SetupAttachment(RootComponent);
+    LookAtArrowComponent->SetRelativeLocation(FVector(-350.0f, 0.0f, 150.0f));
+    LookAtArrowComponent->SetRelativeRotation(FRotator(-12.0f, 0.0f, 0.0f));
+    LookAtArrowComponent->ArrowSize = 1.5f;
+    LookAtArrowComponent->ArrowColor = FColor::Cyan;
+
     // Create and attach 3D World Space Widget Component
     Widget3DComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("Widget3DComponent"));
     Widget3DComponent->SetupAttachment(RootComponent);
@@ -109,6 +117,38 @@ void APropertyVisualizer::Set3DWidgetVisible(bool bVisible)
     }
 }
 
+FVector APropertyVisualizer::GetLookAtLocation() const
+{
+    if (LookAtArrowComponent)
+    {
+        return LookAtArrowComponent->GetComponentLocation();
+    }
+
+    // Default fallback: 350 units in front and 150 units up
+    return GetActorLocation() - (GetActorForwardVector() * 350.0f) + FVector(0.0f, 0.0f, 150.0f);
+}
+
+FRotator APropertyVisualizer::GetLookAtRotation() const
+{
+    FRotator ResultRotation = FRotator::ZeroRotator;
+
+    if (LookAtArrowComponent)
+    {
+        ResultRotation = LookAtArrowComponent->GetComponentRotation();
+    }
+    else
+    {
+        // Default fallback: rotate towards the property visualizer center
+        const FVector TargetCenter = GetActorLocation() + FVector(0.0f, 0.0f, 120.0f);
+        const FVector LookAtLoc = GetLookAtLocation();
+        ResultRotation = (TargetCenter - LookAtLoc).Rotation();
+    }
+
+    // Always ensure Roll is reset/level with horizon
+    ResultRotation.Roll = 0.0f;
+    return ResultRotation;
+}
+
 USightPortal2DPropertyDetailWidget* APropertyVisualizer::OpenPropertyDetail2DWidget()
 {
     APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
@@ -123,6 +163,7 @@ USightPortal2DPropertyDetailWidget* APropertyVisualizer::OpenPropertyDetail2DWid
     // If active player controller is SightPortal Player Controller, delegate selection & display
     if (ASightPortalPlayerController* SightPC = Cast<ASightPortalPlayerController>(PC))
     {
+        SightPC->UnlockMovement();
         Active2DDetailWidget = SightPC->ShowPropertyDetailWidget(this);
         return Active2DDetailWidget;
     }
@@ -160,15 +201,29 @@ USightPortal2DPropertyDetailWidget* APropertyVisualizer::OpenPropertyDetail2DWid
 
 void APropertyVisualizer::OnExploreRequestedFrom3DWidget(const FSightPortalProperty& InProperty)
 {
-    // Hide 3D widget and open 2D detail modal
+    // Hide 3D widget, unlock movement, and open 2D detail modal
     Hide3DWidget();
+
+    APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+    if (ASightPortalPlayerController* SightPC = Cast<ASightPortalPlayerController>(PC))
+    {
+        SightPC->UnlockMovement();
+    }
+
     OpenPropertyDetail2DWidget();
 }
 
 void APropertyVisualizer::OnCloseRequestedFrom3DWidget()
 {
-    // Hide 3D widget when close button is clicked
+    // Hide 3D widget and restore movement with Roll reset
     Hide3DWidget();
+
+    APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+    if (ASightPortalPlayerController* SightPC = Cast<ASightPortalPlayerController>(PC))
+    {
+        SightPC->DeselectPropertyVisualizer();
+        SightPC->UnlockMovement();
+    }
 }
 
 #if WITH_EDITOR
