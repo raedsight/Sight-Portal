@@ -16,9 +16,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSightPortalPropertyDeselected);
  * Interactive Player Controller for SightPortal archviz walkthroughs in Unreal Engine 5.
  * 
  * Capabilities:
+ * - Full WASD / Arrow / Space / Shift navigation and smooth flying spectator camera movement.
+ * - Mouse look (Hold Right Mouse Button to look around, Left-click to pick/interact with properties).
+ * - Multi-touch gestures (1-finger tap to select, 1-finger drag to rotate view, 2-finger pan/pinch to move and zoom).
  * - Left-click on any APropertyVisualizer actor to toggle show the 2DPropertyDetailWidget HUD.
  * - Clicking away (on the ground, other scene geometry, or empty space) will toggle hide / dismiss the 2DPropertyDetailWidget.
- * - Full mouse cursor management, touch/tap support, and dynamic Blueprint event dispatchers.
+ * - Dynamic Blueprint event dispatchers for custom camera animations and highlight effects.
  */
 UCLASS(Blueprintable, BlueprintType)
 class SIGHTPORTAL_API ASightPortalPlayerController : public APlayerController
@@ -29,9 +32,40 @@ public:
     ASightPortalPlayerController();
 
     virtual void BeginPlay() override;
+    virtual void PlayerTick(float DeltaTime) override;
     virtual void SetupInputComponent() override;
 
-    // --- Configuration Properties ---
+    // --- Movement & Camera Configuration ---
+
+    // Base flying / walking movement speed in unreal units per second
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Movement")
+    float MoveSpeed;
+
+    // Speed multiplier applied when holding Left Shift (Sprint)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Movement")
+    float SprintSpeedMultiplier;
+
+    // Mouse look sensitivity rate
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Camera")
+    float MouseLookSensitivity;
+
+    // Touch swipe rotation sensitivity
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Touch")
+    float TouchLookSensitivity;
+
+    // Touch two-finger pinch zoom & pan sensitivity
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Touch")
+    float TouchMoveSensitivity;
+
+    // Max distance in pixels to consider a touch as a tap rather than a drag
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Touch")
+    float TouchTapMaxDistance;
+
+    // Invert vertical look pitch
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Camera")
+    bool bInvertLookPitch;
+
+    // --- UI & Interaction Properties ---
 
     // 2D Widget Class to spawn for property details (Defaults to USightPortal2DPropertyDetailWidget)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|UI")
@@ -55,24 +89,62 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "SightPortal|Selection")
     APropertyVisualizer* CurrentSelectedVisualizer;
 
-    // --- Interactive Functions ---
+    // --- Keyboard & Mouse Movement Input Functions ---
+
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Movement")
+    void MoveForward(float Value);
+
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Movement")
+    void MoveRight(float Value);
+
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Movement")
+    void MoveUp(float Value);
+
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Movement")
+    void StartSprint();
+
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Movement")
+    void StopSprint();
+
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Camera")
+    void OnMouseMoveX(float Value);
+
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Camera")
+    void OnMouseMoveY(float Value);
+
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Camera")
+    void OnMouseWheelZoom(float Value);
+
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Camera")
+    void StartMouseLook();
+
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Camera")
+    void StopMouseLook();
+
+    // --- Touch Input Functions ---
+
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Touch")
+    void HandleTouchStarted(ETouchIndex::Type FingerIndex, FVector Location);
+
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Touch")
+    void HandleTouchMoved(ETouchIndex::Type FingerIndex, FVector Location);
+
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Touch")
+    void HandleTouchEnded(ETouchIndex::Type FingerIndex, FVector Location);
+
+    // --- Interactive Selection Functions ---
 
     /**
-     * Primary click handler bound to Left Mouse Button and Touch input.
+     * Primary click handler bound to Left Mouse Button.
      * Evaluates hit result under cursor:
-     * - If clicking on a PropertyVisualizer: toggles detail popup (show if new/hidden, hide if already active).
-     * - If clicking away on background/other actors/empty space: toggles hide detail popup.
+     * - If clicking on a PropertyVisualizer: toggles detail popup.
+     * - If clicking away on background/empty space: toggles hide detail popup.
      */
     UFUNCTION(BlueprintCallable, Category = "SightPortal|Interaction")
     void HandleClickInteraction();
 
     /**
-     * Touch input handler bound to screen tap on touch devices.
-     */
-    void HandleTouchInteraction(ETouchIndex::Type FingerIndex, FVector Location);
-
-    /**
-     * Process click on a specific candidate actor.
+     * Process click/tap on a specific candidate actor.
      */
     UFUNCTION(BlueprintCallable, Category = "SightPortal|Interaction")
     void HandleActorClicked(AActor* ClickedActor);
@@ -116,4 +188,27 @@ protected:
 
     // Helper to find APropertyVisualizer from any hit actor or its hierarchy
     APropertyVisualizer* ResolvePropertyVisualizerFromActor(AActor* InActor) const;
+
+    // Apply movement input to possessed Pawn or Spectator Pawn
+    void ApplyDirectMovement(float DeltaTime);
+
+private:
+    // Movement state
+    FVector CurrentMovementInput;
+    bool bIsSprinting;
+    bool bIsMouseLooking;
+
+    // Touch tracking state
+    struct FTouchData
+    {
+        bool bIsActive = false;
+        FVector2D StartLocation = FVector2D::ZeroVector;
+        FVector2D CurrentLocation = FVector2D::ZeroVector;
+        FVector2D PreviousLocation = FVector2D::ZeroVector;
+        double StartTime = 0.0;
+        bool bMovedBeyondTap = false;
+    };
+
+    TMap<int32, FTouchData> ActiveTouches;
 };
+

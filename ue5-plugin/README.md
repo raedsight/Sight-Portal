@@ -8,10 +8,25 @@ This plugin provides native C++ real-time synchronization between **Google Sheet
 
 ### 1. 🎮 `ASightPortalPlayerController` (Interactive ArchViz Controller)
 A specialized Unreal Engine 5 Player Controller enabling intuitive viewport exploration:
-* **Click to Toggle Details:** Left-clicking (or tapping on touch devices) any `APropertyVisualizer` toggles the 2D property detail HUD (`USightPortal2DPropertyDetailWidget`).
+* **WASD Flying Navigation:**
+  * **W / S / Up / Down Arrow:** Fly forward and backward.
+  * **A / D / Left / Right Arrow:** Strafe left and right.
+  * **E / Space:** Elevate upward.
+  * **Q:** Descend downward.
+  * **Left Shift:** Hold to sprint (2.5x speed multiplier).
+  * **Mouse Wheel:** Scroll to dolly zoom or adjust positioning.
+* **Mouse Look:**
+  * **Hold Right Mouse Button (RMB):** Captures mouse and looks around (Pitch & Yaw).
+  * **Release RMB:** Restores mouse cursor for UI picking.
+* **Touchscreen Gestures:**
+  * **1-Finger Short Tap:** Pick property to toggle details, or tap empty space to dismiss.
+  * **1-Finger Drag:** Rotate camera view / look around.
+  * **2-Finger Pinch:** Zoom forward / backward.
+  * **2-Finger Drag:** Pan camera horizontally and vertically.
+* **Click to Toggle Details:** Left-clicking any `APropertyVisualizer` toggles the 2D property detail HUD (`USightPortal2DPropertyDetailWidget`).
 * **Click Away to Hide:** Clicking on empty space, background terrain, or non-property geometry automatically dismisses / hides the active 2D detail popup.
 * **Selection State & Delegates:** Exposes `OnPropertySelected` and `OnPropertyDeselected` dynamic Blueprint delegates for custom camera framing, audio cues, or lighting highlights.
-* **Automatic Cursor & Input Management:** Handles `FInputModeGameAndUI` and mouse cursor visibility seamlessly.
+
 
 ### 2. 🌐 `USightPortal3DPropertyWidget` (3D World Space Widget)
 A lightweight 3D UMG Widget attached directly to `APropertyVisualizer` actors floating in world space.
