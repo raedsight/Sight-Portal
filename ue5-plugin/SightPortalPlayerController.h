@@ -69,7 +69,6 @@ public:
     /**
      * Touch input handler bound to screen tap on touch devices.
      */
-    UFUNCTION(BlueprintCallable, Category = "SightPortal|Interaction")
     void HandleTouchInteraction(ETouchIndex::Type FingerIndex, FVector Location);
 
     /**

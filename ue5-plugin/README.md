@@ -56,10 +56,11 @@ PublicDependencyModuleNames.AddRange(new string[] {
 });
 ```
 
-### 2. Setting the Player Controller in GameMode
-1. Open your project's **GameModeBase** (or create one derived from `AGameModeBase`).
-2. Set `PlayerControllerClass` to `ASightPortalPlayerController` (or a Blueprint child class).
-3. Alternatively, in your Level's **World Settings** -> **GameMode Override** -> select `ASightPortalPlayerController`.
+### 2. Using `ASightPortalGameMode`
+You can use the provided `ASightPortalGameMode` (or a Blueprint child of it):
+1. In your Level's **World Settings** -> **GameMode Override** -> select `ASightPortalGameMode` (or your Blueprint child `BP_SightPortalGameMode`).
+2. Alternatively, in **Project Settings** -> **Maps & Modes** -> **Default GameMode** -> select `ASightPortalGameMode`.
+3. It automatically configures `PlayerControllerClass = ASightPortalPlayerController::StaticClass()`.
 
 ### 3. Creating UMG Blueprint Widgets (Optional Custom Styling)
 You can derive UMG Widget Blueprints from these C++ classes in the Unreal Editor:
