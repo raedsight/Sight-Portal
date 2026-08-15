@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "SightPortalConnector.h"
 #include "Components/WidgetComponent.h"
+#include "Components/BoxComponent.h"
 #include "SightPortal3DPropertyWidget.h"
 #include "SightPortal2DPropertyDetailWidget.h"
 #include "PropertyVisualizer.generated.h"
@@ -11,7 +12,7 @@
 /**
  * APropertyVisualizer
  * A dedicated property visualizer actor with a single variable of type FSightPortalProperty.
- * Integrates 3D World Space Widget (surface, bedrooms, explore button) and 2D Detail HUD Widget.
+ * Integrates 3D World Space Widget (surface, bedrooms, explore button), 2D Detail HUD Widget, and raycast selection collision.
  */
 UCLASS(Blueprintable, BlueprintType, Category = "SightPortal|PropertyVisualizer")
 class SIGHTPORTAL_API APropertyVisualizer : public AActor
@@ -28,6 +29,10 @@ public:
     // A single variable of type FSightPortalProperty containing the real-estate data
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Property")
     FSightPortalProperty PropertyDetails;
+
+    // Collision box for mouse cursor picking and selection interaction
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SightPortal|Collision")
+    UBoxComponent* SelectionCollisionBox;
 
     // 3D Widget Component attached to this actor in world space
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SightPortal|UI")

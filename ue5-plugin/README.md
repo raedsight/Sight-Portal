@@ -1,19 +1,26 @@
-# SightPortal UE5 Plugin - Real-Estate Visualizer & UI Widgets
+# SightPortal UE5 Plugin - Real-Estate Visualizer, UI Widgets & Player Controller
 
-This plugin provides native C++ real-time synchronization between **Google Sheets / SightPortal Web Dashboard** and **Unreal Engine 5**. It includes site, zone, block, and property visualizers, complete with **3D World Space Widgets** and **2D Detail Screen Popups**.
+This plugin provides native C++ real-time synchronization between **Google Sheets / SightPortal Web Dashboard** and **Unreal Engine 5**. It includes site, zone, block, and property visualizers, complete with **3D World Space Widgets**, **2D Detail Screen Popups**, and an interactive **Player Controller**.
 
 ---
 
-## 🛠️ Plugin Architecture & Widgets
+## 🛠️ Plugin Architecture & Components
 
-### 1. 🌐 `USightPortal3DPropertyWidget` (3D World Space Widget)
+### 1. 🎮 `ASightPortalPlayerController` (Interactive ArchViz Controller)
+A specialized Unreal Engine 5 Player Controller enabling intuitive viewport exploration:
+* **Click to Toggle Details:** Left-clicking (or tapping on touch devices) any `APropertyVisualizer` toggles the 2D property detail HUD (`USightPortal2DPropertyDetailWidget`).
+* **Click Away to Hide:** Clicking on empty space, background terrain, or non-property geometry automatically dismisses / hides the active 2D detail popup.
+* **Selection State & Delegates:** Exposes `OnPropertySelected` and `OnPropertyDeselected` dynamic Blueprint delegates for custom camera framing, audio cues, or lighting highlights.
+* **Automatic Cursor & Input Management:** Handles `FInputModeGameAndUI` and mouse cursor visibility seamlessly.
+
+### 2. 🌐 `USightPortal3DPropertyWidget` (3D World Space Widget)
 A lightweight 3D UMG Widget attached directly to `APropertyVisualizer` actors floating in world space.
 * **Surface Area Display:** Reads `FSightPortalProperty::Surface` (e.g. `185.0 m²`).
 * **Bedrooms Count:** Reads `FSightPortalProperty::BedroomsCount` (e.g. `3 Beds`).
 * **Explore Button:** Interactive UButton triggering `OnExploreRequested` dynamic delegate when clicked.
 * **Property Name:** Reads `FSightPortalProperty::Name` (e.g. `Z1B11`).
 
-### 2. 🖥️ `USightPortal2DPropertyDetailWidget` (2D Full Detail HUD Widget)
+### 3. 🖥️ `USightPortal2DPropertyDetailWidget` (2D Full Detail HUD Widget)
 A full 2D screen overlay modal that presents **all** attributes read directly from the `FSightPortalProperty` structure:
 * **Property Name** (`Name`)
 * **Zone & Block** (`Zone`, `Block`)
@@ -49,7 +56,12 @@ PublicDependencyModuleNames.AddRange(new string[] {
 });
 ```
 
-### 2. Creating UMG Blueprint Widgets (Optional Custom Styling)
+### 2. Setting the Player Controller in GameMode
+1. Open your project's **GameModeBase** (or create one derived from `AGameModeBase`).
+2. Set `PlayerControllerClass` to `ASightPortalPlayerController` (or a Blueprint child class).
+3. Alternatively, in your Level's **World Settings** -> **GameMode Override** -> select `ASightPortalPlayerController`.
+
+### 3. Creating UMG Blueprint Widgets (Optional Custom Styling)
 You can derive UMG Widget Blueprints from these C++ classes in the Unreal Editor:
 1. **3D Compact Widget:** Create a Widget Blueprint derived from `USightPortal3DPropertyWidget`.
    * Add `UTextBlock` elements named `SurfaceText`, `BedroomsText`, `PropertyNameText`.
@@ -58,11 +70,12 @@ You can derive UMG Widget Blueprints from these C++ classes in the Unreal Editor
    * Add `UTextBlock` elements named `NameText`, `ZoneText`, `BlockText`, `DoorNoText`, `PriceText`, `SurfaceText`, `BuildingSurfaceText`, `AvailabilityText`, `BedroomsCountText`, `BathroomsCountText`, `ClassText`.
    * Add a `UButton` named `CloseButton`.
 
-### 3. Placing in the Level
+### 4. Placing in the Level
 1. Drag an `ASightPortalSiteManager` actor into your scene.
 2. In the Details Panel, configure your `WebSocketURL` and `RemoteEndpointURL`.
 3. Press **Force Fetch Data** or click **Spawn Property Visualizers**.
-4. Each `APropertyVisualizer` will automatically render its floating 3D Widget with surface & bedroom counts. Clicking **Explore** on any 3D widget in PIE or standalone opens the complete 2D Detail Modal displaying all real-estate fields.
+4. Each `APropertyVisualizer` will automatically render its floating 3D Widget with surface & bedroom counts.
+5. In PIE or standalone, clicking on any `APropertyVisualizer` directly toggles its full 2D detail card on screen, and clicking away anywhere in the world toggles it closed!
 
 ---
 

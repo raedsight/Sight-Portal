@@ -2,6 +2,7 @@
 #include "BlockSpline.h"
 #include "Blueprint/UserWidget.h"
 #include "Kismet/GameplayStatics.h"
+#include "SightPortalPlayerController.h"
 
 APropertyVisualizer::APropertyVisualizer()
 {
@@ -10,12 +11,21 @@ APropertyVisualizer::APropertyVisualizer()
     USceneComponent* SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
     RootComponent = SceneRoot;
 
+    // Create selection collision box to support raycast picking & cursor click events
+    SelectionCollisionBox = CreateDefaultSubobject<UBoxComponent>(TEXT("SelectionCollisionBox"));
+    SelectionCollisionBox->SetupAttachment(RootComponent);
+    SelectionCollisionBox->SetBoxExtent(FVector(100.0f, 100.0f, 120.0f));
+    SelectionCollisionBox->SetRelativeLocation(FVector(0.0f, 0.0f, 120.0f));
+    SelectionCollisionBox->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+    SelectionCollisionBox->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+    SelectionCollisionBox->SetCollisionResponseToChannel(ECC_Camera, ECR_Block);
+
     // Create and attach 3D World Space Widget Component
     Widget3DComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("Widget3DComponent"));
     Widget3DComponent->SetupAttachment(RootComponent);
     Widget3DComponent->SetWidgetSpace(EWidgetSpace::World);
     Widget3DComponent->SetDrawSize(FVector2D(320.0f, 160.0f));
-    Widget3DComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 200.0f)); // Floating above actor
+    Widget3DComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 260.0f)); // Floating above actor
     Widget3DComponent->SetTwoSided(true);
 
     // Default Widget Classes
@@ -68,6 +78,13 @@ USightPortal2DPropertyDetailWidget* APropertyVisualizer::OpenPropertyDetail2DWid
     if (!PC)
     {
         return nullptr;
+    }
+
+    // If active player controller is SightPortal Player Controller, delegate selection & display
+    if (ASightPortalPlayerController* SightPC = Cast<ASightPortalPlayerController>(PC))
+    {
+        Active2DDetailWidget = SightPC->ShowPropertyDetailWidget(this);
+        return Active2DDetailWidget;
     }
 
     if (!Detail2DWidgetClass)
