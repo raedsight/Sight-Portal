@@ -92,13 +92,7 @@ public:
     // --- Keyboard & Mouse Movement Input Functions ---
 
     UFUNCTION(BlueprintCallable, Category = "SightPortal|Movement")
-    void MoveForward(float Value);
-
-    UFUNCTION(BlueprintCallable, Category = "SightPortal|Movement")
-    void MoveRight(float Value);
-
-    UFUNCTION(BlueprintCallable, Category = "SightPortal|Movement")
-    void MoveUp(float Value);
+    void SetMovementInput(FVector Direction);
 
     UFUNCTION(BlueprintCallable, Category = "SightPortal|Movement")
     void StartSprint();
@@ -135,10 +129,22 @@ public:
     // --- Interactive Selection Functions ---
 
     /**
+     * Set the selected property visualizer (focuses/highlights without opening 2D detail popup).
+     */
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Selection")
+    void SelectPropertyVisualizer(APropertyVisualizer* TargetVisualizer);
+
+    /**
+     * Clear and deselect the currently active property visualizer.
+     */
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Selection")
+    void DeselectPropertyVisualizer();
+
+    /**
      * Primary click handler bound to Left Mouse Button.
      * Evaluates hit result under cursor:
-     * - If clicking on a PropertyVisualizer: toggles detail popup.
-     * - If clicking away on background/empty space: toggles hide detail popup.
+     * - If clicking on a PropertyVisualizer: selects/highlights the property visualizer.
+     * - If clicking away on background/empty space: dismisses open 2D detail popup and clears selection.
      */
     UFUNCTION(BlueprintCallable, Category = "SightPortal|Interaction")
     void HandleClickInteraction();
@@ -156,13 +162,13 @@ public:
     void TogglePropertyDetailWidget(APropertyVisualizer* TargetVisualizer);
 
     /**
-     * Show/open the 2D Property Detail widget for the given visualizer.
+     * Show/open the 2D Property Detail widget for the given visualizer (called when Explore is clicked).
      */
     UFUNCTION(BlueprintCallable, Category = "SightPortal|UI")
     USightPortal2DPropertyDetailWidget* ShowPropertyDetailWidget(APropertyVisualizer* TargetVisualizer);
 
     /**
-     * Hide/dismiss the 2D Property Detail widget and clear selection.
+     * Hide/dismiss the 2D Property Detail widget.
      */
     UFUNCTION(BlueprintCallable, Category = "SightPortal|UI")
     void HidePropertyDetailWidget();

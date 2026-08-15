@@ -3,6 +3,7 @@
 #include "Blueprint/UserWidget.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/SpectatorPawn.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "GameFramework/PlayerInput.h"
 #include "Camera/PlayerCameraManager.h"
@@ -61,6 +62,45 @@ void ASightPortalPlayerController::PlayerTick(float DeltaTime)
 {
     Super::PlayerTick(DeltaTime);
 
+    // --- Direct Keyboard Polling for WASD, Arrows, Elevation & Sprint ---
+    FVector KeyMovement = FVector::ZeroVector;
+
+    // Forward / Backward (X axis)
+    if (IsInputKeyDown(EKeys::W) || IsInputKeyDown(EKeys::Up))
+    {
+        KeyMovement.X += 1.0f;
+    }
+    if (IsInputKeyDown(EKeys::S) || IsInputKeyDown(EKeys::Down))
+    {
+        KeyMovement.X -= 1.0f;
+    }
+
+    // Right / Left Strafe (Y axis)
+    if (IsInputKeyDown(EKeys::D) || IsInputKeyDown(EKeys::Right))
+    {
+        KeyMovement.Y += 1.0f;
+    }
+    if (IsInputKeyDown(EKeys::A) || IsInputKeyDown(EKeys::Left))
+    {
+        KeyMovement.Y -= 1.0f;
+    }
+
+    // Up / Down Elevation (Z axis)
+    if (IsInputKeyDown(EKeys::E) || IsInputKeyDown(EKeys::SpaceBar))
+    {
+        KeyMovement.Z += 1.0f;
+    }
+    if (IsInputKeyDown(EKeys::Q) || IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::C))
+    {
+        KeyMovement.Z -= 1.0f;
+    }
+
+    // Sprint modifier
+    bIsSprinting = IsInputKeyDown(EKeys::LeftShift) || IsInputKeyDown(EKeys::RightShift);
+
+    // Combine keyboard input with any external movement input
+    CurrentMovementInput = KeyMovement;
+
     ApplyDirectMovement(DeltaTime);
 }
 
@@ -73,36 +113,17 @@ void ASightPortalPlayerController::SetupInputComponent()
         return;
     }
 
-    // --- Mouse & Touch Clicks ---
+    // --- Mouse Click Selection ---
     InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &ASightPortalPlayerController::HandleClickInteraction);
 
     // --- Mouse Look (Hold Right Mouse Button) ---
     InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &ASightPortalPlayerController::StartMouseLook);
     InputComponent->BindKey(EKeys::RightMouseButton, IE_Released, this, &ASightPortalPlayerController::StopMouseLook);
 
-    // --- Mouse Axes ---
+    // --- Mouse Look Axes ---
     InputComponent->BindAxisKey(EKeys::MouseX, this, &ASightPortalPlayerController::OnMouseMoveX);
     InputComponent->BindAxisKey(EKeys::MouseY, this, &ASightPortalPlayerController::OnMouseMoveY);
     InputComponent->BindAxisKey(EKeys::MouseWheelAxis, this, &ASightPortalPlayerController::OnMouseWheelZoom);
-
-    // --- Keyboard WASD & Arrow Movement ---
-    InputComponent->BindAxisKey(EKeys::W, this, &ASightPortalPlayerController::MoveForward);
-    InputComponent->BindAxisKey(EKeys::S, this, &ASightPortalPlayerController::MoveForward);
-    InputComponent->BindAxisKey(EKeys::Up, this, &ASightPortalPlayerController::MoveForward);
-    InputComponent->BindAxisKey(EKeys::Down, this, &ASightPortalPlayerController::MoveForward);
-
-    InputComponent->BindAxisKey(EKeys::D, this, &ASightPortalPlayerController::MoveRight);
-    InputComponent->BindAxisKey(EKeys::A, this, &ASightPortalPlayerController::MoveRight);
-    InputComponent->BindAxisKey(EKeys::Right, this, &ASightPortalPlayerController::MoveRight);
-    InputComponent->BindAxisKey(EKeys::Left, this, &ASightPortalPlayerController::MoveRight);
-
-    InputComponent->BindAxisKey(EKeys::E, this, &ASightPortalPlayerController::MoveUp);
-    InputComponent->BindAxisKey(EKeys::Q, this, &ASightPortalPlayerController::MoveUp);
-    InputComponent->BindAxisKey(EKeys::SpaceBar, this, &ASightPortalPlayerController::MoveUp);
-
-    // --- Sprint ---
-    InputComponent->BindKey(EKeys::LeftShift, IE_Pressed, this, &ASightPortalPlayerController::StartSprint);
-    InputComponent->BindKey(EKeys::LeftShift, IE_Released, this, &ASightPortalPlayerController::StopSprint);
 
     // --- Touch Gestures ---
     InputComponent->BindTouch(IE_Pressed, this, &ASightPortalPlayerController::HandleTouchStarted);
@@ -116,19 +137,9 @@ void ASightPortalPlayerController::SetupInputComponent()
 
 // --- Movement Implementation ---
 
-void ASightPortalPlayerController::MoveForward(float Value)
+void ASightPortalPlayerController::SetMovementInput(FVector Direction)
 {
-    CurrentMovementInput.X = Value;
-}
-
-void ASightPortalPlayerController::MoveRight(float Value)
-{
-    CurrentMovementInput.Y = Value;
-}
-
-void ASightPortalPlayerController::MoveUp(float Value)
-{
-    CurrentMovementInput.Z = Value;
+    CurrentMovementInput = Direction;
 }
 
 void ASightPortalPlayerController::StartSprint()
@@ -199,8 +210,17 @@ void ASightPortalPlayerController::ApplyDirectMovement(float DeltaTime)
         return;
     }
 
-    APawn* TargetPawn = GetPawn();
-    if (!TargetPawn)
+    AActor* TargetActor = GetPawn();
+    if (!TargetActor)
+    {
+        TargetActor = GetSpectatorPawn();
+    }
+    if (!TargetActor)
+    {
+        TargetActor = GetViewTarget();
+    }
+
+    if (!TargetActor)
     {
         return;
     }
@@ -221,15 +241,9 @@ void ASightPortalPlayerController::ApplyDirectMovement(float DeltaTime)
         MoveDirection.Normalize();
 
         const float CurrentSpeed = MoveSpeed * (bIsSprinting ? SprintSpeedMultiplier : 1.0f);
+        const FVector MoveDelta = MoveDirection * CurrentSpeed * DeltaTime;
 
-        if (UPawnMovementComponent* MoveComp = TargetPawn->GetMovementComponent())
-        {
-            TargetPawn->AddMovementInput(MoveDirection, (bIsSprinting ? SprintSpeedMultiplier : 1.0f));
-        }
-        else
-        {
-            TargetPawn->AddActorWorldOffset(MoveDirection * CurrentSpeed * DeltaTime, true);
-        }
+        TargetActor->AddActorWorldOffset(MoveDelta, true);
     }
 }
 
@@ -362,14 +376,48 @@ void ASightPortalPlayerController::HandleActorClicked(AActor* ClickedActor)
 
     if (TargetVisualizer)
     {
-        TogglePropertyDetailWidget(TargetVisualizer);
+        // Select the clicked property visualizer (does NOT pop up the 2D detail widget)
+        SelectPropertyVisualizer(TargetVisualizer);
     }
     else
     {
+        // Clicked on empty space or non-property geometry
         if (IsPropertyDetailWidgetOpen())
         {
             HidePropertyDetailWidget();
         }
+        else if (CurrentSelectedVisualizer)
+        {
+            DeselectPropertyVisualizer();
+        }
+    }
+}
+
+void ASightPortalPlayerController::SelectPropertyVisualizer(APropertyVisualizer* TargetVisualizer)
+{
+    if (CurrentSelectedVisualizer == TargetVisualizer)
+    {
+        return;
+    }
+
+    CurrentSelectedVisualizer = TargetVisualizer;
+
+    if (TargetVisualizer)
+    {
+        OnPropertySelected.Broadcast(TargetVisualizer);
+    }
+    else
+    {
+        OnPropertyDeselected.Broadcast();
+    }
+}
+
+void ASightPortalPlayerController::DeselectPropertyVisualizer()
+{
+    if (CurrentSelectedVisualizer)
+    {
+        CurrentSelectedVisualizer = nullptr;
+        OnPropertyDeselected.Broadcast();
     }
 }
 

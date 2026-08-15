@@ -23,8 +23,9 @@ A specialized Unreal Engine 5 Player Controller enabling intuitive viewport expl
   * **1-Finger Drag:** Rotate camera view / look around.
   * **2-Finger Pinch:** Zoom forward / backward.
   * **2-Finger Drag:** Pan camera horizontally and vertically.
-* **Click to Toggle Details:** Left-clicking any `APropertyVisualizer` toggles the 2D property detail HUD (`USightPortal2DPropertyDetailWidget`).
-* **Click Away to Hide:** Clicking on empty space, background terrain, or non-property geometry automatically dismisses / hides the active 2D detail popup.
+* **Click to Select:** Left-clicking or tapping any `APropertyVisualizer` (or its `SelectionCollisionBox`) selects/highlights the property visualizer and broadcasts `OnPropertySelected`.
+* **Explore to Open 2D Details:** The full 2D detail popup (`USightPortal2DPropertyDetailWidget`) opens when clicking the **Explore** button on the floating 3D World Space Widget (`USightPortal3DPropertyWidget`).
+* **Click Away to Dismiss:** Clicking on empty space, background terrain, or non-property geometry automatically dismisses / hides the active 2D detail popup and clears selection.
 * **Selection State & Delegates:** Exposes `OnPropertySelected` and `OnPropertyDeselected` dynamic Blueprint delegates for custom camera framing, audio cues, or lighting highlights.
 
 
