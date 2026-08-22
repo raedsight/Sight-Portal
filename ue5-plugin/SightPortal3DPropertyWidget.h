@@ -56,6 +56,10 @@ public:
     UFUNCTION(BlueprintPure, Category = "SightPortal|3DWidget")
     FSightPortalProperty GetPropertyData() const { return CachedProperty; }
 
+    // Dynamic Blueprint Implementable Event triggered when property data is updated from the Portal
+    UFUNCTION(BlueprintImplementableEvent, Category = "SightPortal|Events")
+    void OnPropertyDataUpdatedFromPortal(const FSightPortalProperty& UpdatedProperty);
+
 protected:
     // Property record cached in widget
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|3DWidget")

@@ -61,6 +61,45 @@ void ASightPortalPlayerController::BeginPlay()
         InputMode.SetHideCursorDuringCapture(false);
         SetInputMode(InputMode);
     }
+
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    if (Connector)
+    {
+        Connector->OnRealEstateDataReceived.AddUniqueDynamic(this, &ASightPortalPlayerController::HandleDataReceived);
+        Connector->OnPropertyUpdated.AddUniqueDynamic(this, &ASightPortalPlayerController::HandleSinglePropertyUpdated);
+    }
+}
+
+void ASightPortalPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    if (Connector)
+    {
+        Connector->OnRealEstateDataReceived.RemoveDynamic(this, &ASightPortalPlayerController::HandleDataReceived);
+        Connector->OnPropertyUpdated.RemoveDynamic(this, &ASightPortalPlayerController::HandleSinglePropertyUpdated);
+    }
+
+    Super::EndPlay(EndPlayReason);
+}
+
+void ASightPortalPlayerController::HandleDataReceived(const TArray<FSightPortalProperty>& PropertyPortfolio)
+{
+    OnPortalDataReceived(PropertyPortfolio);
+}
+
+void ASightPortalPlayerController::HandleSinglePropertyUpdated(const FString& PropertyName, const FSightPortalProperty& PropertyData)
+{
+    // If the currently open 2D detail popup is for this property, refresh its content immediately
+    if (Active2DDetailWidget && Active2DDetailWidget->IsInViewport())
+    {
+        if (Active2DDetailWidget->GetActiveProperty().Name.Equals(PropertyName, ESearchCase::IgnoreCase) ||
+            Active2DDetailWidget->GetActiveProperty().Name.Equals(PropertyData.Name, ESearchCase::IgnoreCase))
+        {
+            Active2DDetailWidget->DisplayPropertyDetails(PropertyData);
+        }
+    }
+
+    OnPortalPropertyUpdated(PropertyName, PropertyData);
 }
 
 void ASightPortalPlayerController::PlayerTick(float DeltaTime)

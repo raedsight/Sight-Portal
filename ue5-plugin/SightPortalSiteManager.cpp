@@ -57,6 +57,11 @@ void ASightPortalSiteManager::BeginPlay()
         {
             Connector->OnRealEstateDataReceived.AddDynamic(this, &ASightPortalSiteManager::HandleDataReceived);
         }
+
+        if (!Connector->OnPropertyUpdated.IsAlreadyBound(this, &ASightPortalSiteManager::HandleSinglePropertyUpdated))
+        {
+            Connector->OnPropertyUpdated.AddDynamic(this, &ASightPortalSiteManager::HandleSinglePropertyUpdated);
+        }
         
         Connector->DisconnectWebSocket();
         Connector->ConnectWebSocket();
@@ -72,6 +77,7 @@ void ASightPortalSiteManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
     if (Connector)
     {
         Connector->OnRealEstateDataReceived.RemoveDynamic(this, &ASightPortalSiteManager::HandleDataReceived);
+        Connector->OnPropertyUpdated.RemoveDynamic(this, &ASightPortalSiteManager::HandleSinglePropertyUpdated);
     }
 
     Super::EndPlay(EndPlayReason);
@@ -83,6 +89,7 @@ void ASightPortalSiteManager::Destroyed()
     if (Connector)
     {
         Connector->OnRealEstateDataReceived.RemoveDynamic(this, &ASightPortalSiteManager::HandleDataReceived);
+        Connector->OnPropertyUpdated.RemoveDynamic(this, &ASightPortalSiteManager::HandleSinglePropertyUpdated);
     }
 
     Super::Destroyed();
@@ -384,4 +391,48 @@ void ASightPortalSiteManager::HandleDataReceived(const TArray<FSightPortalProper
 
     // Broadcast the callback to Blueprint listeners so they can handle the data elsewhere
     OnDataReceived.Broadcast(PropertyPortfolio);
+
+    // Trigger Blueprint Implementable Event for full portfolio sync
+    OnPortalDataReceived(PropertyPortfolio);
+}
+
+void ASightPortalSiteManager::HandleSinglePropertyUpdated(const FString& PropertyName, const FSightPortalProperty& PropertyData)
+{
+    // Find matching visualizer in registered properties
+    APropertyVisualizer* TargetVis = Cast<APropertyVisualizer>(GetRegisteredPropertyVisualizer(PropertyName));
+
+    if (!TargetVis)
+    {
+        for (auto& Elem : RegisteredPropertyVisualizers)
+        {
+            AActor* Actor = Elem.Value;
+            if (IsValid(Actor))
+            {
+                APropertyVisualizer* PropVis = Cast<APropertyVisualizer>(Actor);
+                if (PropVis)
+                {
+                    const bool bNameMatches = PropVis->PropertyDetails.Name.Equals(PropertyName, ESearchCase::IgnoreCase) ||
+                                              PropVis->PropertyDetails.Name.Equals(PropertyData.Name, ESearchCase::IgnoreCase);
+                    const bool bLocationMatches = !PropertyData.Zone.IsEmpty() &&
+                                                  PropVis->PropertyDetails.Zone.Equals(PropertyData.Zone, ESearchCase::IgnoreCase) &&
+                                                  PropVis->PropertyDetails.Block.Equals(PropertyData.Block, ESearchCase::IgnoreCase) &&
+                                                  PropVis->PropertyDetails.DoorNo == PropertyData.DoorNo;
+
+                    if (bNameMatches || bLocationMatches)
+                    {
+                        TargetVis = PropVis;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (TargetVis)
+    {
+        TargetVis->SetPropertyDetails(PropertyData);
+    }
+
+    // Trigger Blueprint Implementable Event for single property updates
+    OnPortalPropertyUpdated(PropertyName, PropertyData);
 }

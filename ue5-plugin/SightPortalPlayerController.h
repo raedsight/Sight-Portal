@@ -32,6 +32,7 @@ public:
     ASightPortalPlayerController();
 
     virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void PlayerTick(float DeltaTime) override;
     virtual void SetupInputComponent() override;
 
@@ -236,6 +237,22 @@ protected:
 
     // Helper to find APropertyVisualizer from any hit actor or its hierarchy
     APropertyVisualizer* ResolvePropertyVisualizerFromActor(AActor* InActor) const;
+
+    // Callback when full portfolio data is received from connector
+    UFUNCTION()
+    void HandleDataReceived(const TArray<FSightPortalProperty>& PropertyPortfolio);
+
+    // Callback when a single property update is received from connector
+    UFUNCTION()
+    void HandleSinglePropertyUpdated(const FString& PropertyName, const FSightPortalProperty& PropertyData);
+
+    // Dynamic Blueprint Implementable Event triggered when live real-estate data is pushed from the Portal
+    UFUNCTION(BlueprintImplementableEvent, Category = "SightPortal|Events")
+    void OnPortalDataReceived(const TArray<FSightPortalProperty>& PropertyPortfolio);
+
+    // Dynamic Blueprint Implementable Event triggered when a property update is pushed from the Portal
+    UFUNCTION(BlueprintImplementableEvent, Category = "SightPortal|Events")
+    void OnPortalPropertyUpdated(const FString& PropertyName, const FSightPortalProperty& PropertyData);
 
     // Apply movement input to possessed Pawn or Spectator Pawn
     void ApplyDirectMovement(float DeltaTime);

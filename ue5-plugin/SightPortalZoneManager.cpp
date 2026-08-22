@@ -1,5 +1,6 @@
 #include "SightPortalZoneManager.h"
 #include "SightPortalBlockManager.h"
+#include "SightPortalConnector.h"
 #include "Engine/World.h"
 
 ASightPortalZoneManager::ASightPortalZoneManager()
@@ -22,13 +23,40 @@ void ASightPortalZoneManager::OnConstruction(const FTransform& Transform)
 void ASightPortalZoneManager::BeginPlay()
 {
     Super::BeginPlay();
+
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    if (Connector)
+    {
+        Connector->OnRealEstateDataReceived.AddUniqueDynamic(this, &ASightPortalZoneManager::HandleDataReceived);
+        Connector->OnPropertyUpdated.AddUniqueDynamic(this, &ASightPortalZoneManager::HandleSinglePropertyUpdated);
+    }
 }
 
 void ASightPortalZoneManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     ClearBlockManagers();
 
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    if (Connector)
+    {
+        Connector->OnRealEstateDataReceived.RemoveDynamic(this, &ASightPortalZoneManager::HandleDataReceived);
+        Connector->OnPropertyUpdated.RemoveDynamic(this, &ASightPortalZoneManager::HandleSinglePropertyUpdated);
+    }
+
     Super::EndPlay(EndPlayReason);
+}
+
+void ASightPortalZoneManager::HandleDataReceived(const TArray<FSightPortalProperty>& PropertyPortfolio)
+{
+    OnPortalDataReceived(PropertyPortfolio);
+}
+
+void ASightPortalZoneManager::HandleSinglePropertyUpdated(const FString& PropertyName, const FSightPortalProperty& PropertyData)
+{
+    if (PropertyData.Zone.Equals(ZoneName, ESearchCase::IgnoreCase))
+    {
+        OnPortalPropertyUpdated(PropertyName, PropertyData);
+    }
 }
 
 void ASightPortalZoneManager::ClearBlockManagers()
