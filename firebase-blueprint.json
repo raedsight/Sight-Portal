@@ -54,6 +54,10 @@
         "updatedAt": {
           "type": "string"
         },
+        "sheetData": {
+          "type": "object",
+          "description": "Live real-estate spreadsheet headers and property rows data stored in Firestore"
+        },
         "bugs": {
           "type": "array"
         }

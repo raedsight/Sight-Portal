@@ -49,6 +49,7 @@ export const DEFAULT_CLIENTS: Client[] = [
       fontFamily: "sans",
     },
     updatedAt: "2026-06-05T14:24:00Z",
+    sheetData: SPREADSHEET_TEMPLATES["ArchViz Real-Estate Portfolio"],
     bugs: [
       {
         id: "bug-101",
@@ -114,6 +115,7 @@ export const DEFAULT_CLIENTS: Client[] = [
       fontFamily: "grotesk",
     },
     updatedAt: "2026-06-06T07:00:00Z",
+    sheetData: SPREADSHEET_TEMPLATES["Virtual Camera & Rig Parameters"],
     bugs: []
   },
   {
@@ -132,6 +134,7 @@ export const DEFAULT_CLIENTS: Client[] = [
       fontFamily: "mono",
     },
     updatedAt: "2026-06-06T06:45:12Z",
+    sheetData: SPREADSHEET_TEMPLATES["Material Swapping & Props Catalog"],
     bugs: []
   },
 ];

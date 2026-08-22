@@ -121,6 +121,8 @@ export default function AdminConsole({
 
     const newId = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
     
+    const initialSheet = SPREADSHEET_TEMPLATES[selectedTemplate] || SPREADSHEET_TEMPLATES["ArchViz Real-Estate Portfolio"];
+    
     const newClient: Client = {
       id: newId || `client-${Date.now()}`,
       name,
@@ -137,6 +139,7 @@ export default function AdminConsole({
         fontFamily,
       },
       updatedAt: new Date().toISOString(),
+      sheetData: initialSheet,
       bugs: []
     };
 
