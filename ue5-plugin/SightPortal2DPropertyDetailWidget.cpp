@@ -83,6 +83,9 @@ void USightPortal2DPropertyDetailWidget::DisplayPropertyDetails(const FSightPort
     {
         ClassText->SetText(FText::FromString(InProperty.Class.IsEmpty() ? TEXT("Standard") : InProperty.Class));
     }
+
+    // Trigger Blueprint Implementable Event so Blueprint UMG widgets can run custom logic/animations
+    OnPropertyDataUpdatedFromPortal(InProperty);
 }
 
 void USightPortal2DPropertyDetailWidget::DismissWidget()

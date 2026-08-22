@@ -105,6 +105,18 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SightPortal|SiteManager")
     void HandleDataReceived(const TArray<FSightPortalProperty>& PropertyPortfolio);
 
+    // Callback when a single property is updated
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|SiteManager")
+    void HandleSinglePropertyUpdated(const FString& PropertyName, const FSightPortalProperty& PropertyData);
+
+    // Blueprint Implementable Event triggered when live real-estate data portfolio is pushed from the Portal
+    UFUNCTION(BlueprintImplementableEvent, Category = "SightPortal|Events")
+    void OnPortalDataReceived(const TArray<FSightPortalProperty>& PropertyPortfolio);
+
+    // Blueprint Implementable Event triggered when a single property update is pushed from the Portal
+    UFUNCTION(BlueprintImplementableEvent, Category = "SightPortal|Events")
+    void OnPortalPropertyUpdated(const FString& PropertyName, const FSightPortalProperty& PropertyData);
+
 private:
     bool bIsSpawning = false;
 };

@@ -89,6 +89,9 @@ void USightPortal3DPropertyWidget::SetPropertyData(const FSightPortalProperty& I
     {
         ClassText->SetText(FText::FromString(InProperty.Class.IsEmpty() ? TEXT("") : InProperty.Class));
     }
+
+    // Trigger Blueprint Implementable Event for custom UMG widget styling/animations
+    OnPropertyDataUpdatedFromPortal(InProperty);
 }
 
 void USightPortal3DPropertyWidget::ShowWidget()

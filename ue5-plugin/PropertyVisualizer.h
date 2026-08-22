@@ -104,6 +104,14 @@ public:
     UFUNCTION()
     void OnCloseRequestedFrom3DWidget();
 
+    // Dynamic Blueprint Implementable Event triggered whenever this property visualizer receives updated data from the Portal
+    UFUNCTION(BlueprintImplementableEvent, Category = "SightPortal|Events")
+    void OnPropertyDataUpdatedFromPortal(const FSightPortalProperty& UpdatedProperty);
+
+    // Dynamic Blueprint Implementable Event triggered when the full portfolio is synchronized from the Portal
+    UFUNCTION(BlueprintImplementableEvent, Category = "SightPortal|Events")
+    void OnPortfolioSynchronizedFromPortal(const TArray<FSightPortalProperty>& FullPortfolio);
+
     // Track if this visualizer has been manually moved by the user in the editor
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|State")
     bool bHasBeenManuallyMoved = false;

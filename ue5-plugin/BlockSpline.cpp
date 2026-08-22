@@ -31,12 +31,42 @@ ABlockSpline::ABlockSpline()
 void ABlockSpline::BeginPlay()
 {
     Super::BeginPlay();
+
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    if (Connector)
+    {
+        Connector->OnRealEstateDataReceived.AddUniqueDynamic(this, &ABlockSpline::HandleDataReceived);
+        Connector->OnPropertyUpdated.AddUniqueDynamic(this, &ABlockSpline::HandleSinglePropertyUpdated);
+    }
 }
 
 void ABlockSpline::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     ClearPropertyVisualizers();
+
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    if (Connector)
+    {
+        Connector->OnRealEstateDataReceived.RemoveDynamic(this, &ABlockSpline::HandleDataReceived);
+        Connector->OnPropertyUpdated.RemoveDynamic(this, &ABlockSpline::HandleSinglePropertyUpdated);
+    }
+
     Super::EndPlay(EndPlayReason);
+}
+
+void ABlockSpline::HandleDataReceived(const TArray<FSightPortalProperty>& PropertyPortfolio)
+{
+    OnPortalDataReceived(PropertyPortfolio);
+}
+
+void ABlockSpline::HandleSinglePropertyUpdated(const FString& PropertyName, const FSightPortalProperty& PropertyData)
+{
+    // Check if the property belongs to this block/spline
+    if (PropertyData.Block.Equals(BlockName, ESearchCase::IgnoreCase) ||
+        PropertyName.StartsWith(BlockName, ESearchCase::IgnoreCase))
+    {
+        OnPortalPropertyUpdated(PropertyName, PropertyData);
+    }
 }
 
 void ABlockSpline::OnConstruction(const FTransform& Transform)

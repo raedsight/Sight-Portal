@@ -39,6 +39,10 @@ public:
     UFUNCTION(BlueprintPure, Category = "SightPortal|2DWidget")
     FSightPortalProperty GetActiveProperty() const { return ActiveProperty; }
 
+    // Dynamic Blueprint Implementable Event triggered when property details are refreshed/updated from the Portal
+    UFUNCTION(BlueprintImplementableEvent, Category = "SightPortal|Events")
+    void OnPropertyDataUpdatedFromPortal(const FSightPortalProperty& UpdatedProperty);
+
 protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|2DWidget")
     FSightPortalProperty ActiveProperty;

@@ -113,9 +113,44 @@ You can derive UMG Widget Blueprints from these C++ classes in the Unreal Editor
 
 ---
 
+## ⚡ Blueprint Implementable Events (Responding to Live Changes)
+
+When an update is pushed from the Sight Portal, custom **Blueprint Implementable Events** are dispatched across the UE5 actor and widget hierarchy, allowing you to trigger custom animations, sound effects, particle feedback, material recoloring, lighting shifts, or gameplay logic directly in Blueprints:
+
+### 1. `APropertyVisualizer`
+* **`Event OnPropertyDataUpdatedFromPortal(UpdatedProperty)`**:
+  Fired whenever this specific property visualizer's real-estate details (Price, Availability, Surface, Bedrooms, Custom Attributes, etc.) are updated from the Portal.
+  * *Use case:* Change material color based on availability (e.g. green for Available, red for Sold, orange for Reserved), play sound effect, or trigger a pulse/glow material animation.
+* **`Event OnPortfolioSynchronizedFromPortal(FullPortfolio)`**:
+  Fired when full portfolio real-estate data is synchronized from the Portal.
+
+### 2. `USightPortal3DPropertyWidget`
+* **`Event OnPropertyDataUpdatedFromPortal(UpdatedProperty)`**:
+  Fired in your 3D Widget Blueprint whenever property data is updated.
+  * *Use case:* Trigger custom UMG entry animations, update custom dynamic icons, or animate badge colors.
+
+### 3. `USightPortal2DPropertyDetailWidget`
+* **`Event OnPropertyDataUpdatedFromPortal(UpdatedProperty)`**:
+  Fired in your 2D HUD Detail Widget Blueprint when details are refreshed live while viewing.
+  * *Use case:* Animate price changes, refresh custom feature tag lists, or show live status badges.
+
+### 4. `ASightPortalSiteManager`, `ASightPortalZoneManager`, `ASightPortalBlockManager`, `ABlockSpline`
+* **`Event OnPortalPropertyUpdated(PropertyName, PropertyData)`**:
+  Fired whenever a single property matching this site/zone/block/spline is updated.
+* **`Event OnPortalDataReceived(PropertyPortfolio)`**:
+  Fired whenever the full dataset is received or refreshed from the Portal.
+
+### 5. `ASightPortalPlayerController`
+* **`Event OnPortalPropertyUpdated(PropertyName, PropertyData)`**:
+  Fired in your Player Controller Blueprint on property update.
+* **`Event OnPortalDataReceived(PropertyPortfolio)`**:
+  Fired in your Player Controller Blueprint on full portfolio sync.
+
+---
+
 ## 📡 Live Real-Time WebSockets
 When a field is edited in the web interface or Google Sheet:
 1. The web backend dispatches a `ue5_push` payload over WebSocket.
 2. `USightPortalConnector` parses `FSightPortalProperty`.
-3. `ASightPortalSiteManager` updates the target `APropertyVisualizer`.
-4. `APropertyVisualizer::SetPropertyDetails()` instantly updates both the **3D World Widget** and any open **2D Detail Screen Widget**.
+3. `APropertyVisualizer` / `ASightPortalSiteManager` receive the update and update their internal state, 3D world widget, and 2D detail screen widget.
+4. The `OnPropertyDataUpdatedFromPortal` and `OnPortalPropertyUpdated` Blueprint Implementable Events execute immediately in Blueprints.

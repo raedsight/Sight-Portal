@@ -41,13 +41,42 @@ void ASightPortalBlockManager::OnConstruction(const FTransform& Transform)
 void ASightPortalBlockManager::BeginPlay()
 {
     Super::BeginPlay();
+
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    if (Connector)
+    {
+        Connector->OnRealEstateDataReceived.AddUniqueDynamic(this, &ASightPortalBlockManager::HandleDataReceived);
+        Connector->OnPropertyUpdated.AddUniqueDynamic(this, &ASightPortalBlockManager::HandleSinglePropertyUpdated);
+    }
 }
 
 void ASightPortalBlockManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     ClearActiveSpawnedActors();
 
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    if (Connector)
+    {
+        Connector->OnRealEstateDataReceived.RemoveDynamic(this, &ASightPortalBlockManager::HandleDataReceived);
+        Connector->OnPropertyUpdated.RemoveDynamic(this, &ASightPortalBlockManager::HandleSinglePropertyUpdated);
+    }
+
     Super::EndPlay(EndPlayReason);
+}
+
+void ASightPortalBlockManager::HandleDataReceived(const TArray<FSightPortalProperty>& PropertyPortfolio)
+{
+    OnPortalDataReceived(PropertyPortfolio);
+}
+
+void ASightPortalBlockManager::HandleSinglePropertyUpdated(const FString& PropertyName, const FSightPortalProperty& PropertyData)
+{
+    // Check if the property belongs to this block
+    if (PropertyData.Block.Equals(BlockName, ESearchCase::IgnoreCase) ||
+        PropertyName.StartsWith(BlockName, ESearchCase::IgnoreCase))
+    {
+        OnPortalPropertyUpdated(PropertyName, PropertyData);
+    }
 }
 
 void ASightPortalBlockManager::ClearActiveSpawnedActors()

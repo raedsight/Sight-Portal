@@ -133,6 +133,9 @@ void APropertyVisualizer::HandleDataReceivedFromConnector(const TArray<FSightPor
             break;
         }
     }
+
+    // Trigger Blueprint Implementable Event for portfolio sync
+    OnPortfolioSynchronizedFromPortal(InPortfolio);
 }
 
 void APropertyVisualizer::SetPropertyDetails(const FSightPortalProperty& InDetails)
@@ -153,6 +156,9 @@ void APropertyVisualizer::SetPropertyDetails(const FSightPortalProperty& InDetai
     {
         Active2DDetailWidget->DisplayPropertyDetails(InDetails);
     }
+
+    // Trigger Blueprint Implementable Event so Blueprint subclasses can execute custom visual/audio/gameplay logic
+    OnPropertyDataUpdatedFromPortal(InDetails);
 }
 
 void APropertyVisualizer::Show3DWidget()
