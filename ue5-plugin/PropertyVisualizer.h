@@ -26,6 +26,7 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 public:
     // A single variable of type FSightPortalProperty containing the real-estate data
