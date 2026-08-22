@@ -75,6 +75,30 @@ protected:
     UPROPERTY(BlueprintReadOnly, Category = "SightPortal|3DWidget", meta = (BindWidgetOptional))
     UTextBlock* PropertyNameText;
 
+    // Price text display (e.g. "$1,250,000")
+    UPROPERTY(BlueprintReadOnly, Category = "SightPortal|3DWidget", meta = (BindWidgetOptional))
+    UTextBlock* PriceText;
+
+    // Availability status text display (e.g. "Available", "Under Offer", "Sold")
+    UPROPERTY(BlueprintReadOnly, Category = "SightPortal|3DWidget", meta = (BindWidgetOptional))
+    UTextBlock* AvailabilityText;
+
+    // Door/Room No text display (e.g. "#101")
+    UPROPERTY(BlueprintReadOnly, Category = "SightPortal|3DWidget", meta = (BindWidgetOptional))
+    UTextBlock* DoorNoText;
+
+    // Block text display (e.g. "Block A")
+    UPROPERTY(BlueprintReadOnly, Category = "SightPortal|3DWidget", meta = (BindWidgetOptional))
+    UTextBlock* BlockText;
+
+    // Zone text display (e.g. "Zone 1")
+    UPROPERTY(BlueprintReadOnly, Category = "SightPortal|3DWidget", meta = (BindWidgetOptional))
+    UTextBlock* ZoneText;
+
+    // Class text display (e.g. "Residential", "Villa")
+    UPROPERTY(BlueprintReadOnly, Category = "SightPortal|3DWidget", meta = (BindWidgetOptional))
+    UTextBlock* ClassText;
+
     // Explore Button (opens 2D details and hides 3D widget)
     UPROPERTY(BlueprintReadOnly, Category = "SightPortal|3DWidget", meta = (BindWidgetOptional))
     UButton* ExploreButton;

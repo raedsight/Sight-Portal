@@ -56,6 +56,14 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "SightPortal|UI")
     USightPortal2DPropertyDetailWidget* Active2DDetailWidget;
 
+    // Real-time connector callback when a single property is updated
+    UFUNCTION()
+    void HandlePropertyUpdatedFromConnector(const FString& InPropertyName, const FSightPortalProperty& InProperty);
+
+    // Real-time connector callback when full portfolio data is received
+    UFUNCTION()
+    void HandleDataReceivedFromConnector(const TArray<FSightPortalProperty>& InPortfolio);
+
     // Set and synchronize property data, updating the 3D widget
     UFUNCTION(BlueprintCallable, Category = "SightPortal|Property")
     void SetPropertyDetails(const FSightPortalProperty& InDetails);

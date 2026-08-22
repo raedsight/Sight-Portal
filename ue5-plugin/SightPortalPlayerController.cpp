@@ -534,6 +534,12 @@ void ASightPortalPlayerController::SelectPropertyVisualizer(APropertyVisualizer*
         return;
     }
 
+    // Hide previous visualizer's 3D widget if another property was already selected
+    if (CurrentSelectedVisualizer)
+    {
+        CurrentSelectedVisualizer->Hide3DWidget();
+    }
+
     CurrentSelectedVisualizer = TargetVisualizer;
 
     if (TargetVisualizer)
@@ -553,6 +559,7 @@ void ASightPortalPlayerController::DeselectPropertyVisualizer()
 {
     if (CurrentSelectedVisualizer)
     {
+        CurrentSelectedVisualizer->Hide3DWidget();
         CurrentSelectedVisualizer = nullptr;
         UnlockMovement();
         OnPropertyDeselected.Broadcast();
@@ -656,6 +663,11 @@ void ASightPortalPlayerController::HidePropertyDetailWidget()
         Active2DDetailWidget->RemoveFromParent();
     }
 
+    if (CurrentSelectedVisualizer)
+    {
+        CurrentSelectedVisualizer->Hide3DWidget();
+    }
+
     CurrentSelectedVisualizer = nullptr;
     UnlockMovement();
     OnPropertyDeselected.Broadcast();
@@ -668,6 +680,11 @@ bool ASightPortalPlayerController::IsPropertyDetailWidgetOpen() const
 
 void ASightPortalPlayerController::OnDetailWidgetClosed()
 {
+    if (CurrentSelectedVisualizer)
+    {
+        CurrentSelectedVisualizer->Hide3DWidget();
+    }
+
     CurrentSelectedVisualizer = nullptr;
     UnlockMovement();
     OnPropertyDeselected.Broadcast();

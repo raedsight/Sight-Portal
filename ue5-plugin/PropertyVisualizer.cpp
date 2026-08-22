@@ -61,12 +61,85 @@ void APropertyVisualizer::BeginPlay()
             Widget3D->OnCloseRequested.AddUniqueDynamic(this, &APropertyVisualizer::OnCloseRequestedFrom3DWidget);
         }
     }
+
+    // Default 3D widget to hidden initially until selected
+    Hide3DWidget();
+
+    // Auto-bind to SightPortalConnector Subsystem for instant real-time property updates from the portal
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    if (Connector)
+    {
+        Connector->OnPropertyUpdated.AddUniqueDynamic(this, &APropertyVisualizer::HandlePropertyUpdatedFromConnector);
+        Connector->OnRealEstateDataReceived.AddUniqueDynamic(this, &APropertyVisualizer::HandleDataReceivedFromConnector);
+
+        // Check if connector already has cached data matching this visualizer
+        for (const FSightPortalProperty& CachedProp : Connector->CachedProperties)
+        {
+            if (CachedProp.Name.Equals(PropertyDetails.Name, ESearchCase::IgnoreCase) ||
+                (!PropertyDetails.Zone.IsEmpty() && CachedProp.Zone.Equals(PropertyDetails.Zone, ESearchCase::IgnoreCase) &&
+                 CachedProp.Block.Equals(PropertyDetails.Block, ESearchCase::IgnoreCase) &&
+                 CachedProp.DoorNo == PropertyDetails.DoorNo))
+            {
+                SetPropertyDetails(CachedProp);
+                break;
+            }
+        }
+    }
+}
+
+void APropertyVisualizer::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    if (Connector)
+    {
+        Connector->OnPropertyUpdated.RemoveDynamic(this, &APropertyVisualizer::HandlePropertyUpdatedFromConnector);
+        Connector->OnRealEstateDataReceived.RemoveDynamic(this, &APropertyVisualizer::HandleDataReceivedFromConnector);
+    }
+
+    Super::EndPlay(EndPlayReason);
+}
+
+void APropertyVisualizer::HandlePropertyUpdatedFromConnector(const FString& InPropertyName, const FSightPortalProperty& InProperty)
+{
+    // Match by exact Name OR by Zone + Block + DoorNo
+    const bool bNameMatches = !InPropertyName.IsEmpty() && InPropertyName.Equals(PropertyDetails.Name, ESearchCase::IgnoreCase);
+    const bool bLocationMatches = !InProperty.Zone.IsEmpty() && 
+                                  InProperty.Zone.Equals(PropertyDetails.Zone, ESearchCase::IgnoreCase) &&
+                                  InProperty.Block.Equals(PropertyDetails.Block, ESearchCase::IgnoreCase) &&
+                                  InProperty.DoorNo == PropertyDetails.DoorNo;
+
+    if (bNameMatches || bLocationMatches)
+    {
+        UE_LOG(LogTemp, Log, TEXT("[SightPortal PropertyVisualizer] Real-time update received for '%s' (Price: %0.2f, Status: %s, Bedrooms: %d, Surface: %0.1f)"),
+            *InProperty.Name, InProperty.Price, *InProperty.Availability, InProperty.BedroomsCount, InProperty.Surface);
+
+        SetPropertyDetails(InProperty);
+    }
+}
+
+void APropertyVisualizer::HandleDataReceivedFromConnector(const TArray<FSightPortalProperty>& InPortfolio)
+{
+    for (const FSightPortalProperty& Prop : InPortfolio)
+    {
+        const bool bNameMatches = !Prop.Name.IsEmpty() && Prop.Name.Equals(PropertyDetails.Name, ESearchCase::IgnoreCase);
+        const bool bLocationMatches = !Prop.Zone.IsEmpty() && 
+                                      Prop.Zone.Equals(PropertyDetails.Zone, ESearchCase::IgnoreCase) &&
+                                      Prop.Block.Equals(PropertyDetails.Block, ESearchCase::IgnoreCase) &&
+                                      Prop.DoorNo == PropertyDetails.DoorNo;
+
+        if (bNameMatches || bLocationMatches)
+        {
+            SetPropertyDetails(Prop);
+            break;
+        }
+    }
 }
 
 void APropertyVisualizer::SetPropertyDetails(const FSightPortalProperty& InDetails)
 {
     PropertyDetails = InDetails;
 
+    // Update 3D World Space Widget
     if (Widget3DComponent)
     {
         if (USightPortal3DPropertyWidget* Widget3D = Cast<USightPortal3DPropertyWidget>(Widget3DComponent->GetUserWidgetObject()))
@@ -75,6 +148,7 @@ void APropertyVisualizer::SetPropertyDetails(const FSightPortalProperty& InDetai
         }
     }
 
+    // Update 2D Detail Screen Widget if active on screen
     if (Active2DDetailWidget && Active2DDetailWidget->IsInViewport())
     {
         Active2DDetailWidget->DisplayPropertyDetails(InDetails);

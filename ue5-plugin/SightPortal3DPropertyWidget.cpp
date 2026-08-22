@@ -16,8 +16,8 @@ void USightPortal3DPropertyWidget::NativeConstruct()
         CloseButton->OnClicked.AddDynamic(this, &USightPortal3DPropertyWidget::OnCloseClicked);
     }
 
-    // Default to visible when constructed
-    SetVisibility(ESlateVisibility::Visible);
+    // Default to collapsed when constructed until explicitly shown on selection
+    SetVisibility(ESlateVisibility::Collapsed);
 
     // Refresh UI elements with current cached property
     SetPropertyData(CachedProperty);
@@ -57,6 +57,37 @@ void USightPortal3DPropertyWidget::SetPropertyData(const FSightPortalProperty& I
     if (PropertyNameText)
     {
         PropertyNameText->SetText(FText::FromString(InProperty.Name.IsEmpty() ? TEXT("Property") : InProperty.Name));
+    }
+
+    if (PriceText)
+    {
+        FString PriceString = FString::Printf(TEXT("$%.2f"), InProperty.Price);
+        PriceText->SetText(FText::FromString(PriceString));
+    }
+
+    if (AvailabilityText)
+    {
+        AvailabilityText->SetText(FText::FromString(InProperty.Availability.IsEmpty() ? TEXT("Available") : InProperty.Availability));
+    }
+
+    if (DoorNoText)
+    {
+        DoorNoText->SetText(FText::FromString(FString::Printf(TEXT("#%d"), InProperty.DoorNo)));
+    }
+
+    if (BlockText)
+    {
+        BlockText->SetText(FText::FromString(InProperty.Block.IsEmpty() ? TEXT("") : InProperty.Block));
+    }
+
+    if (ZoneText)
+    {
+        ZoneText->SetText(FText::FromString(InProperty.Zone.IsEmpty() ? TEXT("") : InProperty.Zone));
+    }
+
+    if (ClassText)
+    {
+        ClassText->SetText(FText::FromString(InProperty.Class.IsEmpty() ? TEXT("") : InProperty.Class));
     }
 }
 

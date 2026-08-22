@@ -78,9 +78,9 @@ async function startServer() {
   };
 
   // Helper function to broadcast updates to all active WebSocket clients connected to a specific client_slug
-  const broadcastSync = (event: "init" | "update", client_slug: string) => {
+  const broadcastSync = (event: "init" | "update", client_slug: string, extraPayload?: any) => {
     const data = clientsData[client_slug] || clientsData["hyperion-vis"];
-    const payloadString = JSON.stringify({
+    const payloadObject: Record<string, any> = {
       event,
       timestamp: new Date().toISOString(),
       payload: {
@@ -88,12 +88,26 @@ async function startServer() {
         target_class: data.target_class,
         attributes_matrix: data.attributes_matrix
       }
-    });
+    };
+
+    if (extraPayload) {
+      payloadObject.updated_row = extraPayload;
+      payloadObject.data = extraPayload.data || extraPayload;
+      payloadObject.property = extraPayload.property || extraPayload.Name || extraPayload.name;
+    }
+
+    const payloadString = JSON.stringify(payloadObject);
 
     let clientsCount = 0;
     wss.clients.forEach((client: any) => {
       if (client.readyState === WebSocket.OPEN) {
-        if (client.client_slug === client_slug || client.client_slug === "hyperion-vis") {
+        // Broadcast to matching client_slug or default instances
+        if (
+          !client.client_slug ||
+          client.client_slug === client_slug || 
+          client.client_slug === "hyperion-vis" ||
+          client_slug === "hyperion-vis"
+        ) {
           client.send(payloadString);
           clientsCount++;
         }
@@ -111,7 +125,7 @@ async function startServer() {
     let ue5Alive = false;
     wss.clients.forEach((client: any) => {
       if (client.readyState === WebSocket.OPEN) {
-        if (client.client_slug === slug || client.client_slug === "hyperion-vis") {
+        if (!client.client_slug || client.client_slug === slug || client.client_slug === "hyperion-vis") {
           ue5Alive = true;
         }
       }
@@ -145,7 +159,7 @@ async function startServer() {
 
   // API Endpoint 3: Receive real-time sheet-data updates from the React Portal Workspace UI
   app.post("/api/sheet-data", (req, res) => {
-    const { client_slug, target_class, attributes_matrix } = req.body;
+    const { client_slug, target_class, attributes_matrix, updated_row } = req.body;
     
     if (attributes_matrix && Array.isArray(attributes_matrix)) {
       const slug = client_slug || "hyperion-vis";
@@ -158,12 +172,50 @@ async function startServer() {
       console.log(`[Full-Stack API] State synchronized for client '${slug}' - ${attributes_matrix.length} rows updated.`);
       
       // Real-time Push to all active WebSockets/Connected Plugin threads directly
-      broadcastSync("update", slug);
+      broadcastSync("update", slug, updated_row);
 
       return res.json({ success: true, message: `Spreadsheet records successfully cached on backend server for client '${slug}'` });
     }
     
     return res.status(400).json({ error: "Invalid payload layout structure: missing 'attributes_matrix' array" });
+  });
+
+  // API Endpoint 3b: Dedicated single property real-time update endpoint
+  app.post("/api/update-property", (req, res) => {
+    const { client_slug, property_name, property_data } = req.body;
+    const slug = client_slug || "hyperion-vis";
+
+    if (!clientsData[slug]) {
+      clientsData[slug] = {
+        client_slug: slug,
+        target_class: "ArchViz Real-Estate Portfolio",
+        attributes_matrix: []
+      };
+    }
+
+    const matrix = clientsData[slug].attributes_matrix;
+    const targetName = property_name || property_data?.Name || property_data?.name;
+    
+    const idx = matrix.findIndex((r: any) => 
+      (r.Name && r.Name === targetName) || 
+      (r.ActorName && r.ActorName === targetName) || 
+      (r.PropID && r.PropID === targetName)
+    );
+
+    if (idx !== -1) {
+      matrix[idx] = { ...matrix[idx], ...property_data };
+    } else if (targetName) {
+      matrix.push({ Name: targetName, ...property_data });
+    }
+
+    console.log(`[Full-Stack API] Property '${targetName}' updated live for client '${slug}'. Broadcasting update to Unreal Engine...`);
+    broadcastSync("update", slug, { property: targetName, data: property_data });
+
+    res.json({
+      success: true,
+      message: `Property '${targetName}' updated and instantly pushed to Unreal Engine.`,
+      payload: matrix
+    });
   });
 
   // API Endpoint 4: Force manual re-sync broadcast to connected Unreal Engine clients
