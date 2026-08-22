@@ -1,5 +1,11 @@
 #include "BlockSpline.h"
 #include "PropertyVisualizer.h"
+#include "SightPortalBlockManager.h"
+#include "SightPortalZoneManager.h"
+#include "SightPortalSiteManager.h"
+#include "SightPortalConnector.h"
+#include "Engine/World.h"
+#include "Components/SplineComponent.h"
 
 ABlockSpline::ABlockSpline()
 {
@@ -15,12 +21,22 @@ ABlockSpline::ABlockSpline()
     VisualizerSpacing = 350.0f;
     VisualizerRotationOffset = FRotator::ZeroRotator;
     VisualizerScaleOffset = FVector(1.0f, 1.0f, 1.0f);
-    bAutoManageSplinePoints = true;
+    bAutoManageSplinePoints = false;
+    PropertyCount = 3;
+    BlockName = TEXT("1");
+    ZoneName = TEXT("1");
+    StartingDoorNumber = 1;
 }
 
 void ABlockSpline::BeginPlay()
 {
     Super::BeginPlay();
+}
+
+void ABlockSpline::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    ClearPropertyVisualizers();
+    Super::EndPlay(EndPlayReason);
 }
 
 void ABlockSpline::OnConstruction(const FTransform& Transform)
@@ -32,18 +48,18 @@ void ABlockSpline::OnConstruction(const FTransform& Transform)
     TArray<AActor*> AttachedActors;
     GetAttachedActors(AttachedActors);
 
-    int32 PropertyCount = 0;
+    int32 AttachedPropertyCount = 0;
     for (AActor* Child : AttachedActors)
     {
         if (IsValid(Child) && Child->IsA(APropertyVisualizer::StaticClass()))
         {
-            PropertyCount++;
+            AttachedPropertyCount++;
         }
     }
 
-    if (bAutoManageSplinePoints && PropertyCount > 0)
+    if (bAutoManageSplinePoints && AttachedPropertyCount > 0)
     {
-        float TargetSplineLength = PropertyCount * VisualizerSpacing;
+        float TargetSplineLength = AttachedPropertyCount * VisualizerSpacing;
         SplineComponent->ClearSplinePoints(false);
         SplineComponent->AddSplinePoint(FVector(0.f, 0.f, 0.f), ESplineCoordinateSpace::Local, false);
         SplineComponent->AddSplinePoint(FVector(TargetSplineLength, 0.f, 0.f), ESplineCoordinateSpace::Local, false);
@@ -77,6 +93,302 @@ void ABlockSpline::OnConstruction(const FTransform& Transform)
             Index++;
         }
     }
+}
+
+void ABlockSpline::ClearActiveSpawnedActors()
+{
+    ClearPropertyVisualizers();
+}
+
+void ABlockSpline::ClearProperties()
+{
+    ClearPropertyVisualizers();
+}
+
+void ABlockSpline::ClearPropertyVisualizers()
+{
+    UE_LOG(LogTemp, Log, TEXT("[SightPortal BlockSpline] Clearing property visualizers..."));
+
+    // Recover Site Manager reference for unregistering
+    ASightPortalSiteManager* SiteManager = nullptr;
+    AActor* CurrentParent = GetAttachParentActor();
+    while (CurrentParent)
+    {
+        if (CurrentParent->IsA(ASightPortalSiteManager::StaticClass()))
+        {
+            SiteManager = Cast<ASightPortalSiteManager>(CurrentParent);
+            break;
+        }
+        CurrentParent = CurrentParent->GetAttachParentActor();
+    }
+
+    // Destroy all tracked visualizers
+    for (AActor* VisActor : SpawnedVisualizers)
+    {
+        if (IsValid(VisActor))
+        {
+            if (SiteManager)
+            {
+                APropertyVisualizer* PropVis = Cast<APropertyVisualizer>(VisActor);
+                if (PropVis)
+                {
+                    SiteManager->UnregisterPropertyVisualizer(PropVis->PropertyDetails.Name);
+                }
+            }
+            VisActor->Destroy();
+        }
+    }
+    SpawnedVisualizers.Empty();
+
+    // Also scan any attached visualizers that may not be in SpawnedVisualizers array
+    TArray<AActor*> AttachedActors;
+    GetAttachedActors(AttachedActors);
+    for (AActor* Child : AttachedActors)
+    {
+        if (IsValid(Child) && Child->IsA(APropertyVisualizer::StaticClass()))
+        {
+            if (SiteManager)
+            {
+                APropertyVisualizer* PropVis = Cast<APropertyVisualizer>(Child);
+                if (PropVis)
+                {
+                    SiteManager->UnregisterPropertyVisualizer(PropVis->PropertyDetails.Name);
+                }
+            }
+            Child->Destroy();
+        }
+    }
+}
+
+void ABlockSpline::SpawnProperties()
+{
+    SpawnPropertyVisualizers();
+}
+
+void ABlockSpline::SpawnPropertyVisualizers()
+{
+    if (bIsSpawning)
+    {
+        return;
+    }
+
+    bIsSpawning = true;
+
+    UWorld* World = GetWorld();
+    if (!World || !SplineComponent)
+    {
+        bIsSpawning = false;
+        return;
+    }
+
+    // Auto-discover parent SiteManager, ZoneManager, and BlockManager
+    ASightPortalSiteManager* SiteManager = nullptr;
+    AActor* CurrentParent = GetAttachParentActor();
+    while (CurrentParent)
+    {
+        if (CurrentParent->IsA(ASightPortalSiteManager::StaticClass()))
+        {
+            SiteManager = Cast<ASightPortalSiteManager>(CurrentParent);
+            break;
+        }
+        CurrentParent = CurrentParent->GetAttachParentActor();
+    }
+
+    AActor* DirectParent = GetAttachParentActor();
+    if (DirectParent)
+    {
+        if (DirectParent->IsA(ASightPortalBlockManager::StaticClass()))
+        {
+            ASightPortalBlockManager* ParentBlock = Cast<ASightPortalBlockManager>(DirectParent);
+            BlockName = ParentBlock->BlockName;
+            AActor* ParentZone = ParentBlock->GetAttachParentActor();
+            if (ParentZone && ParentZone->IsA(ASightPortalZoneManager::StaticClass()))
+            {
+                ZoneName = Cast<ASightPortalZoneManager>(ParentZone)->ZoneName;
+            }
+        }
+        else if (DirectParent->IsA(ASightPortalZoneManager::StaticClass()))
+        {
+            ZoneName = Cast<ASightPortalZoneManager>(DirectParent)->ZoneName;
+        }
+    }
+
+    // Clean up invalid references from SpawnedVisualizers
+    for (int32 i = SpawnedVisualizers.Num() - 1; i >= 0; --i)
+    {
+        if (!IsValid(SpawnedVisualizers[i]))
+        {
+            SpawnedVisualizers.RemoveAt(i);
+        }
+    }
+
+    // Destroy excess visualizers if PropertyCount has been reduced
+    while (SpawnedVisualizers.Num() > PropertyCount)
+    {
+        AActor* Excess = SpawnedVisualizers.Last();
+        if (IsValid(Excess))
+        {
+            if (SiteManager)
+            {
+                APropertyVisualizer* PropVis = Cast<APropertyVisualizer>(Excess);
+                if (PropVis)
+                {
+                    SiteManager->UnregisterPropertyVisualizer(PropVis->PropertyDetails.Name);
+                }
+            }
+            Excess->Destroy();
+        }
+        SpawnedVisualizers.RemoveAt(SpawnedVisualizers.Num() - 1);
+    }
+
+    // Ensure array size matches PropertyCount
+    if (SpawnedVisualizers.Num() != PropertyCount)
+    {
+        SpawnedVisualizers.SetNum(PropertyCount);
+    }
+
+    if (bAutoManageSplinePoints && PropertyCount > 0)
+    {
+        float TargetSplineLength = PropertyCount * VisualizerSpacing;
+        SplineComponent->ClearSplinePoints(false);
+        SplineComponent->AddSplinePoint(FVector(0.f, 0.f, 0.f), ESplineCoordinateSpace::Local, false);
+        SplineComponent->AddSplinePoint(FVector(TargetSplineLength, 0.f, 0.f), ESplineCoordinateSpace::Local, false);
+        SplineComponent->UpdateSpline();
+    }
+
+    // Recover cached properties from central connector
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    TArray<FSightPortalProperty> MatchedProperties;
+    if (Connector)
+    {
+        for (const FSightPortalProperty& Prop : Connector->CachedProperties)
+        {
+            if (Prop.Name.StartsWith(BlockName, ESearchCase::IgnoreCase))
+            {
+                MatchedProperties.Add(Prop);
+            }
+        }
+    }
+
+    for (int32 i = 0; i < PropertyCount; ++i)
+    {
+        float Distance = i * VisualizerSpacing;
+        FVector SpawnLoc = SplineComponent->GetLocationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
+        FRotator SpawnRot = SplineComponent->GetRotationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World) + VisualizerRotationOffset;
+
+        int32 DoorNum = StartingDoorNumber + i;
+        FString ExpectedName = FString::Printf(TEXT("%s%d"), *BlockName, DoorNum);
+
+        // Determine unique real-estate property data to load
+        FSightPortalProperty AssignedProperty;
+        bool bFoundMatch = false;
+
+        if (Connector)
+        {
+            // 1. Exact match by Name
+            for (const FSightPortalProperty& Prop : Connector->CachedProperties)
+            {
+                if (Prop.Name.Equals(ExpectedName, ESearchCase::IgnoreCase))
+                {
+                    AssignedProperty = Prop;
+                    bFoundMatch = true;
+                    break;
+                }
+            }
+
+            // 2. Match by Zone, Block, and DoorNo
+            if (!bFoundMatch)
+            {
+                for (const FSightPortalProperty& Prop : Connector->CachedProperties)
+                {
+                    if (Prop.Zone.Equals(ZoneName, ESearchCase::IgnoreCase) &&
+                        Prop.Block.Equals(BlockName, ESearchCase::IgnoreCase) &&
+                        Prop.DoorNo == DoorNum)
+                    {
+                        AssignedProperty = Prop;
+                        bFoundMatch = true;
+                        break;
+                    }
+                }
+            }
+
+            // 3. Fallback to matched properties for this block
+            if (!bFoundMatch && MatchedProperties.Num() > 0)
+            {
+                AssignedProperty = MatchedProperties[i % MatchedProperties.Num()];
+                bFoundMatch = true;
+            }
+
+            // 4. Global index fallback
+            if (!bFoundMatch && Connector->CachedProperties.Num() > 0)
+            {
+                AssignedProperty = Connector->CachedProperties[i % Connector->CachedProperties.Num()];
+                bFoundMatch = true;
+            }
+        }
+
+        // 5. Generate clean fallback if not found in cache
+        if (!bFoundMatch)
+        {
+            AssignedProperty.Name = ExpectedName;
+            AssignedProperty.Zone = ZoneName;
+            AssignedProperty.Block = BlockName;
+            AssignedProperty.DoorNo = DoorNum;
+            AssignedProperty.Price = 250000.0f + (i * 15000.0f);
+            AssignedProperty.Surface = 120.0f + (i * 10.0f);
+            AssignedProperty.Availability = TEXT("Available");
+        }
+
+        APropertyVisualizer* PropertyVis = Cast<APropertyVisualizer>(SpawnedVisualizers[i]);
+        if (!IsValid(PropertyVis))
+        {
+            FActorSpawnParameters SpawnParams;
+            SpawnParams.Owner = this;
+            SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+            TSubclassOf<APropertyVisualizer> VisualizerClass = PropertyVisualizerClass;
+            if (!VisualizerClass)
+            {
+                VisualizerClass = APropertyVisualizer::StaticClass();
+            }
+
+            PropertyVis = World->SpawnActor<APropertyVisualizer>(VisualizerClass, SpawnLoc, SpawnRot, SpawnParams);
+            if (PropertyVis)
+            {
+                PropertyVis->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+                SpawnedVisualizers[i] = PropertyVis;
+            }
+        }
+
+        if (PropertyVis)
+        {
+            if (!PropertyVis->bHasBeenManuallyMoved)
+            {
+                PropertyVis->SetActorLocationAndRotation(SpawnLoc, SpawnRot);
+                PropertyVis->SetActorScale3D(VisualizerScaleOffset);
+            }
+            else
+            {
+                FTransform DefaultTransform(SpawnRot, SpawnLoc, VisualizerScaleOffset);
+                FTransform FinalTransform = PropertyVis->ManualRelativeTransform * DefaultTransform;
+                PropertyVis->SetActorTransform(FinalTransform);
+            }
+
+            PropertyVis->SetPropertyDetails(AssignedProperty);
+
+#if WITH_EDITOR
+            PropertyVis->SetActorLabel(AssignedProperty.Name);
+#endif
+
+            // Register in Site Manager if present
+            if (SiteManager)
+            {
+                SiteManager->RegisterPropertyVisualizer(AssignedProperty.Name, PropertyVis);
+            }
+        }
+    }
+
+    bIsSpawning = false;
 }
 
 #if WITH_EDITOR

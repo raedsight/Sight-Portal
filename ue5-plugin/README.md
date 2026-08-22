@@ -53,6 +53,20 @@ A full 2D screen overlay modal that presents **all** attributes read directly fr
 * **Property Class / Category** (`Class`, e.g. `Penthouse`, `Duplex`, `Villa`)
 * **Close / Dismiss Button** (`CloseButton` with `OnDetailClosed` delegate)
 
+### 4. 〰️ `ABlockSpline` (Spline-Guided Property Layout)
+An actor containing a `USplineComponent` capable of spawning, arranging, and managing `APropertyVisualizer` actors along custom curves:
+* **Editor Actions (`CallInEditor`):**
+  * **`SpawnPropertyVisualizers()` / `SpawnProperties()`:** Spawns and distributes properties along the spline at configured `VisualizerSpacing`, matching real-estate records from `USightPortalConnector` cache and registering them into the site registry.
+  * **`ClearPropertyVisualizers()` / `ClearProperties()` / `ClearActiveSpawnedActors()`:** Safely cleans up and destroys all spawned property visualizers along this spline and unregisters them from the site manager.
+* **Configurable Properties:**
+  * **`PropertyCount`:** Number of properties to spawn along this spline (default: `3`).
+  * **`VisualizerSpacing`:** Distance along the spline between consecutive visualizers (default: `350.0f`).
+  * **`PropertyVisualizerClass`:** Blueprint class of `APropertyVisualizer` to spawn.
+  * **`BlockName` & `ZoneName`:** Block and Zone identifiers for property attribute matching.
+  * **`StartingDoorNumber`:** Starting door/unit number index.
+  * **`bAutoManageSplinePoints`:** When enabled, automatically configures a straight line spline matching total property length (`PropertyCount * VisualizerSpacing`). When disabled, allows full manual shaping of custom spline curves in the editor.
+  * **`VisualizerRotationOffset` & `VisualizerScaleOffset`:** Rotational and scale offsets applied along the curve.
+
 ---
 
 ## 🚀 Installation & Setup in Unreal Engine 5
