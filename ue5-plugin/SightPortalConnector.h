@@ -48,6 +48,17 @@ struct FSightPortalProperty
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|RealEstate")
     FString Class;
+
+    // Any additional custom or dynamically defined column attributes from the portal/spreadsheet
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|RealEstate")
+    TMap<FString, FString> CustomAttributes;
+
+    // Helper to retrieve any custom attribute value
+    FString GetCustomAttribute(const FString& Key, const FString& DefaultValue = TEXT("")) const
+    {
+        const FString* Found = CustomAttributes.Find(Key);
+        return Found ? *Found : DefaultValue;
+    }
 };
 
 // Blueprint multicast delegates to notify levels when property records are pulled

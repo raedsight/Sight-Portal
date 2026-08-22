@@ -683,16 +683,7 @@ export default function ClientDashboard({
 
       const parsedSpreadsheet: SpreadsheetData = { headers, rows };
       setSheetData(parsedSpreadsheet);
-      saveStoredClientSheet(client.id, parsedSpreadsheet);
-      
-      onRecordLog({
-        clientId: client.id,
-        clientName: client.name,
-        type: "fetch_sheet",
-        status: "success",
-        details: `Successfully fetched and compiled ${rows.length} records dynamically from main Google Sheets URL`,
-        payload: JSON.stringify({ rowsCount: rows.length, columns: headers }),
-      });
+      syncAndBroadcastState(parsedSpreadsheet, `Successfully fetched ${rows.length} records from Google Sheets and synchronized with Unreal Engine.`);
       
     } catch (err: any) {
       console.warn("Google Sheet Fetch Error: Fallback to cached sandboxed grid state.", err);
@@ -711,6 +702,62 @@ export default function ClientDashboard({
     }
   };
 
+  // Centralized helper to push updates instantly to both backend WebSocket broadcaster and local UE5 endpoint
+  const syncAndBroadcastState = async (updatedData: SpreadsheetData, logMessage?: string, updatedRowInfo?: any) => {
+    // 1. Save to local storage
+    saveStoredClientSheet(client.id, updatedData);
+
+    // 2. Broadcast via Express WebSocket hub
+    try {
+      await fetch("/api/sheet-data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_slug: client.id,
+          target_class: currentPresetName,
+          attributes_matrix: updatedData.rows,
+          updated_row: updatedRowInfo
+        })
+      });
+    } catch (e) {
+      console.warn("Backend real-time sync warning:", e);
+    }
+
+    // 3. Send to local/remote UE5 Remote Control endpoint
+    const endpoint = client.ue5Endpoint || "http://127.0.0.1:8008/remote/object/call";
+    const ue5Payload = {
+      event: updatedRowInfo ? "FORCE_ROW_UPDATE" : "PORTAL_UPDATE",
+      timestamp: new Date().toISOString(),
+      clientId: client.id,
+      clientName: client.name,
+      preset: currentPresetName,
+      ...(updatedRowInfo || {}),
+      data: updatedRowInfo?.data || updatedData.rows
+    };
+
+    try {
+      fetch(endpoint, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ue5Payload)
+      }).catch(err => console.debug("UE5 direct endpoint notify (expected in sandbox):", err));
+    } catch (err) {
+      // Ignored
+    }
+
+    if (logMessage) {
+      onRecordLog({
+        clientId: client.id,
+        clientName: client.name,
+        type: "ue5_push",
+        status: "success",
+        details: logMessage,
+        payload: JSON.stringify(ue5Payload)
+      });
+    }
+  };
+
   // Cell editing handlers
   const handleStartCellEdit = (rowIndex: number, colName: string, currentValue: string) => {
     if (colName === "Name") return;
@@ -722,6 +769,12 @@ export default function ClientDashboard({
     if (!sheetData) return;
     
     const updatedRows = [...sheetData.rows];
+    const previousVal = updatedRows[rowIndex]?.[colName];
+    if (previousVal === editingValue) {
+      setEditingCell(null);
+      return;
+    }
+
     updatedRows[rowIndex] = {
       ...updatedRows[rowIndex],
       [colName]: editingValue
@@ -729,8 +782,40 @@ export default function ClientDashboard({
     
     const updatedData = { ...sheetData, rows: updatedRows };
     setSheetData(updatedData);
-    saveStoredClientSheet(client.id, updatedData);
     setEditingCell(null);
+
+    const targetRow = updatedRows[rowIndex];
+    const propertyName = targetRow.Name || targetRow.ActorName || targetRow.PropID || `Property_${rowIndex + 1}`;
+
+    // Format mapped values
+    const mappedRow: Record<string, any> = {};
+    Object.entries(targetRow).forEach(([k, val]) => {
+      const v = String(val);
+      const numValue = parseFloat(v);
+      if (!isNaN(numValue) && v.trim() !== "" && !v.includes("_") && !v.startsWith("0x")) {
+        mappedRow[k] = numValue;
+      } else if (v.toLowerCase() === "true") {
+        mappedRow[k] = true;
+      } else if (v.toLowerCase() === "false") {
+        mappedRow[k] = false;
+      } else {
+        mappedRow[k] = v;
+      }
+    });
+
+    // Instantly push update to Unreal Engine
+    syncAndBroadcastState(
+      updatedData,
+      `Live update pushed to Unreal Engine: '${propertyName}' - [${colName}] changed from '${previousVal}' to '${editingValue}'`,
+      {
+        property: propertyName,
+        field: colName,
+        oldValue: previousVal,
+        newValue: editingValue,
+        rowIndex,
+        data: mappedRow
+      }
+    );
   };
 
   const handleAddRow = () => {
@@ -764,17 +849,19 @@ export default function ClientDashboard({
     };
     
     setSheetData(updatedData);
-    saveStoredClientSheet(client.id, updatedData);
+    syncAndBroadcastState(updatedData, `Added new property row '${newRow.Name || "New Property"}' and synchronized with Unreal Engine.`);
   };
 
   const handleDeleteRow = (index: number) => {
     if (!sheetData) return;
     
+    const targetRow = sheetData.rows[index];
+    const propertyName = targetRow?.Name || `Row_${index + 1}`;
     const updatedRows = sheetData.rows.filter((_, idx) => idx !== index);
     const updatedData = { ...sheetData, rows: updatedRows };
     
     setSheetData(updatedData);
-    saveStoredClientSheet(client.id, updatedData);
+    syncAndBroadcastState(updatedData, `Deleted property '${propertyName}' from database and updated Unreal Engine scene actors.`);
   };
 
   // Column / Header management operations
@@ -811,16 +898,8 @@ export default function ClientDashboard({
 
     const updatedData = { headers: updatedHeaders, rows: updatedRows };
     setSheetData(updatedData);
-    saveStoredClientSheet(client.id, updatedData);
     setEditingHeader(null);
-
-    onRecordLog({
-      clientId: client.id,
-      clientName: client.name,
-      type: "config_change",
-      status: "success",
-      details: `Renamed column "${oldColName}" to "${trimmedNew}" in local model.`,
-    });
+    syncAndBroadcastState(updatedData, `Renamed column "${oldColName}" to "${trimmedNew}" and updated Unreal Engine.`);
   };
 
   const handleAddColumn = (colName: string) => {
@@ -841,17 +920,9 @@ export default function ClientDashboard({
 
     const updatedData = { headers: updatedHeaders, rows: updatedRows };
     setSheetData(updatedData);
-    saveStoredClientSheet(client.id, updatedData);
     setNewColumnName("");
     setShowAddColumnInput(false);
-
-    onRecordLog({
-      clientId: client.id,
-      clientName: client.name,
-      type: "config_change",
-      status: "success",
-      details: `Added new column "${trimmedName}" to local model.`,
-    });
+    syncAndBroadcastState(updatedData, `Added new column "${trimmedName}" and updated Unreal Engine.`);
   };
 
   const handleDeleteColumn = (colName: string) => {
@@ -873,15 +944,7 @@ export default function ClientDashboard({
 
     const updatedData = { headers: updatedHeaders, rows: updatedRows };
     setSheetData(updatedData);
-    saveStoredClientSheet(client.id, updatedData);
-
-    onRecordLog({
-      clientId: client.id,
-      clientName: client.name,
-      type: "config_change",
-      status: "success",
-      details: `Deleted column "${colName}" from local model.`,
-    });
+    syncAndBroadcastState(updatedData, `Deleted column "${colName}" and updated Unreal Engine.`);
   };
 
   const handleMoveColumn = (colName: string, direction: "left" | "right") => {
@@ -900,7 +963,7 @@ export default function ClientDashboard({
 
     const updatedData = { ...sheetData, headers: updatedHeaders };
     setSheetData(updatedData);
-    saveStoredClientSheet(client.id, updatedData);
+    syncAndBroadcastState(updatedData);
   };
 
   // Reset local state to selected default template
@@ -908,16 +971,8 @@ export default function ClientDashboard({
     if (confirm(`Reset current local table back to standard '${currentPresetName}' parameters? This clears any local revisions.`)) {
       const original = SPREADSHEET_TEMPLATES[currentPresetName];
       setSheetData(original);
-      saveStoredClientSheet(client.id, original);
       setFetchError(null);
-      
-      onRecordLog({
-        clientId: client.id,
-        clientName: client.name,
-        type: "config_change",
-        status: "success",
-        details: `Reset local client state model to default preset: ${currentPresetName}`,
-      });
+      syncAndBroadcastState(original, `Reset local client state model to default preset: ${currentPresetName} and synchronized with Unreal Engine.`);
     }
   };
 

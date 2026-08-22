@@ -466,6 +466,14 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
             }
         }
 
+        // Configure RowSpline parameters
+        RowSpline->PropertyCount = Row.PropertyCount;
+        RowSpline->PropertyVisualizerClass = Row.PropertyVisualizer;
+        RowSpline->BlockName = BlockName;
+        RowSpline->ZoneName = ZoneName;
+        RowSpline->StartingDoorNumber = CumulativeIndex + 1;
+        RowSpline->SpawnedVisualizers = Row.SpawnedVisualizers;
+
         // Re-trigger construction of the spline to finalize child visualizer alignment
         RowSpline->OnConstruction(RowSpline->GetActorTransform());
     }
