@@ -224,6 +224,110 @@ void ASightPortalSiteManager::SpawnZoneManagers()
     bIsSpawning = false;
 }
 
+ASightPortalZoneManager* ASightPortalSiteManager::AddNewZone()
+{
+    // Clean up any stale pointers in ActiveZoneManagers
+    ActiveZoneManagers.RemoveAll([](AActor* Actor) { return !IsValid(Actor); });
+
+    // Also scan attached children to make sure we don't miss any valid Zone Managers
+    TArray<AActor*> AttachedActors;
+    GetAttachedActors(AttachedActors);
+    for (AActor* Attached : AttachedActors)
+    {
+        if (IsValid(Attached) && Attached->IsA(ASightPortalZoneManager::StaticClass()))
+        {
+            ActiveZoneManagers.AddUnique(Attached);
+        }
+    }
+
+    int32 NewIndex = ActiveZoneManagers.Num();
+    FVector SpawnLocation = GetActorLocation();
+
+    if (NewIndex > 0)
+    {
+        AActor* LastActor = ActiveZoneManagers.Last();
+        if (IsValid(LastActor))
+        {
+            SpawnLocation = LastActor->GetActorLocation() + (GetActorRightVector() * ZoneSpacing);
+        }
+        else
+        {
+            SpawnLocation = GetActorLocation() + (GetActorRightVector() * (NewIndex * ZoneSpacing));
+        }
+    }
+    else
+    {
+        SpawnLocation = GetActorLocation();
+    }
+
+    FString GeneratedZoneName = FString::Printf(TEXT("Z%d"), NewIndex + 1);
+    return AddZoneWithParameters(GeneratedZoneName, SpawnLocation);
+}
+
+ASightPortalZoneManager* ASightPortalSiteManager::AddZoneWithParameters(const FString& CustomZoneName, const FVector& CustomLocation)
+{
+    // Validate ZoneManagerClass or fallback to default
+    TSubclassOf<AActor> ClassToSpawn = ZoneManagerClass;
+    if (!ClassToSpawn)
+    {
+        ClassToSpawn = ASightPortalZoneManager::StaticClass();
+        UE_LOG(LogTemp, Warning, TEXT("[SightPortal SiteManager] ZoneManagerClass not assigned in Site Manager. Defaulting to ASightPortalZoneManager::StaticClass()."));
+    }
+
+    if (ClassToSpawn->IsChildOf(ASightPortalSiteManager::StaticClass()))
+    {
+        UE_LOG(LogTemp, Error, TEXT("[SightPortal SiteManager] ERROR: ZoneManagerClass is set to ASightPortalSiteManager! Recursive spawning aborted."));
+        return nullptr;
+    }
+
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return nullptr;
+    }
+
+    // Clean up any stale pointers in ActiveZoneManagers
+    ActiveZoneManagers.RemoveAll([](AActor* Actor) { return !IsValid(Actor); });
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Owner = this;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    FRotator ManagerRotation = GetActorRotation();
+    ASightPortalZoneManager* NewZone = World->SpawnActor<ASightPortalZoneManager>(
+        ClassToSpawn,
+        CustomLocation,
+        ManagerRotation,
+        SpawnParams
+    );
+
+    if (!NewZone)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[SightPortal SiteManager] Failed to spawn new Zone Manager actor at %s."), *CustomLocation.ToString());
+        return nullptr;
+    }
+
+    // Attach SightPortalZoneManager to SightPortalSiteManager preserving its world transform
+    NewZone->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+
+    // Assign Zone identifier name
+    int32 ZoneIndex = ActiveZoneManagers.Num() + 1;
+    NewZone->ZoneName = !CustomZoneName.IsEmpty() ? CustomZoneName : FString::Printf(TEXT("Z%d"), ZoneIndex);
+
+#if WITH_EDITOR
+    NewZone->SetActorLabel(NewZone->ZoneName);
+#endif
+
+    // Track in ActiveZoneManagers
+    ActiveZoneManagers.Add(NewZone);
+    ZoneCount = FMath::Max(ZoneCount, ActiveZoneManagers.Num());
+
+    UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Successfully added new Zone '%s' at %s without respawning existing zones. Total active zones: %d"),
+        *NewZone->ZoneName, *CustomLocation.ToString(), ActiveZoneManagers.Num());
+
+    return NewZone;
+}
+
 void ASightPortalSiteManager::SpawnPropertyVisualizers()
 {
     UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Site-wide Spawning/Syncing of Property Visualizers initiated."));
