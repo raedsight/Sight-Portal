@@ -220,6 +220,31 @@ export async function createOrUpdateClient(client: Client): Promise<void> {
   }
 }
 
+export async function saveClientSheetData(clientId: string, sheetData: import("./types").SpreadsheetData): Promise<void> {
+  try {
+    await setDoc(doc(db, "clients", clientId), { 
+      sheetData, 
+      updatedAt: new Date().toISOString() 
+    }, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `clients/${clientId}`);
+  }
+}
+
+export async function fetchClientSheetData(clientId: string): Promise<import("./types").SpreadsheetData | null> {
+  try {
+    const snap = await getDoc(doc(db, "clients", clientId));
+    if (snap.exists()) {
+      const data = snap.data() as Client;
+      return data.sheetData || null;
+    }
+    return null;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.GET, `clients/${clientId}`);
+    return null;
+  }
+}
+
 export async function removeClient(clientId: string): Promise<void> {
   try {
     await deleteDoc(doc(db, "clients", clientId));

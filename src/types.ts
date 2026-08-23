@@ -52,6 +52,7 @@ export interface Client {
   webSocketEndpoint?: string; // E.g. "ws://127.0.0.1:8009"
   branding: BrandingTheme;
   updatedAt: string;     // ISO timestamp
+  sheetData?: SpreadsheetData; // Live property portfolio spreadsheet rows and columns saved in Firebase
   bugs?: BugIssue[];     // Optional list of tracked bug issues
 }
 

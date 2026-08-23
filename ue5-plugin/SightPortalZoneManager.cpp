@@ -188,6 +188,109 @@ void ASightPortalZoneManager::SpawnBlockManagers()
     bIsSpawning = false;
 }
 
+ASightPortalBlockManager* ASightPortalZoneManager::AddNewBlock()
+{
+    // Clean up any stale pointers in ActiveBlockManagers
+    ActiveBlockManagers.RemoveAll([](AActor* Actor) { return !IsValid(Actor); });
+
+    // Scan attached children to make sure we don't miss any valid Block Managers
+    TArray<AActor*> AttachedActors;
+    GetAttachedActors(AttachedActors);
+    for (AActor* Attached : AttachedActors)
+    {
+        if (IsValid(Attached) && Attached->IsA(ASightPortalBlockManager::StaticClass()))
+        {
+            ActiveBlockManagers.AddUnique(Attached);
+        }
+    }
+
+    int32 NewIndex = ActiveBlockManagers.Num();
+    FVector SpawnLocation = GetActorLocation();
+
+    if (NewIndex > 0)
+    {
+        AActor* LastActor = ActiveBlockManagers.Last();
+        if (IsValid(LastActor))
+        {
+            SpawnLocation = LastActor->GetActorLocation() + (GetActorForwardVector() * BlockSpacing);
+        }
+        else
+        {
+            SpawnLocation = GetActorLocation() + (GetActorForwardVector() * (NewIndex * BlockSpacing));
+        }
+    }
+    else
+    {
+        SpawnLocation = GetActorLocation();
+    }
+
+    FString GeneratedBlockName = FString::Printf(TEXT("%sB%d"), *ZoneName, NewIndex + 1);
+    return AddBlockWithParameters(GeneratedBlockName, SpawnLocation);
+}
+
+ASightPortalBlockManager* ASightPortalZoneManager::AddBlockWithParameters(const FString& CustomBlockName, const FVector& CustomLocation)
+{
+    TSubclassOf<AActor> ClassToSpawn = BlockManagerClass;
+    if (!ClassToSpawn)
+    {
+        ClassToSpawn = ASightPortalBlockManager::StaticClass();
+        UE_LOG(LogTemp, Warning, TEXT("[SightPortal ZoneManager] BlockManagerClass not assigned in Zone Manager. Defaulting to ASightPortalBlockManager::StaticClass()."));
+    }
+
+    if (ClassToSpawn->IsChildOf(ASightPortalZoneManager::StaticClass()))
+    {
+        UE_LOG(LogTemp, Error, TEXT("[SightPortal ZoneManager] ERROR: BlockManagerClass is set to ASightPortalZoneManager! Recursive spawning aborted."));
+        return nullptr;
+    }
+
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return nullptr;
+    }
+
+    // Clean up any stale pointers in ActiveBlockManagers
+    ActiveBlockManagers.RemoveAll([](AActor* Actor) { return !IsValid(Actor); });
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Owner = this;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    FRotator ManagerRotation = GetActorRotation();
+    ASightPortalBlockManager* NewBlock = World->SpawnActor<ASightPortalBlockManager>(
+        ClassToSpawn,
+        CustomLocation,
+        ManagerRotation,
+        SpawnParams
+    );
+
+    if (!NewBlock)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[SightPortal ZoneManager] Failed to spawn new Block Manager actor at %s."), *CustomLocation.ToString());
+        return nullptr;
+    }
+
+    // Attach SightPortalBlockManager to SightPortalZoneManager preserving its world transform
+    NewBlock->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+
+    // Assign Block identifier name
+    int32 BlockIndex = ActiveBlockManagers.Num() + 1;
+    NewBlock->BlockName = !CustomBlockName.IsEmpty() ? CustomBlockName : FString::Printf(TEXT("%sB%d"), *ZoneName, BlockIndex);
+
+#if WITH_EDITOR
+    NewBlock->SetActorLabel(NewBlock->BlockName);
+#endif
+
+    // Track in ActiveBlockManagers
+    ActiveBlockManagers.Add(NewBlock);
+    BlockCount = FMath::Max(BlockCount, ActiveBlockManagers.Num());
+
+    UE_LOG(LogTemp, Log, TEXT("[SightPortal ZoneManager] Successfully added new Block '%s' at %s without respawning existing blocks. Total active blocks: %d"),
+        *NewBlock->BlockName, *CustomLocation.ToString(), ActiveBlockManagers.Num());
+
+    return NewBlock;
+}
+
 void ASightPortalZoneManager::SpawnPropertyVisualizers()
 {
     for (AActor* BlockActor : ActiveBlockManagers)

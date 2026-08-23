@@ -47,6 +47,7 @@ import {
 import { Client, SpreadsheetData, SheetRow, Log, BugIssue, BugActivity, ThemePreset } from "../types";
 import { extractSpreadsheetId, getStoredClientSheet, saveStoredClientSheet, SPREADSHEET_TEMPLATES } from "../data";
 import { initAuth, googleSignIn, logout, getAccessToken } from "../firebaseAuth";
+import { saveClientSheetData } from "../firebase";
 
 interface ClientDashboardProps {
   client: Client;
@@ -563,19 +564,35 @@ export default function ClientDashboard({
     "overlord-egames": "Material Swapping & Props Catalog",
   };
 
-  // Load client sheet state from local storage or appropriate default preset on mount/client change
+  // Load client sheet state from Firebase Firestore (client.sheetData), local storage fallback, or appropriate default preset
   useEffect(() => {
     const defaultPreset = presetMapping[client.id] || "ArchViz Real-Estate Portfolio";
     setCurrentPresetName(defaultPreset);
-    const loadedData = getStoredClientSheet(client.id, defaultPreset);
-    setSheetData(loadedData);
-    setFetchError(null);
-
-    // Auto-fetch from Google Sheets if configured
-    if (client.sheetId) {
-      handleFetchGoogleSheet();
+    
+    // 1. Prioritize sheetData from Firebase Firestore
+    if (client.sheetData && Array.isArray(client.sheetData.headers) && Array.isArray(client.sheetData.rows)) {
+      setSheetData(client.sheetData);
+      saveStoredClientSheet(client.id, client.sheetData);
+    } else {
+      // 2. Fallback to cached or template data and immediately write to Firebase
+      const loadedData = getStoredClientSheet(client.id, defaultPreset);
+      setSheetData(loadedData);
+      saveClientSheetData(client.id, loadedData);
+      onUpdateClient({
+        ...client,
+        sheetData: loadedData,
+        updatedAt: new Date().toISOString()
+      });
     }
+    setFetchError(null);
   }, [client.id]);
+
+  // Keep sheetData updated if client.sheetData in Firestore updates remotely
+  useEffect(() => {
+    if (client.sheetData && Array.isArray(client.sheetData.headers) && Array.isArray(client.sheetData.rows)) {
+      setSheetData(client.sheetData);
+    }
+  }, [client.sheetData]);
 
   // Synchronize dynamic spreadsheet state to the Express backend memory
   useEffect(() => {
@@ -702,12 +719,24 @@ export default function ClientDashboard({
     }
   };
 
-  // Centralized helper to push updates instantly to both backend WebSocket broadcaster and local UE5 endpoint
+  // Centralized helper to push updates instantly to Firebase Firestore, backend WebSocket broadcaster, and local UE5 endpoint
   const syncAndBroadcastState = async (updatedData: SpreadsheetData, logMessage?: string, updatedRowInfo?: any) => {
-    // 1. Save to local storage
+    // 1. Permanently save to Firebase Firestore
+    try {
+      await saveClientSheetData(client.id, updatedData);
+      onUpdateClient({
+        ...client,
+        sheetData: updatedData,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (firebaseErr) {
+      console.error("[Firebase Save Error]", firebaseErr);
+    }
+
+    // 2. Save to local storage as offline cache backup
     saveStoredClientSheet(client.id, updatedData);
 
-    // 2. Broadcast via Express WebSocket hub
+    // 3. Broadcast via Express WebSocket hub
     try {
       await fetch("/api/sheet-data", {
         method: "POST",

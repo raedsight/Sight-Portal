@@ -5,6 +5,8 @@
 #include "SightPortalConnector.h"
 #include "SightPortalSiteManager.generated.h"
 
+class ASightPortalZoneManager;
+
 /**
  * ASightPortalSiteManager
  * A highly customizable C++ Site Manager class that handles the construction site as a whole
@@ -68,6 +70,14 @@ public:
     // Spawns and arranges Zone Managers dynamically
     UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
     void SpawnZoneManagers();
+
+    // Adds a single new Zone Manager without respawning or altering existing zones
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
+    ASightPortalZoneManager* AddNewZone();
+
+    // Adds a new Zone Manager with a custom name and world location without respawning existing zones
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    ASightPortalZoneManager* AddZoneWithParameters(const FString& CustomZoneName, const FVector& CustomLocation);
 
     // Cleans up all spawned Zone Managers
     UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")

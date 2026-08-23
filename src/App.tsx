@@ -173,12 +173,21 @@ export default function App() {
           } else {
             hasSeededInitialRef.current = true;
             setClients(updatedClients);
+            setSelectedClient(prev => {
+              if (!prev) return null;
+              const found = updatedClients.find(c => c.id === prev.id);
+              return found || prev;
+            });
           }
         });
       } else if (userProfile.role === "client" && userProfile.clientId) {
         unsubscribe = await syncSingleClient(userProfile.clientId, (updatedClient) => {
           if (updatedClient) {
             setClients([updatedClient]);
+            setSelectedClient(prev => {
+              if (prev && prev.id === updatedClient.id) return updatedClient;
+              return prev;
+            });
           } else {
             setClients([]);
           }

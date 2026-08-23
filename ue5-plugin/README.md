@@ -53,7 +53,16 @@ A full 2D screen overlay modal that presents **all** attributes read directly fr
 * **Property Class / Category** (`Class`, e.g. `Penthouse`, `Duplex`, `Villa`)
 * **Close / Dismiss Button** (`CloseButton` with `OnDetailClosed` delegate)
 
-### 4. 〰️ `ABlockSpline` (Spline-Guided Property Layout)
+### 4. 🏢 `ASightPortalSiteManager` & `ASightPortalZoneManager`
+* **Non-Destructive Zone/Block Additions (`CallInEditor`):**
+  * **`AddNewZone()`:** Spawns and attaches a single new `ASightPortalZoneManager` actor placed alongside current zones without destroying, resetting, or altering already placed zones or visualizers.
+  * **`AddZoneWithParameters(CustomZoneName, CustomLocation)`:** Programmatically spawns a specific Zone with custom transform.
+  * **`AddNewBlock()` (on `ASightPortalZoneManager`):** Spawns and attaches a single new `ASightPortalBlockManager` without destroying or resetting existing blocks.
+* **Batch Operations (`CallInEditor`):**
+  * **`SpawnZoneManagers()` / `SpawnBlockManagers()`:** Spawns and arranges the full configured count.
+  * **`SpawnPropertyVisualizers()`:** Propagates site-wide to spawn/update all visualizers from cached portal records.
+
+### 5. 〰️ `ABlockSpline` (Spline-Guided Property Layout)
 An actor containing a `USplineComponent` capable of spawning, arranging, and managing `APropertyVisualizer` actors along custom curves:
 * **Editor Actions (`CallInEditor`):**
   * **`SpawnPropertyVisualizers()` / `SpawnProperties()`:** Spawns and distributes properties along the spline at configured `VisualizerSpacing`, matching real-estate records from `USightPortalConnector` cache and registering them into the site registry.

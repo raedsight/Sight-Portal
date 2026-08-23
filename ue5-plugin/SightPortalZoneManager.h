@@ -4,6 +4,8 @@
 #include "GameFramework/Actor.h"
 #include "SightPortalZoneManager.generated.h"
 
+class ASightPortalBlockManager;
+
 /**
  * ASightPortalZoneManager
  * A dedicated class to handle each Zone in a construction site (residential city).
@@ -58,6 +60,14 @@ public:
     // Spawns and arranges Block Managers dynamically
     UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
     void SpawnBlockManagers();
+
+    // Adds a single new Block Manager without respawning or altering existing blocks
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
+    ASightPortalBlockManager* AddNewBlock();
+
+    // Adds a new Block Manager with a custom name and world location without respawning existing blocks
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    ASightPortalBlockManager* AddBlockWithParameters(const FString& CustomBlockName, const FVector& CustomLocation);
 
     // Cleans up all spawned Block Managers
     UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
