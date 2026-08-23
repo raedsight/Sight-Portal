@@ -264,6 +264,44 @@ ASightPortalZoneManager* ASightPortalSiteManager::AddNewZone()
     return AddZoneWithParameters(GeneratedZoneName, SpawnLocation);
 }
 
+void ASightPortalSiteManager::AddConfiguredZone()
+{
+    FVector TargetLocation = GetActorLocation();
+
+    if (bUseCustomLocationForNewZone && !NewZoneCustomLocation.IsZero())
+    {
+        TargetLocation = NewZoneCustomLocation;
+    }
+    else
+    {
+        // Clean up any stale pointers in ActiveZoneManagers
+        ActiveZoneManagers.RemoveAll([](AActor* Actor) { return !IsValid(Actor); });
+        
+        int32 NewIndex = ActiveZoneManagers.Num();
+        if (NewIndex > 0)
+        {
+            AActor* LastActor = ActiveZoneManagers.Last();
+            if (IsValid(LastActor))
+            {
+                TargetLocation = LastActor->GetActorLocation() + (GetActorRightVector() * ZoneSpacing);
+            }
+            else
+            {
+                TargetLocation = GetActorLocation() + (GetActorRightVector() * (NewIndex * ZoneSpacing));
+            }
+        }
+    }
+
+    FString TargetZoneName = NewZoneCustomName;
+    if (TargetZoneName.IsEmpty())
+    {
+        int32 NewIndex = ActiveZoneManagers.Num();
+        TargetZoneName = FString::Printf(TEXT("Z%d"), NewIndex + 1);
+    }
+
+    AddZoneWithParameters(TargetZoneName, TargetLocation);
+}
+
 ASightPortalZoneManager* ASightPortalSiteManager::AddZoneWithParameters(const FString& CustomZoneName, const FVector& CustomLocation)
 {
     // Validate ZoneManagerClass or fallback to default

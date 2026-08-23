@@ -61,6 +61,20 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|State")
     bool bHasBeenManuallyMoved = false;
 
+    // --- Custom Zone Spawn Parameters (Editor Exposed) ---
+
+    // Optional custom name when spawning a custom zone from editor
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Operations|Custom Zone")
+    FString NewZoneCustomName = TEXT("");
+
+    // Optional custom world position/offset when spawning a custom zone from editor
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Operations|Custom Zone")
+    FVector NewZoneCustomLocation = FVector::ZeroVector;
+
+    // If true, uses NewZoneCustomLocation; otherwise calculates automatic right-vector offset based on ZoneSpacing
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Operations|Custom Zone")
+    bool bUseCustomLocationForNewZone = false;
+
 #if WITH_EDITOR
     virtual void PostEditMove(bool bFinished) override;
 #endif
@@ -68,19 +82,23 @@ public:
     // --- Operations ---
 
     // Spawns and arranges Zone Managers dynamically
-    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations", meta = (CallInEditor = "true", DisplayName = "Spawn Zone Managers"))
     void SpawnZoneManagers();
 
     // Adds a single new Zone Manager without respawning or altering existing zones
-    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations", meta = (CallInEditor = "true", DisplayName = "Add New Zone"))
     ASightPortalZoneManager* AddNewZone();
 
+    // Adds a new Zone using the configured NewZoneCustomName and NewZoneCustomLocation parameters without respawning existing zones
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations", meta = (CallInEditor = "true", DisplayName = "Add Configured Zone"))
+    void AddConfiguredZone();
+
     // Adds a new Zone Manager with a custom name and world location without respawning existing zones
-    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
-    ASightPortalZoneManager* AddZoneWithParameters(const FString& CustomZoneName, const FVector& CustomLocation);
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations", meta = (DisplayName = "Add Zone With Parameters"))
+    ASightPortalZoneManager* AddZoneWithParameters(const FString& CustomZoneName = TEXT(""), const FVector& CustomLocation = FVector::ZeroVector);
 
     // Cleans up all spawned Zone Managers
-    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations", meta = (CallInEditor = "true", DisplayName = "Clear Zone Managers"))
     void ClearZoneManagers();
 
     // Spawns/updates Property Visualizers for all child zones (which in turn spawn for blocks)
