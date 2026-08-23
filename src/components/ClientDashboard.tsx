@@ -585,11 +585,6 @@ export default function ClientDashboard({
       });
     }
     setFetchError(null);
-
-    // Auto-fetch from Google Sheets if configured
-    if (client.sheetId) {
-      handleFetchGoogleSheet();
-    }
   }, [client.id]);
 
   // Keep sheetData updated if client.sheetData in Firestore updates remotely
