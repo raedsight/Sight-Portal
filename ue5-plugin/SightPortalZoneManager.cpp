@@ -228,6 +228,44 @@ ASightPortalBlockManager* ASightPortalZoneManager::AddNewBlock()
     return AddBlockWithParameters(GeneratedBlockName, SpawnLocation);
 }
 
+void ASightPortalZoneManager::AddConfiguredBlock()
+{
+    FVector TargetLocation = GetActorLocation();
+
+    if (bUseCustomLocationForNewBlock && !NewBlockCustomLocation.IsZero())
+    {
+        TargetLocation = NewBlockCustomLocation;
+    }
+    else
+    {
+        // Clean up any stale pointers in ActiveBlockManagers
+        ActiveBlockManagers.RemoveAll([](AActor* Actor) { return !IsValid(Actor); });
+
+        int32 NewIndex = ActiveBlockManagers.Num();
+        if (NewIndex > 0)
+        {
+            AActor* LastActor = ActiveBlockManagers.Last();
+            if (IsValid(LastActor))
+            {
+                TargetLocation = LastActor->GetActorLocation() + (GetActorForwardVector() * BlockSpacing);
+            }
+            else
+            {
+                TargetLocation = GetActorLocation() + (GetActorForwardVector() * (NewIndex * BlockSpacing));
+            }
+        }
+    }
+
+    FString TargetBlockName = NewBlockCustomName;
+    if (TargetBlockName.IsEmpty())
+    {
+        int32 NewIndex = ActiveBlockManagers.Num();
+        TargetBlockName = FString::Printf(TEXT("%sB%d"), *ZoneName, NewIndex + 1);
+    }
+
+    AddBlockWithParameters(TargetBlockName, TargetLocation);
+}
+
 ASightPortalBlockManager* ASightPortalZoneManager::AddBlockWithParameters(const FString& CustomBlockName, const FVector& CustomLocation)
 {
     TSubclassOf<AActor> ClassToSpawn = BlockManagerClass;

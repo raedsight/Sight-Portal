@@ -54,13 +54,16 @@ A full 2D screen overlay modal that presents **all** attributes read directly fr
 * **Close / Dismiss Button** (`CloseButton` with `OnDetailClosed` delegate)
 
 ### 4. 🏢 `ASightPortalSiteManager` & `ASightPortalZoneManager`
-* **Non-Destructive Zone/Block Additions (`CallInEditor`):**
-  * **`AddNewZone()`:** Spawns and attaches a single new `ASightPortalZoneManager` actor placed alongside current zones without destroying, resetting, or altering already placed zones or visualizers.
-  * **`AddZoneWithParameters(CustomZoneName, CustomLocation)`:** Programmatically spawns a specific Zone with custom transform.
-  * **`AddNewBlock()` (on `ASightPortalZoneManager`):** Spawns and attaches a single new `ASightPortalBlockManager` without destroying or resetting existing blocks.
-* **Batch Operations (`CallInEditor`):**
-  * **`SpawnZoneManagers()` / `SpawnBlockManagers()`:** Spawns and arranges the full configured count.
-  * **`SpawnPropertyVisualizers()`:** Propagates site-wide to spawn/update all visualizers from cached portal records.
+* **Non-Destructive Zone/Block Additions (`CallInEditor` Buttons in Details Panel):**
+  * **`AddNewZone`**: Spawns and attaches a single new `ASightPortalZoneManager` actor positioned alongside current zones without destroying, resetting, or altering already placed zones or visualizers.
+  * **`AddConfiguredZone`**: Spawns a new Zone using the editable parameters in the Details panel (`NewZoneCustomName`, `NewZoneCustomLocation`, and `bUseCustomLocationForNewZone`).
+  * **`AddZoneWithParameters(CustomZoneName, CustomLocation)`**: Blueprint & C++ callable function to spawn a specific Zone with custom transform and identifier.
+  * **`AddNewBlock` (on `ASightPortalZoneManager`)**: Spawns and attaches a single new `ASightPortalBlockManager` alongside current blocks without destroying or resetting existing blocks.
+  * **`AddConfiguredBlock` (on `ASightPortalZoneManager`)**: Spawns a new Block using the editable parameters in the Details panel (`NewBlockCustomName`, `NewBlockCustomLocation`, and `bUseCustomLocationForNewBlock`).
+* **Batch Operations (`CallInEditor` Buttons):**
+  * **`SpawnZoneManagers` / `SpawnBlockManagers`**: Spawns and arranges the full configured count.
+  * **`SpawnPropertyVisualizers`**: Propagates site-wide to spawn/update all visualizers from cached portal records.
+  * **`ClearZoneManagers` / `ClearBlockManagers` / `ClearPropertyVisualizers`**: Safely clears spawned entities.
 
 ### 5. 〰️ `ABlockSpline` (Spline-Guided Property Layout)
 An actor containing a `USplineComponent` capable of spawning, arranging, and managing `APropertyVisualizer` actors along custom curves:
