@@ -118,7 +118,9 @@ You can derive UMG Widget Blueprints from these C++ classes in the Unreal Editor
 
 ### 4. Placing in the Level
 1. Drag an `ASightPortalSiteManager` actor into your scene.
-2. In the Details Panel, configure your `WebSocketURL` and `RemoteEndpointURL`.
+2. In the Details Panel under the **SightPortal | Bridge** category, configure your URLs:
+   * **`RemoteEndpointURL`**: `https://sightportal.ai.studio/api/health` (HTTP initial dataset fetch & polling fallback)
+   * **`WebSocketURL`**: `wss://sightportal.ai.studio/ws` or `wss://sightportal.ai.studio/ws/<client-slug>` (Instant live bi-directional sync)
 3. Press **Force Fetch Data** or click **Spawn Property Visualizers**.
 4. Each `APropertyVisualizer` will automatically render its floating 3D Widget with surface & bedroom counts.
 5. In PIE or standalone, clicking on any `APropertyVisualizer` directly toggles its full 2D detail card on screen, and clicking away anywhere in the world toggles it closed!

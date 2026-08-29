@@ -402,7 +402,7 @@ export default function AdminConsole({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-400 mb-1">Unreal Endpoint Server *</label>
+                  <label className="block text-xs font-semibold text-gray-400 mb-1">Local Web Remote Control Server *</label>
                   <input
                     type="text"
                     required
@@ -411,18 +411,24 @@ export default function AdminConsole({
                     placeholder="http://127.0.0.1:8008/remote/object/call"
                     className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-mono"
                   />
+                  <span className="text-[10px] text-gray-500 mt-1 block">
+                    Local UE5 Remote Control plugin (default: http://127.0.0.1:8008/remote/object/call)
+                  </span>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-400 mb-1">Live WebSocket Connection Endpoint URL</label>
+                <label className="block text-xs font-semibold text-gray-400 mb-1">Custom Live WebSocket Connection Endpoint URL (Optional)</label>
                 <input
                   type="text"
                   value={webSocketEndpoint}
                   onChange={(e) => setWebSocketEndpoint(e.target.value)}
-                  placeholder="e.g. ws://127.0.0.1:8009 or leave empty for dynamic default"
+                  placeholder="Leave empty for dynamic cloud default (wss://.../ws/:id)"
                   className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-mono"
                 />
+                <span className="text-[10px] text-gray-500 mt-1 block">
+                  Optional override. When left blank, your portal will automatically stream from your live cloud gateway.
+                </span>
               </div>
             </div>
 
