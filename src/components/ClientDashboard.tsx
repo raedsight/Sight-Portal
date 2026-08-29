@@ -42,7 +42,8 @@ import {
   Search,
   Filter,
   X,
-  Save
+  Save,
+  Copy
 } from "lucide-react";
 import { Client, SpreadsheetData, SheetRow, Log, BugIssue, BugActivity, ThemePreset } from "../types";
 import { extractSpreadsheetId, getStoredClientSheet, saveStoredClientSheet, SPREADSHEET_TEMPLATES } from "../data";
@@ -222,6 +223,7 @@ export default function ClientDashboard({
   // Live local WebSocket connection test utility
   const [testWsLogs, setTestWsLogs] = useState<string[]>([]);
   const [testWsStatus, setTestWsStatus] = useState<"idle" | "connecting" | "connected" | "success" | "error">("idle");
+  const [copiedUrlType, setCopiedUrlType] = useState<"http" | "ws" | null>(null);
   const testWsRef = useRef<WebSocket | null>(null);
   
 
@@ -2099,18 +2101,83 @@ export default function ClientDashboard({
                     </div>
                   )}
 
-                  <div className="space-y-1.5">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block font-mono">Live WebSocket Connection Endpoint URL:</span>
-                    <div className="bg-black/60 font-mono text-[10.5px] text-emerald-300 p-2.5 border border-white/5 rounded-lg flex items-center justify-between gap-1 overflow-x-auto select-all">
-                      <code>
-                        {client.webSocketEndpoint || (typeof window !== "undefined"
-                          ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host.replace("ais-dev-", "ais-pre-")}/ws/${client.id}`
-                          : `wss://ais-pre-.../ws/${client.id}`)}
-                      </code>
+                  {/* Dual URL Connection Details */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    {/* 1. Remote Endpoint URL (HTTP Data Fetch / Polling) */}
+                    <div className="space-y-1.5 bg-black/40 border border-white/5 p-3 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block font-mono">
+                          1. Remote Endpoint URL (HTTP)
+                        </span>
+                        <span className="text-[9px] text-amber-400/90 font-mono bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                          Details Panel: RemoteEndpointURL
+                        </span>
+                      </div>
+                      {(() => {
+                        const httpUrl = typeof window !== "undefined"
+                          ? `${window.location.origin}/api/health`
+                          : "https://sightportal.ai.studio/api/health";
+                        return (
+                          <div className="bg-black/60 font-mono text-[10.5px] text-amber-300 p-2 border border-white/5 rounded-lg flex items-center justify-between gap-1">
+                            <code className="truncate select-all mr-2">{httpUrl}</code>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(httpUrl);
+                                setCopiedUrlType("http");
+                                setTimeout(() => setCopiedUrlType(null), 2500);
+                              }}
+                              className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+                              title="Copy HTTP Remote Endpoint URL"
+                            >
+                              {copiedUrlType === "http" ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                              {copiedUrlType === "http" ? "Copied" : "Copy"}
+                            </button>
+                          </div>
+                        );
+                      })()}
+                      <span className="text-[9.5px] text-gray-400 block leading-tight font-sans">
+                        Used by <strong>ASightPortalSiteManager</strong> & <strong>USightPortalConnector</strong> for initial dataset pull & fallback polling.
+                      </span>
                     </div>
-                    <span className="text-[9.5px] text-[#2ebd85] block leading-tight font-sans font-medium">
-                      🔒 **Client-Isolated Endpoint**: This URL is dedicated exclusively to **{client.name}** (`{client.id}`). Your Unreal Engine 5 project will only listen to and synchronize spreadsheet events belonging to this client!
-                    </span>
+
+                    {/* 2. Live WebSocket URL (Real-time Stream) */}
+                    <div className="space-y-1.5 bg-black/40 border border-white/5 p-3 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block font-mono">
+                          2. Live WebSocket URL (Real-Time)
+                        </span>
+                        <span className="text-[9px] text-emerald-400/90 font-mono bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                          Details Panel: WebSocketURL
+                        </span>
+                      </div>
+                      {(() => {
+                        const wsUrl = client.webSocketEndpoint || (typeof window !== "undefined"
+                          ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws/${client.id}`
+                          : `wss://sightportal.ai.studio/ws/${client.id}`);
+                        return (
+                          <div className="bg-black/60 font-mono text-[10.5px] text-emerald-300 p-2 border border-white/5 rounded-lg flex items-center justify-between gap-1">
+                            <code className="truncate select-all mr-2">{wsUrl}</code>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(wsUrl);
+                                setCopiedUrlType("ws");
+                                setTimeout(() => setCopiedUrlType(null), 2500);
+                              }}
+                              className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+                              title="Copy Live WebSocket URL"
+                            >
+                              {copiedUrlType === "ws" ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                              {copiedUrlType === "ws" ? "Copied" : "Copy"}
+                            </button>
+                          </div>
+                        );
+                      })()}
+                      <span className="text-[9.5px] text-[#2ebd85] block leading-tight font-sans font-medium">
+                        🔒 Isolated live stream for <strong>{client.name}</strong> (`{client.id}`).
+                      </span>
+                    </div>
                   </div>
 
                   {/* Dynamic WebSocket Connection Tester and Live Output Logs */}

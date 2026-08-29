@@ -75,11 +75,8 @@ void USightPortalConnector::ConnectWebSocket()
         FModuleManager::Get().LoadModule("WebSockets");
     }
 
-    // Set standard WS protocols array to guide handshakes smoothly in Unreal Engine 5
-    TArray<FString> Protocols;
-    Protocols.Add(TEXT("ws"));
-
-    WebSocketClient = FWebSocketsModule::Get().CreateWebSocket(WebSocketURL, Protocols);
+    // Connect with standard WebSocket headers (no subprotocol requirement to prevent 'HS: ACCEPT missing' errors across proxies/CDNs)
+    WebSocketClient = FWebSocketsModule::Get().CreateWebSocket(WebSocketURL);
 
     WebSocketClient->OnConnected().AddUObject(this, &USightPortalConnector::OnWebsocketConnected);
     WebSocketClient->OnConnectionError().AddUObject(this, &USightPortalConnector::OnWebsocketConnectionError);

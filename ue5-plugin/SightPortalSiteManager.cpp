@@ -10,8 +10,8 @@ ASightPortalSiteManager::ASightPortalSiteManager()
     PrimaryActorTick.bCanEverTick = false;
     ZoneCount = 1;
     ZoneSpacing = 1500.0f;
-    WebSocketURL = TEXT("wss://ais-pre-4wjcvfkjzt7ohntjrl7gk5-405891248157.europe-west3.run.app/ws/hyperion-vis");
-    RemoteEndpointURL = TEXT("https://sight-portal-1127775803.europe-west2.run.app/api/health");
+    WebSocketURL = TEXT("wss://sightportal.ai.studio/ws");
+    RemoteEndpointURL = TEXT("https://sightportal.ai.studio/api/health");
 
     USceneComponent* SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
     RootComponent = SceneRoot;
