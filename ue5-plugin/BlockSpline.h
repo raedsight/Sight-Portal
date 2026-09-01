@@ -55,6 +55,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Properties")
     TSubclassOf<APropertyVisualizer> PropertyVisualizerClass;
 
+    // Optional: Specific custom visualizer class overrides per property index along this spline (0-indexed)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Properties")
+    TMap<int32, TSubclassOf<APropertyVisualizer>> PropertyVisualizerOverrides;
+
     // Custom Block Name identifier for property matching
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Properties")
     FString BlockName = TEXT("1");
@@ -75,11 +79,33 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|State")
     bool bHasBeenManuallyMoved = false;
 
+    // --- Change Specific Visualizer Class Parameters (Editor Exposed) ---
+
+    // Target visualizer index (0-indexed) along this spline when modifying a specific visualizer class from editor
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Operations|Change Visualizer", meta = (ClampMin = "0"))
+    int32 TargetVisualizerIndex = 0;
+
+    // New Property Visualizer blueprint class to assign to the targeted visualizer
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Operations|Change Visualizer")
+    TSubclassOf<APropertyVisualizer> NewVisualizerClass;
+
 #if WITH_EDITOR
     virtual void PostEditMove(bool bFinished) override;
 #endif
 
     // --- Operations (Exposed to Editor & Blueprints) ---
+
+    // Applies the NewVisualizerClass to the specific visualizer at TargetVisualizerIndex along this spline in the editor
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations|Change Visualizer", meta = (CallInEditor = "true", DisplayName = "Apply Visualizer Class Override"))
+    void ApplyVisualizerClassOverride();
+
+    // Replaces a single specific Property Visualizer class at a given index along this spline dynamically while preserving its transform and data
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    APropertyVisualizer* ChangeVisualizerClassAtIndex(int32 VisualizerIndex, TSubclassOf<APropertyVisualizer> InNewClass);
+
+    // Replaces a single specific Property Visualizer class for a given property name along this spline dynamically
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    APropertyVisualizer* ChangeVisualizerClassForProperty(const FString& PropertyName, TSubclassOf<APropertyVisualizer> InNewClass);
 
     // Spawns and arranges Property Visualizers along this spline curve
     UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")

@@ -43,8 +43,13 @@ import {
   Filter,
   X,
   Save,
-  Copy
+  Copy,
+  ExternalLink,
+  FileText,
+  Table,
+  ChevronDown
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { Client, SpreadsheetData, SheetRow, Log, BugIssue, BugActivity, ThemePreset } from "../types";
 import { extractSpreadsheetId, getStoredClientSheet, saveStoredClientSheet, SPREADSHEET_TEMPLATES } from "../data";
 import { initAuth, googleSignIn, logout, getAccessToken } from "../firebaseAuth";
@@ -219,6 +224,173 @@ export default function ClientDashboard({
 
     return true;
   });
+
+  // Table Data Export State & Actions
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exportNotification, setExportNotification] = useState<{ message: string; type: "success" | "info" } | null>(null);
+  const exportDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportDropdownRef.current && !exportDropdownRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleExportCSV = (onlyFiltered: boolean = false) => {
+    const rowsToExport = (onlyFiltered && isFilterActive)
+      ? filteredSheetRows.map(f => f.row)
+      : (sheetData?.rows || []);
+
+    if (rowsToExport.length === 0 || !sheetData?.headers) {
+      setExportNotification({ message: "No table data available to export.", type: "info" });
+      setTimeout(() => setExportNotification(null), 4000);
+      return;
+    }
+
+    const headerLine = sheetData.headers.map(h => `"${String(h).replace(/"/g, '""')}"`).join(",");
+    const dataLines = rowsToExport.map(row => {
+      return sheetData.headers.map(h => {
+        const val = row[h] !== undefined && row[h] !== null ? String(row[h]) : "";
+        return `"${val.replace(/"/g, '""')}"`;
+      }).join(",");
+    });
+
+    const csvContent = "\uFEFF" + [headerLine, ...dataLines].join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safeClientName = (client.id || "portfolio").toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+    const fileName = `${safeClientName}_properties_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.setAttribute("href", url);
+    link.setAttribute("download", fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    setShowExportMenu(false);
+    setExportNotification({
+      message: `Successfully exported ${rowsToExport.length} rows to ${fileName}`,
+      type: "success"
+    });
+    onRecordLog({
+      clientId: client.id,
+      clientName: client.name,
+      type: "fetch_sheet",
+      status: "success",
+      details: `Exported CSV table dataset (${rowsToExport.length} rows) for ${client.name}`,
+      payload: `File: ${fileName} (${rowsToExport.length} rows, ${sheetData.headers.length} columns)`
+    });
+    setTimeout(() => setExportNotification(null), 4000);
+  };
+
+  const handleExportExcel = (onlyFiltered: boolean = false) => {
+    const rowsToExport = (onlyFiltered && isFilterActive)
+      ? filteredSheetRows.map(f => f.row)
+      : (sheetData?.rows || []);
+
+    if (rowsToExport.length === 0 || !sheetData?.headers) {
+      setExportNotification({ message: "No table data available to export.", type: "info" });
+      setTimeout(() => setExportNotification(null), 4000);
+      return;
+    }
+
+    const worksheetData = [
+      sheetData.headers,
+      ...rowsToExport.map(row =>
+        sheetData.headers.map(h => (row[h] !== undefined && row[h] !== null ? row[h] : ""))
+      )
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(worksheetData);
+    const colWidths = sheetData.headers.map(h => ({ wch: Math.max(String(h).length + 4, 14) }));
+    ws["!cols"] = colWidths;
+
+    const wb = XLSX.utils.book_new();
+    const sheetTabName = (client.sheetTab || "Properties").slice(0, 31);
+    XLSX.utils.book_append_sheet(wb, ws, sheetTabName);
+    const safeClientName = (client.id || "portfolio").toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+    const fileName = `${safeClientName}_properties_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+
+    setShowExportMenu(false);
+    setExportNotification({
+      message: `Successfully exported ${rowsToExport.length} rows to ${fileName}`,
+      type: "success"
+    });
+    onRecordLog({
+      clientId: client.id,
+      clientName: client.name,
+      type: "fetch_sheet",
+      status: "success",
+      details: `Exported Excel (.xlsx) workbook (${rowsToExport.length} rows) for ${client.name}`,
+      payload: `Workbook: ${fileName}, Sheet tab: ${sheetTabName}`
+    });
+    setTimeout(() => setExportNotification(null), 4000);
+  };
+
+  const handleExportGoogleSheet = (action: "open_linked" | "open_new" | "copy_tsv", onlyFiltered: boolean = false) => {
+    const rowsToExport = (onlyFiltered && isFilterActive)
+      ? filteredSheetRows.map(f => f.row)
+      : (sheetData?.rows || []);
+
+    if (action === "copy_tsv") {
+      if (rowsToExport.length === 0 || !sheetData?.headers) {
+        setExportNotification({ message: "No table data available to copy.", type: "info" });
+        setTimeout(() => setExportNotification(null), 4000);
+        return;
+      }
+
+      const headerLine = sheetData.headers.join("\t");
+      const dataLines = rowsToExport.map(row => {
+        return sheetData.headers.map(h => {
+          const val = row[h] !== undefined && row[h] !== null ? String(row[h]) : "";
+          return val.replace(/\t/g, " ").replace(/\r?\n/g, " ");
+        }).join("\t");
+      });
+
+      const tsvContent = [headerLine, ...dataLines].join("\n");
+      navigator.clipboard.writeText(tsvContent);
+
+      setShowExportMenu(false);
+      setExportNotification({
+        message: `Copied ${rowsToExport.length} rows in Google Sheets TSV format! Paste (Ctrl+V) directly into Google Sheets.`,
+        type: "success"
+      });
+      onRecordLog({
+        clientId: client.id,
+        clientName: client.name,
+        type: "fetch_sheet",
+        status: "success",
+        details: `Copied ${rowsToExport.length} rows formatted for Google Sheets clipboard paste`,
+        payload: `Columns: ${sheetData.headers.join(", ")}`
+      });
+      setTimeout(() => setExportNotification(null), 5000);
+    } else if (action === "open_linked") {
+      const sheetUrl = client.sheetId.startsWith("http")
+        ? client.sheetId
+        : `https://docs.google.com/spreadsheets/d/${extractSpreadsheetId(client.sheetId).sheetId}/edit`;
+      window.open(sheetUrl, "_blank", "noopener,noreferrer");
+      setShowExportMenu(false);
+      setExportNotification({
+        message: "Opened linked Google Sheet in a new tab.",
+        type: "info"
+      });
+      setTimeout(() => setExportNotification(null), 4000);
+    } else if (action === "open_new") {
+      window.open("https://sheets.new", "_blank", "noopener,noreferrer");
+      setShowExportMenu(false);
+      setExportNotification({
+        message: "Opened new blank Google Sheet at sheets.new. You can paste your copied data there!",
+        type: "info"
+      });
+      setTimeout(() => setExportNotification(null), 5000);
+    }
+  };
 
   // Live local WebSocket connection test utility
   const [testWsLogs, setTestWsLogs] = useState<string[]>([]);
@@ -1701,6 +1873,125 @@ export default function ClientDashboard({
                       <span className="text-[10px] text-gray-500 font-mono hidden sm:inline">
                         {sheetData ? `${filteredSheetRows.length} of ${sheetData.rows.length} records` : "No data"}
                       </span>
+
+                      {/* Export Dropdown Menu */}
+                      <div className="relative" ref={exportDropdownRef}>
+                        <button
+                          id="export-table-btn"
+                          onClick={() => setShowExportMenu(!showExportMenu)}
+                          disabled={!sheetData || sheetData.rows.length === 0}
+                          className="px-2.5 py-1 rounded transition bg-black/60 hover:bg-white/10 text-emerald-400 border border-emerald-500/30 hover:border-emerald-500/60 cursor-pointer flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
+                          title="Export table dataset to CSV, Excel, or Google Sheets"
+                        >
+                          <Download className="h-3 w-3 text-emerald-400" />
+                          <span>Export</span>
+                          <ChevronDown className={`h-2.5 w-2.5 transition-transform ${showExportMenu ? "rotate-180" : ""}`} />
+                        </button>
+
+                        {showExportMenu && sheetData && (
+                          <div className="absolute right-0 mt-1.5 w-72 bg-neutral-900/95 backdrop-blur-md border border-white/15 rounded-xl shadow-2xl z-50 p-2 text-xs font-mono animate-fadeIn">
+                            <div className="px-2 py-1.5 border-b border-white/10 text-[10px] uppercase tracking-wider text-gray-400 font-bold flex items-center justify-between">
+                              <span>Export Dataset</span>
+                              <span className="text-emerald-400 text-[9px] font-mono">
+                                {isFilterActive ? `${filteredSheetRows.length} Filtered` : `${sheetData.rows.length} Total`}
+                              </span>
+                            </div>
+
+                            <div className="py-1 space-y-1">
+                              {/* 1. CSV Export */}
+                              <button
+                                onClick={() => handleExportCSV(false)}
+                                className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-gray-200 hover:text-white flex items-center gap-2.5 transition cursor-pointer"
+                              >
+                                <FileText className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+                                <div className="flex-1">
+                                  <div className="font-bold text-[11px] flex items-center justify-between">
+                                    <span>Export as CSV</span>
+                                    <span className="text-[9px] text-gray-400 font-normal">.csv</span>
+                                  </div>
+                                  <p className="text-[9px] text-gray-400">Comma-separated values with UTF-8 BOM</p>
+                                </div>
+                              </button>
+
+                              {/* 2. Excel Export */}
+                              <button
+                                onClick={() => handleExportExcel(false)}
+                                className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-gray-200 hover:text-white flex items-center gap-2.5 transition cursor-pointer"
+                              >
+                                <Table className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                                <div className="flex-1">
+                                  <div className="font-bold text-[11px] flex items-center justify-between">
+                                    <span>Export as Excel</span>
+                                    <span className="text-[9px] text-gray-400 font-normal">.xlsx</span>
+                                  </div>
+                                  <p className="text-[9px] text-gray-400">Full workbook with formatted columns</p>
+                                </div>
+                              </button>
+
+                              {/* Filtered Subset Export Option if active */}
+                              {isFilterActive && (
+                                <div className="pt-1 border-t border-white/5 space-y-1">
+                                  <button
+                                    onClick={() => handleExportCSV(true)}
+                                    className="w-full text-left px-2.5 py-1 rounded-lg hover:bg-amber-500/10 text-amber-300 hover:text-amber-200 flex items-center gap-2 text-[10px] transition cursor-pointer"
+                                  >
+                                    <Download className="h-3 w-3 shrink-0" />
+                                    <span>Export Filtered Rows Only ({filteredSheetRows.length} CSV)</span>
+                                  </button>
+                                  <button
+                                    onClick={() => handleExportExcel(true)}
+                                    className="w-full text-left px-2.5 py-1 rounded-lg hover:bg-amber-500/10 text-amber-300 hover:text-amber-200 flex items-center gap-2 text-[10px] transition cursor-pointer"
+                                  >
+                                    <Download className="h-3 w-3 shrink-0" />
+                                    <span>Export Filtered Rows Only ({filteredSheetRows.length} Excel)</span>
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* 3. Google Sheets Options */}
+                              <div className="pt-1.5 border-t border-white/10">
+                                <div className="px-2 py-1 text-[9px] uppercase tracking-wider text-gray-400 font-bold">
+                                  Google Sheets Actions
+                                </div>
+
+                                <button
+                                  onClick={() => handleExportGoogleSheet("copy_tsv", false)}
+                                  className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-gray-200 hover:text-white flex items-center gap-2.5 transition cursor-pointer"
+                                >
+                                  <Copy className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                                  <div className="flex-1">
+                                    <div className="font-bold text-[11px]">Copy for Google Sheets</div>
+                                    <p className="text-[9px] text-gray-400">1-click paste (Ctrl+V) directly into any sheet</p>
+                                  </div>
+                                </button>
+
+                                <button
+                                  onClick={() => handleExportGoogleSheet("open_linked")}
+                                  className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-gray-200 hover:text-white flex items-center gap-2.5 transition cursor-pointer"
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+                                  <div className="flex-1">
+                                    <div className="font-bold text-[11px]">Open Linked Sheet</div>
+                                    <p className="text-[9px] text-gray-400 truncate max-w-[180px]">{client.sheetTab || "Default tab"}</p>
+                                  </div>
+                                </button>
+
+                                <button
+                                  onClick={() => handleExportGoogleSheet("open_new")}
+                                  className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-gray-200 hover:text-white flex items-center gap-2.5 transition cursor-pointer"
+                                >
+                                  <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                                  <div className="flex-1">
+                                    <div className="font-bold text-[11px]">Create New Google Sheet</div>
+                                    <p className="text-[9px] text-gray-400">Opens blank sheet at sheets.new</p>
+                                  </div>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       <button
                         id="add-row-btn"
                         onClick={handleAddRow}
@@ -1712,6 +2003,26 @@ export default function ClientDashboard({
                       </button>
                     </div>
                   </div>
+
+                  {/* Export Notification Banner */}
+                  {exportNotification && (
+                    <div className={`p-2.5 mb-3 rounded-lg border text-xs flex items-center justify-between shadow-sm animate-fadeIn ${
+                      exportNotification.type === "success" 
+                        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                        : "bg-blue-500/10 border-blue-500/30 text-blue-300"
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+                        <span className="font-mono text-[11px]">{exportNotification.message}</span>
+                      </div>
+                      <button 
+                        onClick={() => setExportNotification(null)}
+                        className="text-gray-400 hover:text-white text-xs cursor-pointer px-1"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
 
                   {/* Filter Toolbar Bar */}
                   {sheetData && (

@@ -162,6 +162,32 @@ When an update is pushed from the Sight Portal, custom **Blueprint Implementable
 
 ---
 
+## 🎨 Changing a Single Specific Property Visualizer Class
+
+You can assign different custom Blueprint Visualizer classes (e.g. `BP_VillaVisualizer`, `BP_PenthouseVisualizer`, `BP_CommercialVisualizer`) to specific visualizer actors within the `SpawnedVisualizers` array without changing the entire row/spline default:
+
+### Method 1: In the Unreal Editor Details Panel
+1. Select the `ASightPortalBlockManager` or `ABlockSpline` actor in the level.
+2. In the **Details Panel** under **SightPortal | Operations | Change Visualizer**:
+   * Set **`TargetRowIndex`** (e.g. `0` for the first row) *(on Block Manager)*.
+   * Set **`TargetVisualizerIndex`** (e.g. `2` for the 3rd visualizer in that row/spline).
+   * Choose **`NewVisualizerClass`** (e.g., `BP_LuxuryVillaVisualizer`).
+   * Click **Apply Visualizer Class Override**.
+3. The specific visualizer actor at that index is replaced with an instance of the new class immediately while preserving its world position, orientation, scale, manual offsets, and `FSightPortalProperty` real-estate data.
+
+### Method 2: Per-Index Override Map (Persistent)
+In `ASightPortalBlockManager`'s **PropertyRowDetails** or `ABlockSpline`'s **PropertyVisualizerOverrides**:
+* Add key-value entries to `PropertyVisualizerOverrides` (e.g. Key `0` -> `BP_StudioVisualizer`, Key `4` -> `BP_CornerVillaVisualizer`).
+* When **Spawn Property Visualizers** runs, it automatically respects your per-index overrides!
+
+### Method 3: In Blueprints & C++
+Call the new runtime functions dynamically:
+* `ChangeVisualizerClassAtIndex(RowIndex, VisualizerIndex, NewClass)` on `ASightPortalBlockManager` or `ABlockSpline`.
+* `ChangeVisualizerClassForProperty(PropertyName, NewClass)` on `ASightPortalSiteManager`, `ASightPortalZoneManager`, `ASightPortalBlockManager`, or `ABlockSpline`.
+* `ChangeVisualizerClassAtSite(ZoneName, BlockName, RowIndex, VisualizerIndex, NewClass)` on `ASightPortalSiteManager`.
+
+---
+
 ## 📡 Live Real-Time WebSockets
 When a field is edited in the web interface or Google Sheet:
 1. The web backend dispatches a `ue5_push` payload over WebSocket.

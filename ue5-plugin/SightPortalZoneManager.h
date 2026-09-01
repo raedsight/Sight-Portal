@@ -5,6 +5,7 @@
 #include "SightPortalZoneManager.generated.h"
 
 class ASightPortalBlockManager;
+class APropertyVisualizer;
 
 /**
  * ASightPortalZoneManager
@@ -98,6 +99,14 @@ public:
     // Clears Property Visualizers for all child blocks (which in turn clear for rows)
     UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
     void ClearPropertyVisualizers();
+
+    // Replaces a single specific Property Visualizer class for a given property name dynamically
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    APropertyVisualizer* ChangeVisualizerClassForProperty(const FString& PropertyName, TSubclassOf<APropertyVisualizer> InNewClass);
+
+    // Replaces a single specific Property Visualizer class in a named block at given row and index dynamically
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    APropertyVisualizer* ChangeVisualizerClassInBlock(const FString& InBlockName, int32 RowIndex, int32 VisualizerIndex, TSubclassOf<APropertyVisualizer> InNewClass);
 
     // Callback when full portfolio data is received from connector
     UFUNCTION()

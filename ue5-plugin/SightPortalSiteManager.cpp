@@ -393,6 +393,54 @@ void ASightPortalSiteManager::ClearPropertyVisualizers()
     RegisteredPropertyVisualizers.Empty();
 }
 
+APropertyVisualizer* ASightPortalSiteManager::ChangeVisualizerClassForProperty(const FString& PropertyName, TSubclassOf<APropertyVisualizer> InNewClass)
+{
+    if (!InNewClass || PropertyName.IsEmpty())
+    {
+        return nullptr;
+    }
+
+    for (AActor* ZoneActor : ActiveZoneManagers)
+    {
+        ASightPortalZoneManager* Zone = Cast<ASightPortalZoneManager>(ZoneActor);
+        if (IsValid(Zone))
+        {
+            APropertyVisualizer* ReplacedVis = Zone->ChangeVisualizerClassForProperty(PropertyName, InNewClass);
+            if (ReplacedVis)
+            {
+                RegisterPropertyVisualizer(PropertyName, ReplacedVis);
+                return ReplacedVis;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+APropertyVisualizer* ASightPortalSiteManager::ChangeVisualizerClassAtSite(const FString& ZoneName, const FString& BlockName, int32 RowIndex, int32 VisualizerIndex, TSubclassOf<APropertyVisualizer> InNewClass)
+{
+    if (!InNewClass || ZoneName.IsEmpty() || BlockName.IsEmpty())
+    {
+        return nullptr;
+    }
+
+    for (AActor* ZoneActor : ActiveZoneManagers)
+    {
+        ASightPortalZoneManager* Zone = Cast<ASightPortalZoneManager>(ZoneActor);
+        if (IsValid(Zone) && Zone->ZoneName.Equals(ZoneName, ESearchCase::IgnoreCase))
+        {
+            APropertyVisualizer* ReplacedVis = Zone->ChangeVisualizerClassInBlock(BlockName, RowIndex, VisualizerIndex, InNewClass);
+            if (ReplacedVis && !ReplacedVis->PropertyDetails.Name.IsEmpty())
+            {
+                RegisterPropertyVisualizer(ReplacedVis->PropertyDetails.Name, ReplacedVis);
+            }
+            return ReplacedVis;
+        }
+    }
+
+    return nullptr;
+}
+
 void ASightPortalSiteManager::RegisterPropertyVisualizer(const FString& PropertyName, AActor* VisualizerActor)
 {
     if (PropertyName.IsEmpty() || !IsValid(VisualizerActor)) return;

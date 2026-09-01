@@ -369,23 +369,45 @@ void ABlockSpline::SpawnPropertyVisualizers()
             AssignedProperty.Availability = TEXT("Available");
         }
 
-        APropertyVisualizer* PropertyVis = Cast<APropertyVisualizer>(SpawnedVisualizers[i]);
-        if (!IsValid(PropertyVis))
+        // Determine the target class to use (check per-index override first, then spline default)
+        TSubclassOf<APropertyVisualizer> VisualizerClass = PropertyVisualizerClass;
+        if (PropertyVisualizerOverrides.Contains(i) && PropertyVisualizerOverrides[i])
         {
+            VisualizerClass = PropertyVisualizerOverrides[i];
+        }
+        if (!VisualizerClass)
+        {
+            VisualizerClass = APropertyVisualizer::StaticClass();
+        }
+
+        APropertyVisualizer* PropertyVis = Cast<APropertyVisualizer>(SpawnedVisualizers[i]);
+        
+        // If actor is invalid OR if actor's class does not match the desired VisualizerClass, respawn it
+        if (!IsValid(PropertyVis) || PropertyVis->GetClass() != VisualizerClass)
+        {
+            bool bHadManualMove = false;
+            FTransform PrevManualTransform = FTransform::Identity;
+            if (IsValid(PropertyVis))
+            {
+                bHadManualMove = PropertyVis->bHasBeenManuallyMoved;
+                PrevManualTransform = PropertyVis->ManualRelativeTransform;
+                if (SiteManager)
+                {
+                    SiteManager->UnregisterPropertyVisualizer(PropertyVis->PropertyDetails.Name);
+                }
+                PropertyVis->Destroy();
+            }
+
             FActorSpawnParameters SpawnParams;
             SpawnParams.Owner = this;
             SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-            TSubclassOf<APropertyVisualizer> VisualizerClass = PropertyVisualizerClass;
-            if (!VisualizerClass)
-            {
-                VisualizerClass = APropertyVisualizer::StaticClass();
-            }
 
             PropertyVis = World->SpawnActor<APropertyVisualizer>(VisualizerClass, SpawnLoc, SpawnRot, SpawnParams);
             if (PropertyVis)
             {
                 PropertyVis->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+                PropertyVis->bHasBeenManuallyMoved = bHadManualMove;
+                PropertyVis->ManualRelativeTransform = PrevManualTransform;
                 SpawnedVisualizers[i] = PropertyVis;
             }
         }
@@ -419,6 +441,148 @@ void ABlockSpline::SpawnPropertyVisualizers()
     }
 
     bIsSpawning = false;
+}
+
+void ABlockSpline::ApplyVisualizerClassOverride()
+{
+    if (!NewVisualizerClass)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SightPortal BlockSpline] Cannot apply visualizer override: NewVisualizerClass is null."));
+        return;
+    }
+
+    ChangeVisualizerClassAtIndex(TargetVisualizerIndex, NewVisualizerClass);
+}
+
+APropertyVisualizer* ABlockSpline::ChangeVisualizerClassAtIndex(int32 VisualizerIndex, TSubclassOf<APropertyVisualizer> InNewClass)
+{
+    if (!InNewClass)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SightPortal BlockSpline] ChangeVisualizerClassAtIndex failed: InNewClass is null."));
+        return nullptr;
+    }
+
+    if (VisualizerIndex < 0 || VisualizerIndex >= PropertyCount)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SightPortal BlockSpline] ChangeVisualizerClassAtIndex: Invalid VisualizerIndex %d (PropertyCount: %d)"), VisualizerIndex, PropertyCount);
+        return nullptr;
+    }
+
+    // Save override in spline configuration map
+    PropertyVisualizerOverrides.Add(VisualizerIndex, InNewClass);
+
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return nullptr;
+    }
+
+    // Discover Site Manager
+    ASightPortalSiteManager* SiteManager = nullptr;
+    AActor* CurrentParent = GetAttachParentActor();
+    while (CurrentParent)
+    {
+        if (CurrentParent->IsA(ASightPortalSiteManager::StaticClass()))
+        {
+            SiteManager = Cast<ASightPortalSiteManager>(CurrentParent);
+            break;
+        }
+        CurrentParent = CurrentParent->GetAttachParentActor();
+    }
+
+    APropertyVisualizer* OldVis = nullptr;
+    if (SpawnedVisualizers.IsValidIndex(VisualizerIndex) && IsValid(SpawnedVisualizers[VisualizerIndex]))
+    {
+        OldVis = Cast<APropertyVisualizer>(SpawnedVisualizers[VisualizerIndex]);
+    }
+
+    FSightPortalProperty OldPropertyData;
+    FTransform OldTransform = GetActorTransform();
+    bool bWasManuallyMoved = false;
+    FTransform OldManualRelTransform = FTransform::Identity;
+    FString OldLabel = TEXT("");
+
+    if (OldVis)
+    {
+        OldPropertyData = OldVis->PropertyDetails;
+        OldTransform = OldVis->GetActorTransform();
+        bWasManuallyMoved = OldVis->bHasBeenManuallyMoved;
+        OldManualRelTransform = OldVis->ManualRelativeTransform;
+#if WITH_EDITOR
+        OldLabel = OldVis->GetActorLabel();
+#endif
+        if (SiteManager)
+        {
+            SiteManager->UnregisterPropertyVisualizer(OldVis->PropertyDetails.Name);
+        }
+        OldVis->Destroy();
+    }
+    else if (SplineComponent)
+    {
+        float Distance = VisualizerIndex * VisualizerSpacing;
+        FVector SpawnLoc = SplineComponent->GetLocationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
+        FRotator SpawnRot = SplineComponent->GetRotationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World) + VisualizerRotationOffset;
+        OldTransform = FTransform(SpawnRot, SpawnLoc, VisualizerScaleOffset);
+    }
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Owner = this;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    APropertyVisualizer* NewVis = World->SpawnActor<APropertyVisualizer>(InNewClass, OldTransform, SpawnParams);
+    if (NewVis)
+    {
+        NewVis->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+        NewVis->bHasBeenManuallyMoved = bWasManuallyMoved;
+        NewVis->ManualRelativeTransform = OldManualRelTransform;
+        NewVis->SetActorTransform(OldTransform);
+        NewVis->SetPropertyDetails(OldPropertyData);
+
+#if WITH_EDITOR
+        if (!OldLabel.IsEmpty())
+        {
+            NewVis->SetActorLabel(OldLabel);
+        }
+#endif
+
+        if (SpawnedVisualizers.IsValidIndex(VisualizerIndex))
+        {
+            SpawnedVisualizers[VisualizerIndex] = NewVis;
+        }
+        else
+        {
+            SpawnedVisualizers.SetNum(PropertyCount);
+            SpawnedVisualizers[VisualizerIndex] = NewVis;
+        }
+
+        if (SiteManager && !OldPropertyData.Name.IsEmpty())
+        {
+            SiteManager->RegisterPropertyVisualizer(OldPropertyData.Name, NewVis);
+        }
+
+        UE_LOG(LogTemp, Log, TEXT("[SightPortal BlockSpline] Successfully replaced visualizer at Index %d with class %s"), VisualizerIndex, *InNewClass->GetName());
+    }
+
+    return NewVis;
+}
+
+APropertyVisualizer* ABlockSpline::ChangeVisualizerClassForProperty(const FString& PropertyName, TSubclassOf<APropertyVisualizer> InNewClass)
+{
+    if (!InNewClass || PropertyName.IsEmpty())
+    {
+        return nullptr;
+    }
+
+    for (int32 VisIdx = 0; VisIdx < SpawnedVisualizers.Num(); ++VisIdx)
+    {
+        APropertyVisualizer* Vis = Cast<APropertyVisualizer>(SpawnedVisualizers[VisIdx]);
+        if (IsValid(Vis) && Vis->PropertyDetails.Name.Equals(PropertyName, ESearchCase::IgnoreCase))
+        {
+            return ChangeVisualizerClassAtIndex(VisIdx, InNewClass);
+        }
+    }
+
+    return nullptr;
 }
 
 #if WITH_EDITOR

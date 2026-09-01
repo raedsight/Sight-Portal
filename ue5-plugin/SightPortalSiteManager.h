@@ -6,6 +6,7 @@
 #include "SightPortalSiteManager.generated.h"
 
 class ASightPortalZoneManager;
+class APropertyVisualizer;
 
 /**
  * ASightPortalSiteManager
@@ -108,6 +109,14 @@ public:
     // Clears Property Visualizers for all child zones (which in turn clear for blocks)
     UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
     void ClearPropertyVisualizers();
+
+    // Replaces a single specific Property Visualizer class for a given property name across the site dynamically
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    APropertyVisualizer* ChangeVisualizerClassForProperty(const FString& PropertyName, TSubclassOf<APropertyVisualizer> InNewClass);
+
+    // Replaces a single specific Property Visualizer class at a specific Zone, Block, Row and Index dynamically
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    APropertyVisualizer* ChangeVisualizerClassAtSite(const FString& ZoneName, const FString& BlockName, int32 RowIndex, int32 VisualizerIndex, TSubclassOf<APropertyVisualizer> InNewClass);
 
     // Force fetch spreadsheet data and update websocket connection
     UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
