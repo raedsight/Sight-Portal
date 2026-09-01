@@ -188,6 +188,33 @@ Call the new runtime functions dynamically:
 
 ---
 
+## 🖥️ 2D Property Detail Screen Widget & 3D Widget Setup
+
+### Setting Up Your 2D Detail Widget Blueprint (`WBP_PropertyDetail`)
+1. Create a **Widget Blueprint** (e.g. `WBP_PropertyDetail`).
+2. In the Blueprint editor, go to **File -> Reparent Blueprint** and select **`SightPortal2DPropertyDetailWidget`**.
+3. In the **Hierarchy** panel, create your Text Blocks and Buttons. Ensure **"Is Variable"** is checked for each widget in the Details panel.
+4. **Widget Names (Hierarchy IDs)**:
+   The C++ code binds to widgets by name. The following names are supported directly and via built-in aliases:
+   * **Name**: `NameText` (aliases: `Name`, `PropertyName`)
+   * **Zone**: `ZoneText` (aliases: `Zone`, `ZoneName`)
+   * **Block**: `BlockText` (aliases: `Block`, `BlockName`)
+   * **Door / Unit #**: `DoorNoText` (aliases: `Door`, `DoorText`, `DoorNo`, `DoorNumber`)
+   * **Price**: `PriceText` (aliases: `Price`, `PropertyPrice`)
+   * **Surface Area**: `SurfaceText` (aliases: `Surface`, `SurfaceArea`, `Area`)
+   * **Building Surface**: `BuildingSurfaceText` (aliases: `BldSurfaceText`, `Bld Surface`, `BldSurface`, `BuildingSurface`)
+   * **Availability**: `AvailabilityText` (aliases: `Availability`, `Status`)
+   * **Bedrooms**: `BedroomsCountText` (aliases: `Bedrooms`, `BedroomsText`, `Beds`, `BedroomsCount`)
+   * **Bathrooms**: `BathroomsCountText` (aliases: `Bathrooms`, `BathroomsText`, `Baths`, `BathroomsCount`)
+   * **Class / Category**: `ClassText` (aliases: `Class`, `Category`, `PropertyClass`)
+   * **Close / Exit Button**: `CloseButton` (aliases: `Exit`, `ExitButton`, `CloseBtn`, `DismissButton`)
+
+5. **Assigning the 2D Widget Class in Unreal**:
+   * On your `APropertyVisualizer` (or `BP_PropertyVisualizer` blueprint): Set **`Detail 2D Widget Class`** to your `WBP_PropertyDetail`.
+   * On your `ASightPortalPlayerController` (or `BP_SightPortalPlayerController`): Set **`Detail 2D Widget Class`** to your `WBP_PropertyDetail`.
+
+---
+
 ## 📡 Live Real-Time WebSockets
 When a field is edited in the web interface or Google Sheet:
 1. The web backend dispatches a `ue5_push` payload over WebSocket.

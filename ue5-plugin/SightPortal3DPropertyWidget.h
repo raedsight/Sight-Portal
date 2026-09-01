@@ -52,6 +52,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SightPortal|3DWidget")
     void SetWidgetVisibility(bool bVisible);
 
+    // Auto-discover and resolve unbound UMG child widgets by name and alias
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|3DWidget")
+    void ResolveUnboundWidgets();
+
     // Get current cached property data
     UFUNCTION(BlueprintPure, Category = "SightPortal|3DWidget")
     FSightPortalProperty GetPropertyData() const { return CachedProperty; }
