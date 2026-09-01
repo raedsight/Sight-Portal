@@ -353,6 +353,48 @@ void ASightPortalZoneManager::ClearPropertyVisualizers()
     }
 }
 
+APropertyVisualizer* ASightPortalZoneManager::ChangeVisualizerClassForProperty(const FString& PropertyName, TSubclassOf<APropertyVisualizer> InNewClass)
+{
+    if (!InNewClass || PropertyName.IsEmpty())
+    {
+        return nullptr;
+    }
+
+    for (AActor* BlockActor : ActiveBlockManagers)
+    {
+        ASightPortalBlockManager* Block = Cast<ASightPortalBlockManager>(BlockActor);
+        if (IsValid(Block))
+        {
+            APropertyVisualizer* ReplacedVis = Block->ChangeVisualizerClassForProperty(PropertyName, InNewClass);
+            if (ReplacedVis)
+            {
+                return ReplacedVis;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+APropertyVisualizer* ASightPortalZoneManager::ChangeVisualizerClassInBlock(const FString& InBlockName, int32 RowIndex, int32 VisualizerIndex, TSubclassOf<APropertyVisualizer> InNewClass)
+{
+    if (!InNewClass || InBlockName.IsEmpty())
+    {
+        return nullptr;
+    }
+
+    for (AActor* BlockActor : ActiveBlockManagers)
+    {
+        ASightPortalBlockManager* Block = Cast<ASightPortalBlockManager>(BlockActor);
+        if (IsValid(Block) && Block->BlockName.Equals(InBlockName, ESearchCase::IgnoreCase))
+        {
+            return Block->ChangeVisualizerClassAtIndex(RowIndex, VisualizerIndex, InNewClass);
+        }
+    }
+
+    return nullptr;
+}
+
 #if WITH_EDITOR
 void ASightPortalZoneManager::PostEditMove(bool bFinished)
 {

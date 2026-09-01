@@ -19,9 +19,13 @@ struct FPropertyBlockRowDetails
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|BlockRow")
     int32 PropertyCount = 3;
 
-    // Blueprint template class to use for visual representation of this row's properties
+    // Default Blueprint template class to use for visual representation of this row's properties
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|BlockRow")
     TSubclassOf<APropertyVisualizer> PropertyVisualizer;
+
+    // Optional: Specific custom visualizer class overrides per property index (e.g. Index 0 -> BP_Villa, Index 2 -> BP_Penthouse)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|BlockRow")
+    TMap<int32, TSubclassOf<APropertyVisualizer>> PropertyVisualizerOverrides;
 
     // List of active spawned property visualizers for this row
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SightPortal|BlockRow")
@@ -84,7 +88,33 @@ public:
     virtual void PostEditMove(bool bFinished) override;
 #endif
 
+    // --- Change Specific Visualizer Class Parameters (Editor Exposed) ---
+
+    // Target row index (0-indexed) when modifying a specific visualizer class from editor
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Operations|Change Visualizer", meta = (ClampMin = "0"))
+    int32 TargetRowIndex = 0;
+
+    // Target visualizer index in the row (0-indexed) when modifying a specific visualizer class from editor
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Operations|Change Visualizer", meta = (ClampMin = "0"))
+    int32 TargetVisualizerIndex = 0;
+
+    // New Property Visualizer blueprint class to assign to the targeted visualizer
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Operations|Change Visualizer")
+    TSubclassOf<APropertyVisualizer> NewVisualizerClass;
+
     // --- Operations ---
+
+    // Applies the NewVisualizerClass to the specific visualizer at TargetRowIndex and TargetVisualizerIndex in the editor
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations|Change Visualizer", meta = (CallInEditor = "true", DisplayName = "Apply Visualizer Class Override"))
+    void ApplyVisualizerClassOverride();
+
+    // Replaces a single specific Property Visualizer class at a given row and index dynamically while preserving its transform and data
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    APropertyVisualizer* ChangeVisualizerClassAtIndex(int32 RowIndex, int32 VisualizerIndex, TSubclassOf<APropertyVisualizer> InNewClass);
+
+    // Replaces a single specific Property Visualizer class for a given property name dynamically
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    APropertyVisualizer* ChangeVisualizerClassForProperty(const FString& PropertyName, TSubclassOf<APropertyVisualizer> InNewClass);
 
     // Cleans up all spawned property actors in the active viewport space
     UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
