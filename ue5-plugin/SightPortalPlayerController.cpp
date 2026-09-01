@@ -655,14 +655,25 @@ USightPortal2DPropertyDetailWidget* ASightPortalPlayerController::ShowPropertyDe
         return nullptr;
     }
 
-    if (!Detail2DWidgetClass)
+    // Prioritize visualizer-specific Detail2DWidgetClass (e.g. custom Blueprint WBP_PropertyDetail), fallback to player controller default
+    TSubclassOf<USightPortal2DPropertyDetailWidget> ClassToSpawn = (TargetVisualizer && TargetVisualizer->Detail2DWidgetClass)
+        ? TargetVisualizer->Detail2DWidgetClass
+        : Detail2DWidgetClass;
+
+    if (!ClassToSpawn)
     {
-        Detail2DWidgetClass = USightPortal2DPropertyDetailWidget::StaticClass();
+        ClassToSpawn = USightPortal2DPropertyDetailWidget::StaticClass();
     }
 
-    if (!Active2DDetailWidget || !IsValid(Active2DDetailWidget))
+    // Recreate widget if it doesn't exist, is invalid, or is an instance of a different class
+    if (!Active2DDetailWidget || !IsValid(Active2DDetailWidget) || Active2DDetailWidget->GetClass() != ClassToSpawn)
     {
-        Active2DDetailWidget = CreateWidget<USightPortal2DPropertyDetailWidget>(this, Detail2DWidgetClass);
+        if (Active2DDetailWidget && Active2DDetailWidget->IsInViewport())
+        {
+            Active2DDetailWidget->RemoveFromParent();
+        }
+
+        Active2DDetailWidget = CreateWidget<USightPortal2DPropertyDetailWidget>(this, ClassToSpawn);
         if (Active2DDetailWidget)
         {
             Active2DDetailWidget->OnDetailClosed.AddUniqueDynamic(this, &ASightPortalPlayerController::OnDetailWidgetClosed);

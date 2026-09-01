@@ -35,6 +35,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SightPortal|2DWidget")
     void DismissWidget();
 
+    // Auto-discover and resolve unbound UMG child widgets by name and alias
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|2DWidget")
+    void ResolveUnboundWidgets();
+
     // Get active property data being viewed
     UFUNCTION(BlueprintPure, Category = "SightPortal|2DWidget")
     FSightPortalProperty GetActiveProperty() const { return ActiveProperty; }
