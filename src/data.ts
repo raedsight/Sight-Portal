@@ -9,12 +9,12 @@ import { Client, Log, SpreadsheetData } from "./types";
 // This allows testing the application instantly even without entering a live Google Sheet ID!
 export const SPREADSHEET_TEMPLATES: Record<string, SpreadsheetData> = {
   "ArchViz Real-Estate Portfolio": {
-    headers: ["Name", "Zone", "Block", "Door No", "Price", "Surface", "Availability", "BuildingSurface", "BedroomsCount", "BathroomsCount"],
+    headers: ["Name", "Zone", "Block", "Class", "Door No", "Price", "Surface", "Availability", "BuildingSurface", "BedroomsCount", "BathroomsCount"],
     rows: [
-      { Name: "Z1B11", Zone: "Z1", Block: "Z1B1", "Door No": "1", Price: "1250000", Surface: "450.0", Availability: "Available", BuildingSurface: "350.0", BedroomsCount: "5", BathroomsCount: "4" },
-      { Name: "Z1B12", Zone: "Z1", Block: "Z1B1", "Door No": "2", Price: "2890000", Surface: "280.0", Availability: "Available", BuildingSurface: "220.0", BedroomsCount: "3", BathroomsCount: "3" },
-      { Name: "Z1B21", Zone: "Z1", Block: "Z1B2", "Door No": "1", Price: "680000", Surface: "185.0", Availability: "Under Offer", BuildingSurface: "150.0", BedroomsCount: "4", BathroomsCount: "2" },
-      { Name: "Z2B11", Zone: "Z2", Block: "Z2B1", "Door No": "1", Price: "450000", Surface: "120.0", Availability: "Sold", BuildingSurface: "100.0", BedroomsCount: "2", BathroomsCount: "2" },
+      { Name: "Z1B11", Zone: "Z1", Block: "Z1B1", Class: "Villa Type A", "Door No": "1", Price: "1250000", Surface: "450.0", Availability: "Available", BuildingSurface: "350.0", BedroomsCount: "5", BathroomsCount: "4" },
+      { Name: "Z1B12", Zone: "Z1", Block: "Z1B1", Class: "Penthouse Luxury", "Door No": "2", Price: "2890000", Surface: "280.0", Availability: "Available", BuildingSurface: "220.0", BedroomsCount: "3", BathroomsCount: "3" },
+      { Name: "Z1B21", Zone: "Z1", Block: "Z1B2", Class: "Townhouse Modern", "Door No": "1", Price: "680000", Surface: "185.0", Availability: "Under Offer", BuildingSurface: "150.0", BedroomsCount: "4", BathroomsCount: "2" },
+      { Name: "Z2B11", Zone: "Z2", Block: "Z2B1", Class: "Duplex Garden", "Door No": "1", Price: "450000", Surface: "120.0", Availability: "Sold", BuildingSurface: "100.0", BedroomsCount: "2", BathroomsCount: "2" },
     ],
   },
   "Virtual Camera & Rig Parameters": {
@@ -96,6 +96,92 @@ export const DEFAULT_CLIENTS: Client[] = [
             user: "Client (Hyperion Team)"
           }
         ]
+      }
+    ],
+    mediaResources: [
+      {
+        id: "med-101",
+        category: "project",
+        title: "Masterplan Sunset Aerial View",
+        description: "General high-fidelity 4K overview render of the entire master development and coastal waterfront perimeter.",
+        url: "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1920&q=85",
+        fileName: "Masterplan_Sunset_4K.jpg",
+        fileSize: 3420000,
+        dimensions: { width: 3840, height: 2160 },
+        resolutionTag: "4K UHD",
+        tags: ["Masterplan", "Aerial", "Sunset", "Overview"],
+        uploadedAt: "2026-06-05T10:00:00Z"
+      },
+      {
+        id: "med-102",
+        category: "project",
+        title: "Grand Entrance Boulevard & Water Cascade",
+        description: "Main arrival gateway and architectural fountain plaza leading to residential sectors.",
+        url: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1920&q=85",
+        fileName: "Grand_Boulevard_Entrance.jpg",
+        fileSize: 2890000,
+        dimensions: { width: 3840, height: 2160 },
+        resolutionTag: "4K UHD",
+        tags: ["Entrance", "Boulevard", "Landscape"],
+        uploadedAt: "2026-06-05T11:30:00Z"
+      },
+      {
+        id: "med-103",
+        category: "services",
+        title: "Central Clubhouse & Infinity Pool Deck",
+        description: "Service building facility housing the private members lounge, poolside cabanas, and indoor cafe.",
+        serviceName: "Clubhouse & Leisure Hub",
+        url: "https://images.unsplash.com/photo-1576013551627-0cc20b96c2a7?auto=format&fit=crop&w=1920&q=85",
+        fileName: "Clubhouse_Infinity_Pool.jpg",
+        fileSize: 2450000,
+        dimensions: { width: 2560, height: 1440 },
+        resolutionTag: "2K QHD",
+        tags: ["Clubhouse", "Pool", "Service Facility"],
+        uploadedAt: "2026-06-05T14:15:00Z"
+      },
+      {
+        id: "med-104",
+        category: "services",
+        title: "Holistic Wellness Spa & Fitness Center",
+        description: "Dedicated service building containing sauna suites, hydrotherapy pools, and gym floor.",
+        serviceName: "Wellness Spa Pavilion",
+        url: "https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=1920&q=85",
+        fileName: "Wellness_Spa_Pavilion.jpg",
+        fileSize: 2180000,
+        dimensions: { width: 1920, height: 1080 },
+        resolutionTag: "1080p FHD",
+        tags: ["Spa", "Fitness", "Service Building"],
+        uploadedAt: "2026-06-05T15:00:00Z"
+      },
+      {
+        id: "med-105",
+        category: "properties",
+        title: "Villa Bella Vista Panoramic Living Salon",
+        description: "Double-height living pavilion with floor-to-ceiling motorized glazing overlooking the private garden.",
+        propertyClass: "Villa Type A",
+        propertyName: "Z1B11",
+        url: "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1920&q=85",
+        fileName: "VillaTypeA_LivingRoom.jpg",
+        fileSize: 3120000,
+        dimensions: { width: 3840, height: 2160 },
+        resolutionTag: "4K UHD",
+        tags: ["Villa Type A", "Interior", "Living Room", "Luxury"],
+        uploadedAt: "2026-06-06T08:00:00Z"
+      },
+      {
+        id: "med-106",
+        category: "properties",
+        title: "Penthouse Horizon Sky Deck & Jacuzzi",
+        description: "Rooftop entertainment terrace with glass balustrade and unobstructed 360-degree city views.",
+        propertyClass: "Penthouse Luxury",
+        propertyName: "Z1B12",
+        url: "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1920&q=85",
+        fileName: "Penthouse_SkyDeck.jpg",
+        fileSize: 2950000,
+        dimensions: { width: 2560, height: 1440 },
+        resolutionTag: "2K QHD",
+        tags: ["Penthouse Luxury", "Sky Deck", "Terrace"],
+        uploadedAt: "2026-06-06T09:30:00Z"
       }
     ]
   },
