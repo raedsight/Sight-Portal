@@ -47,13 +47,15 @@ import {
   ExternalLink,
   FileText,
   Table,
-  ChevronDown
+  ChevronDown,
+  Image as ImageIcon
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Client, SpreadsheetData, SheetRow, Log, BugIssue, BugActivity, ThemePreset } from "../types";
 import { extractSpreadsheetId, getStoredClientSheet, saveStoredClientSheet, SPREADSHEET_TEMPLATES } from "../data";
 import { initAuth, googleSignIn, logout, getAccessToken } from "../firebaseAuth";
 import { saveClientSheetData } from "../firebase";
+import MediaResourcesTab from "./MediaResourcesTab";
 
 interface ClientDashboardProps {
   client: Client;
@@ -84,7 +86,7 @@ export default function ClientDashboard({
   const [pushingSheet, setPushingSheet] = useState(false);
   
   // Tab indicator
-  const [activeTab, setActiveTab ] = useState<"workspace" | "bugs">("workspace");
+  const [activeTab, setActiveTab ] = useState<"workspace" | "media" | "bugs">("workspace");
   
   // Bug tracking states
   const [selectedBugId, setSelectedBugId] = useState<string | null>(null);
@@ -1754,6 +1756,23 @@ export default function ClientDashboard({
             <Database className="h-4 w-4 text-blue-400" />
             Sheets Sync & Viewport
           </button>
+
+          <button
+            onClick={() => setActiveTab("media")}
+            className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 ${
+              activeTab === "media"
+                ? "border-amber-500 text-amber-400 bg-amber-500/5"
+                : "border-transparent text-gray-400 hover:text-white"
+            }`}
+          >
+            <ImageIcon className="h-4 w-4 text-amber-400" />
+            Media & Resources
+            {(client.mediaResources?.length ?? 0) > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-amber-500 text-black">
+                {client.mediaResources?.length}
+              </span>
+            )}
+          </button>
           
           <button
             onClick={() => {
@@ -1765,14 +1784,14 @@ export default function ClientDashboard({
             }}
             className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 ${
               activeTab === "bugs"
-                ? "border-amber-500 text-amber-400"
+                ? "border-rose-500 text-rose-400"
                 : "border-transparent text-gray-400 hover:text-white"
             }`}
           >
-            <Bug className="h-4 w-4 text-amber-500 animate-pulse" />
+            <Bug className="h-4 w-4 text-rose-500 animate-pulse" />
             QA Bug Tracker
             {clientBugs.length > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-amber-500 text-black">
+              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-rose-500 text-white">
                 {clientBugs.length}
               </span>
             )}
@@ -2754,7 +2773,17 @@ export default function ClientDashboard({
           </div>
         )}
 
-        {/* Tab 2: QA Bug Tracker */}
+        {/* Tab 2: Media and Resources */}
+        {activeTab === "media" && (
+          <MediaResourcesTab
+            client={client}
+            sheetData={sheetData}
+            onUpdateClient={onUpdateClient}
+            onRecordLog={onRecordLog}
+          />
+        )}
+
+        {/* Tab 3: QA Bug Tracker */}
         {activeTab === "bugs" && (
           <div className="animate-fadeIn text-left">
             

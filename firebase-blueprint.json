@@ -60,6 +60,10 @@
         },
         "bugs": {
           "type": "array"
+        },
+        "mediaResources": {
+          "type": "array",
+          "description": "Categorized media assets for the project, service buildings, and property classes."
         }
       },
       "required": ["id", "name", "company", "sheetId"]

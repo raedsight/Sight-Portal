@@ -42,6 +42,28 @@ export interface BugIssue {
   activities: BugActivity[];
 }
 
+export type MediaCategory = "project" | "services" | "properties";
+
+export interface MediaResource {
+  id: string;
+  category: MediaCategory;
+  title: string;
+  description?: string;
+  url: string; // Base64 data URI or HTTP URL
+  fileName: string;
+  fileSize?: number; // In bytes
+  dimensions?: {
+    width: number;
+    height: number;
+  };
+  resolutionTag?: string; // E.g., "4K UHD", "2K QHD", "1080p FHD"
+  propertyClass?: string; // Automatically selected Property Class from the Sheet
+  propertyName?: string;  // Optional specific property unit / name
+  serviceName?: string;   // For 'services' category: service building name
+  tags?: string[];
+  uploadedAt: string;     // ISO timestamp
+}
+
 export interface Client {
   id: string;
   name: string;
@@ -54,6 +76,7 @@ export interface Client {
   updatedAt: string;     // ISO timestamp
   sheetData?: SpreadsheetData; // Live property portfolio spreadsheet rows and columns saved in Firebase
   bugs?: BugIssue[];     // Optional list of tracked bug issues
+  mediaResources?: MediaResource[]; // Categorized media resources (Project, Services, Properties)
 }
 
 export interface Log {

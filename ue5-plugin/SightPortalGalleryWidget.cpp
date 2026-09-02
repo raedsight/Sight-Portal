@@ -272,7 +272,7 @@ void USightPortalGalleryWidget::RebuildCarousel()
     if (GalleryItems.Num() == 0) return;
 
     // Use default class if not set
-    TSubclassOf<USightPortalGalleryCardWidget> ClassToSpawn = CardWidgetClass ? CardWidgetClass : USightPortalGalleryCardWidget::StaticClass();
+    TSubclassOf<USightPortalGalleryCardWidget> ClassToSpawn = CardWidgetClass ? CardWidgetClass : TSubclassOf<USightPortalGalleryCardWidget>(USightPortalGalleryCardWidget::StaticClass());
 
     for (int32 i = 0; i < GalleryItems.Num(); ++i)
     {
