@@ -246,6 +246,30 @@ The plugin includes `USightPortalHUDWidget` for the top and bottom navigation ba
 
 ---
 
+## 🖼️ 3D Cover-Flow Gallery Carousel Widget (`SightPortalGalleryWidget`)
+
+The plugin includes `USightPortalGalleryWidget` for the interactive 3D Cover-Flow Carousel image viewer:
+1. **Cover-Flow Carousel**: Displays images with central elevation, dynamic perspective scaling, opacity tucking, and depth layering (Z-Order).
+2. **Left & Right Triangle Buttons**: Cycles left and right smoothly across the image list.
+3. **Interactive Background Cards**: Clicking any card in the background smoothly slides it forward to become the front active card.
+4. **Top-Right Close Button ("X")**: Dismisses/closes the gallery and returns to HUD.
+5. **Dynamic Data & Textures**: Supports populated texture arrays (`GalleryTextures`), metadata items (`GalleryItems`), titles, and counter (`"1 / 5"`).
+
+### Creating Your Gallery Blueprint (`WBP_Gallery`)
+1. Create a **Widget Blueprint** (e.g. `WBP_Gallery`).
+2. Go to **File -> Reparent Blueprint** and select **`SightPortalGalleryWidget`**.
+3. In the Hierarchy panel, add the following widgets (mark **"Is Variable"** in the Details panel):
+   * **Carousel Canvas**: `CarouselCanvas` (Canvas Panel where dynamic cover-flow image cards are positioned).
+   * **Left Triangle Button**: `PrevButton` (aliases: `LeftButton`, `LeftArrow`, `TriangleLeft`, `Button_Left`).
+   * **Right Triangle Button**: `NextButton` (aliases: `RightButton`, `RightArrow`, `TriangleRight`, `Button_Right`).
+   * **Close / Exit Button**: `CloseButton` (aliases: `Exit`, `ExitButton`, `CloseBtn`, `XButton`, `Button_X`).
+   * **(Optional) Title Text**: `TitleText` (aliases: `Title`, `ImageTitle`).
+   * **(Optional) Counter Text**: `CounterText` (aliases: `Counter`, `PageCount`).
+4. In the Details panel under **SightPortal | GalleryData**, add your textures to **`Gallery Textures`** (or `Gallery Items`).
+5. On your `WBP_MainHUD`, set **`Gallery Widget Class`** to your `WBP_Gallery`.
+
+---
+
 ## 📡 Live Real-Time WebSockets
 When a field is edited in the web interface or Google Sheet:
 1. The web backend dispatches a `ue5_push` payload over WebSocket.
