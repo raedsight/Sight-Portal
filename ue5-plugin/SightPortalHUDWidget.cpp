@@ -31,6 +31,7 @@ USightPortalHUDWidget::USightPortalHUDWidget(const FObjectInitializer& ObjectIni
     , HomeRotation(FRotator(-30.0f, -45.0f, 0.0f))
     , bAutoCaptureStartLocationAsHome(true)
     , HomeTransitionSpeed(8.0f)
+    , bIsSettingTimeSlider(false)
     , bIsHomeLocationInitialized(false)
     , bIsTransitioningToHome(false)
     , HomeTransitionAlpha(0.0f)
@@ -361,11 +362,22 @@ FString USightPortalHUDWidget::YawToCardinalDirection(float YawDegrees)
 
 void USightPortalHUDWidget::OnTimeSliderValueChanged(float NewValue)
 {
+    if (bIsSettingTimeSlider) return;
+
     // Detect whether slider is 0.0 to 1.0 or 0.0 to 24.0
     float TargetHours = NewValue;
-    if (TimeOfDaySlider && TimeOfDaySlider->GetMaxValue() <= 1.0f)
+    if (TimeOfDaySlider)
     {
-        TargetHours = NewValue * 24.0f;
+        float MaxVal = TimeOfDaySlider->GetMaxValue();
+        float MinVal = TimeOfDaySlider->GetMinValue();
+        if (FMath::IsNearlyEqual(MaxVal, 1.0f, 0.01f) && FMath::IsNearlyEqual(MinVal, 0.0f, 0.01f))
+        {
+            TargetHours = NewValue * 24.0f;
+        }
+        else if (MaxVal > 1.0f)
+        {
+            TargetHours = NewValue;
+        }
     }
 
     SetTimeOfDay(TargetHours);
@@ -377,6 +389,29 @@ void USightPortalHUDWidget::SetTimeOfDay(float InHours)
 
     FString FormattedTime = FormatTimeString(CurrentTimeHours);
 
+    // Update Slider Position
+    if (TimeOfDaySlider)
+    {
+        bIsSettingTimeSlider = true;
+        float MaxVal = TimeOfDaySlider->GetMaxValue();
+        float MinVal = TimeOfDaySlider->GetMinValue();
+
+        if (FMath::IsNearlyEqual(MaxVal, 1.0f, 0.01f) && FMath::IsNearlyEqual(MinVal, 0.0f, 0.01f))
+        {
+            TimeOfDaySlider->SetValue(FMath::Clamp(CurrentTimeHours / 24.0f, 0.0f, 1.0f));
+        }
+        else if (MaxVal > 1.0f)
+        {
+            TimeOfDaySlider->SetValue(FMath::Clamp(CurrentTimeHours, MinVal, MaxVal));
+        }
+        else
+        {
+            TimeOfDaySlider->SetValue(FMath::Clamp(CurrentTimeHours / 24.0f, 0.0f, 1.0f));
+        }
+        bIsSettingTimeSlider = false;
+    }
+
+    // Update Time Text Readout
     if (TimeOfDayText)
     {
         TimeOfDayText->SetText(FText::FromString(FormattedTime));

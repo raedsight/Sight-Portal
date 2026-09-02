@@ -207,6 +207,7 @@ protected:
     static FString YawToCardinalDirection(float YawDegrees);
 
 private:
+    bool bIsSettingTimeSlider;
     bool bIsHomeLocationInitialized;
     bool bIsTransitioningToHome;
     FVector HomeTransitionStartLocation;
