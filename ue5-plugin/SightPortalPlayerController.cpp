@@ -1,4 +1,5 @@
 #include "SightPortalPlayerController.h"
+#include "SightPortalHUDWidget.h"
 #include "PropertyVisualizer.h"
 #include "Blueprint/UserWidget.h"
 #include "Engine/World.h"
@@ -41,12 +42,20 @@ ASightPortalPlayerController::ASightPortalPlayerController()
 
     Detail2DWidgetClass = USightPortal2DPropertyDetailWidget::StaticClass();
     Active2DDetailWidget = nullptr;
+    MainHUDWidgetClass = nullptr;
+    ActiveMainHUDWidget = nullptr;
+    bAutoSpawnMainHUD = true;
     CurrentSelectedVisualizer = nullptr;
 }
 
 void ASightPortalPlayerController::BeginPlay()
 {
     Super::BeginPlay();
+
+    if (bAutoSpawnMainHUD && MainHUDWidgetClass)
+    {
+        ShowMainHUD();
+    }
 
     if (bAutoEnableMouseInteraction)
     {
@@ -739,4 +748,50 @@ void ASightPortalPlayerController::OnDetailWidgetClosed()
     UnlockMovement();
     OnPropertyDeselected.Broadcast();
 }
+
+USightPortalHUDWidget* ASightPortalPlayerController::ShowMainHUD()
+{
+    if (!MainHUDWidgetClass)
+    {
+        MainHUDWidgetClass = USightPortalHUDWidget::StaticClass();
+    }
+
+    if (!ActiveMainHUDWidget || !IsValid(ActiveMainHUDWidget) || ActiveMainHUDWidget->GetClass() != MainHUDWidgetClass)
+    {
+        if (ActiveMainHUDWidget && ActiveMainHUDWidget->IsInViewport())
+        {
+            ActiveMainHUDWidget->RemoveFromParent();
+        }
+
+        ActiveMainHUDWidget = CreateWidget<USightPortalHUDWidget>(this, MainHUDWidgetClass);
+    }
+
+    if (ActiveMainHUDWidget && !ActiveMainHUDWidget->IsInViewport())
+    {
+        ActiveMainHUDWidget->AddToViewport(10);
+    }
+
+    return ActiveMainHUDWidget;
+}
+
+void ASightPortalPlayerController::HideMainHUD()
+{
+    if (ActiveMainHUDWidget && ActiveMainHUDWidget->IsInViewport())
+    {
+        ActiveMainHUDWidget->RemoveFromParent();
+    }
+}
+
+void ASightPortalPlayerController::ToggleMainHUD()
+{
+    if (ActiveMainHUDWidget && ActiveMainHUDWidget->IsInViewport())
+    {
+        HideMainHUD();
+    }
+    else
+    {
+        ShowMainHUD();
+    }
+}
+
 
