@@ -7,6 +7,7 @@
 #include "SightPortalPlayerController.generated.h"
 
 class APropertyVisualizer;
+class USightPortalHUDWidget;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSightPortalPropertySelected, APropertyVisualizer*, SelectedVisualizer);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSightPortalPropertyDeselected);
@@ -84,6 +85,14 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|UI")
     TSubclassOf<USightPortal2DPropertyDetailWidget> Detail2DWidgetClass;
 
+    // Main HUD Navigation Widget Class to spawn (e.g., compass, time slider, home button)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|UI")
+    TSubclassOf<USightPortalHUDWidget> MainHUDWidgetClass;
+
+    // Whether to automatically spawn the Main HUD on BeginPlay (Default: true if MainHUDWidgetClass is set)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|UI")
+    bool bAutoSpawnMainHUD;
+
     // Collision channel used to trace and pick Property Visualizer actors under mouse cursor (Default: ECC_Visibility)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Interaction")
     TEnumAsByte<ECollisionChannel> ClickTraceChannel;
@@ -97,6 +106,10 @@ public:
     // Active 2D Detail Widget instance currently displayed on viewport
     UPROPERTY(BlueprintReadOnly, Category = "SightPortal|UI")
     USightPortal2DPropertyDetailWidget* Active2DDetailWidget;
+
+    // Active Main HUD Navigation Widget instance currently displayed on viewport
+    UPROPERTY(BlueprintReadOnly, Category = "SightPortal|UI")
+    USightPortalHUDWidget* ActiveMainHUDWidget;
 
     // Currently selected Property Visualizer actor
     UPROPERTY(BlueprintReadOnly, Category = "SightPortal|Selection")
@@ -221,6 +234,30 @@ public:
      */
     UFUNCTION(BlueprintPure, Category = "SightPortal|UI")
     bool IsPropertyDetailWidgetOpen() const;
+
+    /**
+     * Spawn and show the Main Navigation HUD on screen.
+     */
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|UI")
+    USightPortalHUDWidget* ShowMainHUD();
+
+    /**
+     * Hide and remove the Main Navigation HUD from screen.
+     */
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|UI")
+    void HideMainHUD();
+
+    /**
+     * Toggle the visibility of the Main Navigation HUD.
+     */
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|UI")
+    void ToggleMainHUD();
+
+    /**
+     * Get the active Main Navigation HUD widget instance.
+     */
+    UFUNCTION(BlueprintPure, Category = "SightPortal|UI")
+    USightPortalHUDWidget* GetActiveMainHUDWidget() const { return ActiveMainHUDWidget; }
 
     // --- Dynamic Event Delegates ---
 

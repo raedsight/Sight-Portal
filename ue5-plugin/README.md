@@ -215,6 +215,37 @@ Call the new runtime functions dynamically:
 
 ---
 
+## 🧭 Main Navigation HUD Widget Setup (`SightPortalHUDWidget`)
+
+The plugin includes `USightPortalHUDWidget` for the top and bottom navigation bars:
+1. **Top-Left Compass**: Dynamically reads camera/controller yaw angle, updates cardinal direction text (`"N"`, `"NE"`, `"E"`, etc.), and rotates compass needle/bezel image.
+2. **Top-Middle Time of Day Slider**: Interactive slider controlling time (0:00 - 24:00), updates time readout (`"9:00"`), adjusts Sun/Directional Light actor pitch/yaw, and triggers `OnTimeOfDayChanged`.
+3. **Bottom Navigation Bar**:
+   * **Home Button**: Smoothly navigates player pawn/camera to user-configurable 3D coordinate (`HomeLocation` / `HomeRotation`).
+   * **Gallery Button**: Dispatches `OnGalleryButtonClicked` and opens `GalleryWidgetClass`.
+   * **Services Button**: Dispatches `OnServicesButtonClicked` and opens `ServicesWidgetClass`.
+   * **Unit Search Button**: Dispatches `OnUnitSearchButtonClicked` and opens `UnitSearchWidgetClass`.
+
+### Creating Your HUD Blueprint (`WBP_MainHUD`)
+1. Create a **Widget Blueprint** (e.g. `WBP_MainHUD`).
+2. Go to **File -> Reparent Blueprint** and select **`SightPortalHUDWidget`**.
+3. Add your widgets in the Hierarchy panel and mark **"Is Variable"** in the Details panel:
+   * **Compass**: `CompassText` (aliases: `Compass`, `HeadingText`), `CompassNeedleImage` (aliases: `CompassNeedle`, `CompassDisc`, `CompassImage`)
+   * **Time of Day Slider**: `TimeOfDaySlider` (aliases: `TimeSlider`, `Slider_Time`)
+   * **Time of Day Text**: `TimeOfDayText` (aliases: `TimeText`, `SunTimeText`)
+   * **Home Button**: `HomeButton` (aliases: `Home`, `Btn_Home`)
+   * **Gallery Button**: `GalleryButton` (aliases: `Gallery`, `Btn_Gallery`)
+   * **Services Button**: `ServicesButton` (aliases: `Services`, `Btn_Services`, `Surroundings`)
+   * **Unit Search Button**: `UnitSearchButton` (aliases: `UnitSearch`, `Btn_UnitSearch`, `Search`)
+
+### Assigning HUD on Player Controller
+* On your `ASightPortalPlayerController` (or `BP_SightPortalPlayerController`):
+  * Set **`Main HUD Widget Class`** to your `WBP_MainHUD`.
+  * Set **`Home Location`** and **`Home Rotation`** to your project's default 3D starting coordinates.
+  * (Optional) Set **`Sun Light Actor Tag`** to your Directional Light's actor tag (defaults to `"SunLight"`).
+
+---
+
 ## 📡 Live Real-Time WebSockets
 When a field is edited in the web interface or Google Sheet:
 1. The web backend dispatches a `ue5_push` payload over WebSocket.
