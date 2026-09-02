@@ -1,4 +1,5 @@
 #include "SightPortalHUDWidget.h"
+#include "SightPortalGalleryWidget.h"
 #include "Components/TextBlock.h"
 #include "Components/Slider.h"
 #include "Components/Button.h"
@@ -31,6 +32,7 @@ USightPortalHUDWidget::USightPortalHUDWidget(const FObjectInitializer& ObjectIni
     , HomeRotation(FRotator(-30.0f, -45.0f, 0.0f))
     , bAutoCaptureStartLocationAsHome(true)
     , HomeTransitionSpeed(8.0f)
+    , GalleryWidgetClass(USightPortalGalleryWidget::StaticClass())
     , bIsSettingTimeSlider(false)
     , bIsHomeLocationInitialized(false)
     , bIsTransitioningToHome(false)

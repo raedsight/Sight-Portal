@@ -120,9 +120,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Navigation")
     float HomeTransitionSpeed;
 
-    // Optional sub-widget classes to spawn dynamically
+    // Optional gallery widget class to spawn dynamically (defaults to USightPortalGalleryWidget)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Navigation")
-    TSubclassOf<UUserWidget> GalleryWidgetClass;
+    TSubclassOf<class USightPortalGalleryWidget> GalleryWidgetClass;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Navigation")
     TSubclassOf<UUserWidget> ServicesWidgetClass;
