@@ -254,6 +254,66 @@ async function startServer() {
     return null;
   };
 
+  // Helper to parse Google Drive API error responses cleanly and detect disabled API
+  const parseDriveApiError = (status: number, rawText: string) => {
+    let parsed: any = null;
+    try {
+      parsed = typeof rawText === "string" ? JSON.parse(rawText) : rawText;
+    } catch (e) {
+      // raw text
+    }
+
+    const rawMsg = parsed?.error?.message || (typeof rawText === "string" ? rawText : "");
+    const isServiceDisabled =
+      status === 403 &&
+      (rawMsg.includes("Google Drive API has not been used in project") ||
+        rawMsg.includes("SERVICE_DISABLED") ||
+        rawMsg.includes("accessNotConfigured") ||
+        parsed?.error?.details?.some((d: any) => d.reason === "SERVICE_DISABLED" || d.metadata?.reason === "SERVICE_DISABLED"));
+
+    // Extract project ID from error message or activation link if available
+    let detectedProject = "sodium-icon-v8gvj";
+    const projectMatch = rawMsg.match(/project[=\s/]+([0-9a-zA-Z\-_]+)/i);
+    if (projectMatch && projectMatch[1]) {
+      detectedProject = projectMatch[1];
+    }
+
+    let activationUrl = `https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=${detectedProject}`;
+
+    if (parsed?.error?.details) {
+      const detailObj = parsed.error.details.find((d: any) => d.metadata?.activationUrl || d.links?.some((l: any) => l.url));
+      if (detailObj?.metadata?.activationUrl) {
+        activationUrl = detailObj.metadata.activationUrl;
+      } else if (detailObj?.links?.[0]?.url) {
+        activationUrl = detailObj.links[0].url;
+      }
+    }
+
+    if (activationUrl.includes("project=")) {
+      const urlProj = activationUrl.split("project=")[1]?.split("&")[0];
+      if (urlProj) detectedProject = urlProj;
+    }
+
+    if (!activationUrl && rawMsg) {
+      const match = rawMsg.match(/https:\/\/console\.developers\.google\.com\/apis\/api\/drive\.googleapis\.com\/[^\s]+/);
+      if (match) {
+        activationUrl = match[0].replace(/[.,;]+$/, "");
+      }
+    }
+
+    const cleanMessage = isServiceDisabled
+      ? `Google Drive API is disabled in your Google Cloud project (${detectedProject}). Please enable it in the Google Cloud Console.`
+      : (parsed?.error?.message || rawMsg || `Google Drive API error (${status})`);
+
+    return {
+      status,
+      isServiceDisabled,
+      activationUrl,
+      message: cleanMessage,
+      projectId: detectedProject,
+    };
+  };
+
   // Endpoint: Provision or locate client dedicated folder
   app.post("/api/drive/provision-folder", async (req, res) => {
     const token = getAuthToken(req);
@@ -283,6 +343,17 @@ async function startServer() {
                 folderId: fileData.id,
                 folderUrl: fileData.webViewLink || `https://drive.google.com/drive/folders/${fileData.id}`,
                 folderName: fileData.name || targetFolderName,
+              });
+            }
+          } else {
+            const checkErrText = await checkRes.text();
+            const errInfo = parseDriveApiError(checkRes.status, checkErrText);
+            if (errInfo.isServiceDisabled) {
+              return res.status(403).json({
+                error: errInfo.message,
+                isServiceDisabled: true,
+                activationUrl: errInfo.activationUrl,
+                projectId: errInfo.projectId,
               });
             }
           }
@@ -316,6 +387,17 @@ async function startServer() {
             folderName: existingFolder.name,
           });
         }
+      } else {
+        const listErrText = await listRes.text();
+        const errInfo = parseDriveApiError(listRes.status, listErrText);
+        if (errInfo.isServiceDisabled) {
+          return res.status(403).json({
+            error: errInfo.message,
+            isServiceDisabled: true,
+            activationUrl: errInfo.activationUrl,
+            projectId: errInfo.projectId,
+          });
+        }
       }
 
       // 3. Create dedicated folder inside root directory
@@ -335,7 +417,13 @@ async function startServer() {
 
       if (!createRes.ok) {
         const errText = await createRes.text();
-        return res.status(createRes.status).json({ error: `Failed to create folder in Google Drive: ${errText}` });
+        const errInfo = parseDriveApiError(createRes.status, errText);
+        return res.status(createRes.status).json({
+          error: errInfo.message,
+          isServiceDisabled: errInfo.isServiceDisabled,
+          activationUrl: errInfo.activationUrl,
+          projectId: errInfo.projectId,
+        });
       }
 
       const newFolder = (await createRes.json()) as any;
@@ -426,9 +514,13 @@ async function startServer() {
 
       if (!driveRes.ok) {
         const errText = await driveRes.text();
-        console.error(`[Drive Proxy Upload Failed] HTTP ${driveRes.status}:`, errText);
+        const errInfo = parseDriveApiError(driveRes.status, errText);
+        console.error(`[Drive Proxy Upload Failed] HTTP ${driveRes.status}:`, errInfo.message);
         return res.status(driveRes.status).json({
-          error: `Google Drive API error (${driveRes.status}): ${errText}`,
+          error: errInfo.message,
+          isServiceDisabled: errInfo.isServiceDisabled,
+          activationUrl: errInfo.activationUrl,
+          projectId: errInfo.projectId,
         });
       }
 
@@ -466,7 +558,13 @@ async function startServer() {
 
       if (!listRes.ok) {
         const errText = await listRes.text();
-        return res.status(listRes.status).json({ error: `Google Drive API error: ${errText}` });
+        const errInfo = parseDriveApiError(listRes.status, errText);
+        return res.status(listRes.status).json({
+          error: errInfo.message,
+          isServiceDisabled: errInfo.isServiceDisabled,
+          activationUrl: errInfo.activationUrl,
+          projectId: errInfo.projectId,
+        });
       }
 
       const data = (await listRes.json()) as any;

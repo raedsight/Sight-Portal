@@ -45,6 +45,7 @@ import {
   dataUrlToBlob,
   grantClientFolderAccess,
   DriveFolderInfo,
+  GoogleDriveApiError,
 } from "../services/googleDrive";
 import { getAccessToken } from "../firebaseAuth";
 
@@ -85,6 +86,11 @@ export default function MediaResourcesTab({
   const [driveStatusMessage, setDriveStatusMessage] = useState<string | null>(null);
   const [batchSyncingDrive, setBatchSyncingDrive] = useState(false);
   const [uploadingSingleDriveId, setUploadingSingleDriveId] = useState<string | null>(null);
+  const [driveApiNotice, setDriveApiNotice] = useState<{
+    isServiceDisabled: boolean;
+    activationUrl: string;
+    projectId?: string;
+  } | null>(null);
 
   // Upload Form Fields
   const [formCategory, setFormCategory] = useState<MediaCategory>("project");
@@ -330,8 +336,18 @@ export default function MediaResourcesTab({
           alert("Notice: Google account is not connected. The media asset has been safely registered in your local client portal. To automatically save future assets to Google Drive, connect your Google account in the top bar.");
         }
       } catch (driveErr: any) {
-        console.error("[Google Drive Upload Error]", driveErr);
-        alert(`Google Drive notice: ${driveErr.message || driveErr}\n\nThe media resource was still saved in the client portal.`);
+        console.warn("[Google Drive Upload Notice]", driveErr);
+        if (driveErr.isServiceDisabled || driveErr.message?.includes("Google Drive API") || driveErr.message?.includes("SERVICE_DISABLED")) {
+          setDriveApiNotice({
+            isServiceDisabled: true,
+            activationUrl:
+              driveErr.activationUrl ||
+              "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=sodium-icon-v8gvj",
+            projectId: driveErr.projectId || "sodium-icon-v8gvj",
+          });
+        } else {
+          alert(`Google Drive notice: ${driveErr.message || driveErr}\n\nThe media resource was still saved in the client portal.`);
+        }
       } finally {
         setDriveStatusMessage(null);
         setUploadProcessing(false);
@@ -421,8 +437,18 @@ export default function MediaResourcesTab({
 
       alert(`Dedicated Google Drive folder verified!\nFolder: ${folderInfo.folderName}\nID: ${folderInfo.folderId}`);
     } catch (err: any) {
-      console.error("[Provision Drive Folder Error]", err);
-      alert(`Could not configure Google Drive folder: ${err.message || err}`);
+      console.warn("[Provision Drive Folder Error]", err);
+      if (err.isServiceDisabled || err.message?.includes("Google Drive API") || err.message?.includes("SERVICE_DISABLED")) {
+        setDriveApiNotice({
+          isServiceDisabled: true,
+          activationUrl:
+            err.activationUrl ||
+            "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=sodium-icon-v8gvj",
+          projectId: err.projectId || "sodium-icon-v8gvj",
+        });
+      } else {
+        alert(`Could not configure Google Drive folder: ${err.message || err}`);
+      }
     } finally {
       setIsProvisioningDrive(false);
     }
@@ -477,8 +503,18 @@ export default function MediaResourcesTab({
             };
             successCount++;
           }
-        } catch (itemErr) {
+        } catch (itemErr: any) {
           console.warn(`[Google Drive] Failed uploading item ${item.title}:`, itemErr);
+          if (itemErr.isServiceDisabled || itemErr.message?.includes("Google Drive API")) {
+            setDriveApiNotice({
+              isServiceDisabled: true,
+              activationUrl:
+                itemErr.activationUrl ||
+                "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=sodium-icon-v8gvj",
+              projectId: itemErr.projectId || "sodium-icon-v8gvj",
+            });
+            break;
+          }
         }
       }
 
@@ -500,10 +536,22 @@ export default function MediaResourcesTab({
         details: `Saved ${successCount} media files to Google Drive folder: ${folderInfo.folderName}`,
       });
 
-      alert(`Successfully saved ${successCount} files to client's dedicated Google Drive folder!`);
+      if (successCount > 0) {
+        alert(`Successfully saved ${successCount} files to client's dedicated Google Drive folder!`);
+      }
     } catch (err: any) {
-      console.error("[Batch Sync Drive Error]", err);
-      alert(`Syncing to Google Drive failed: ${err.message || err}`);
+      console.warn("[Batch Sync Drive Error]", err);
+      if (err.isServiceDisabled || err.message?.includes("Google Drive API") || err.message?.includes("SERVICE_DISABLED")) {
+        setDriveApiNotice({
+          isServiceDisabled: true,
+          activationUrl:
+            err.activationUrl ||
+            "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=sodium-icon-v8gvj",
+          projectId: err.projectId || "sodium-icon-v8gvj",
+        });
+      } else {
+        alert(`Syncing to Google Drive failed: ${err.message || err}`);
+      }
     } finally {
       setBatchSyncingDrive(false);
       setDriveStatusMessage(null);
@@ -573,8 +621,18 @@ export default function MediaResourcesTab({
 
       alert(`"${item.title}" successfully saved to client's Google Drive folder!`);
     } catch (err: any) {
-      console.error("[Single Item Drive Upload Error]", err);
-      alert(`Upload to Google Drive failed: ${err.message || err}`);
+      console.warn("[Single Item Drive Upload Error]", err);
+      if (err.isServiceDisabled || err.message?.includes("Google Drive API") || err.message?.includes("SERVICE_DISABLED")) {
+        setDriveApiNotice({
+          isServiceDisabled: true,
+          activationUrl:
+            err.activationUrl ||
+            "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=sodium-icon-v8gvj",
+          projectId: err.projectId || "sodium-icon-v8gvj",
+        });
+      } else {
+        alert(`Upload to Google Drive notice: ${err.message || err}`);
+      }
     } finally {
       setUploadingSingleDriveId(null);
     }
@@ -817,6 +875,47 @@ export default function MediaResourcesTab({
           <div className="mt-3 p-2.5 bg-black/50 border border-emerald-500/30 rounded-xl flex items-center gap-2 text-xs text-emerald-200 animate-pulse">
             <RefreshCw className="h-3.5 w-3.5 animate-spin text-emerald-400 shrink-0" />
             <span>{driveStatusMessage}</span>
+          </div>
+        )}
+
+        {/* Google Drive API Service Disabled / Activation Banner */}
+        {driveApiNotice && (
+          <div className="mt-3 p-4 bg-amber-950/80 border-2 border-amber-500/60 rounded-xl text-amber-200 text-xs flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-amber-500/20 rounded-lg shrink-0 mt-0.5 border border-amber-500/30">
+                <AlertTriangle className="h-5 w-5 text-amber-400" />
+              </div>
+              <div className="space-y-1">
+                <div className="font-bold text-sm text-amber-100 flex items-center gap-2">
+                  <span>Google Drive API Activation Required in Google Cloud</span>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                    Project {driveApiNotice.projectId || "sodium-icon-v8gvj"}
+                  </span>
+                </div>
+                <div className="text-xs text-amber-200/90 leading-relaxed max-w-2xl">
+                  The Google Drive API is not yet enabled in the Google Cloud Console for project <code className="bg-black/40 px-1.5 py-0.5 rounded text-amber-300 font-mono">{driveApiNotice.projectId || "sodium-icon-v8gvj"}</code>.
+                  All uploaded media assets remain <strong className="text-white">100% safely registered in your client portal</strong>. Click below to enable the API with one click.
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+              <a
+                href={driveApiNotice.activationUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-lg text-xs flex items-center gap-1.5 transition shadow hover:shadow-amber-500/20"
+              >
+                <span>Enable Google Drive API ↗</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => setDriveApiNotice(null)}
+                className="px-2.5 py-2 text-xs text-amber-300/80 hover:text-white transition cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -1805,6 +1904,19 @@ export default function MediaResourcesTab({
                     <p className="text-gray-400 leading-relaxed text-[9.5px]">
                       This file will be automatically saved into the dedicated folder inside the shared root repository (13fE2R_-qxOMlT2U7tY1NtK36xpwahMkg). Client access will remain strictly isolated to their own media folder.
                     </p>
+                    {driveApiNotice && (
+                      <div className="p-2 bg-amber-950/70 border border-amber-500/40 rounded-lg text-amber-200 text-[10px] flex items-center justify-between gap-2">
+                        <span>Google Drive API needs activation in project {driveApiNotice.projectId || "sodium-icon-v8gvj"}. Asset will still be saved to the client portal.</span>
+                        <a
+                          href={driveApiNotice.activationUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline text-amber-300 hover:text-white font-bold shrink-0"
+                        >
+                          Enable API ↗
+                        </a>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

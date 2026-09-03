@@ -32,6 +32,86 @@ export interface DriveFileItem {
   createdTime?: string;
 }
 
+export interface GoogleDriveApiError extends Error {
+  isServiceDisabled?: boolean;
+  activationUrl?: string;
+  projectId?: string;
+}
+
+export function parseDriveApiError(status: number, rawText: string) {
+  let parsed: any = null;
+  try {
+    parsed = typeof rawText === "string" ? JSON.parse(rawText) : rawText;
+  } catch (e) {
+    // raw text
+  }
+
+  const rawMsg = parsed?.error?.message || (typeof rawText === "string" ? rawText : "");
+  const isServiceDisabled =
+    status === 403 &&
+    (rawMsg.includes("Google Drive API has not been used in project") ||
+      rawMsg.includes("SERVICE_DISABLED") ||
+      rawMsg.includes("accessNotConfigured") ||
+      parsed?.error?.details?.some(
+        (d: any) => d.reason === "SERVICE_DISABLED" || d.metadata?.reason === "SERVICE_DISABLED"
+      ));
+
+  let detectedProject = "sodium-icon-v8gvj";
+  const projectMatch = rawMsg.match(/project[=\s/]+([0-9a-zA-Z\-_]+)/i);
+  if (projectMatch && projectMatch[1]) {
+    detectedProject = projectMatch[1];
+  }
+
+  let activationUrl =
+    `https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=${detectedProject}`;
+
+  if (parsed?.error?.details) {
+    const detailObj = parsed.error.details.find(
+      (d: any) => d.metadata?.activationUrl || d.links?.some((l: any) => l.url)
+    );
+    if (detailObj?.metadata?.activationUrl) {
+      activationUrl = detailObj.metadata.activationUrl;
+    } else if (detailObj?.links?.[0]?.url) {
+      activationUrl = detailObj.links[0].url;
+    }
+  }
+
+  if (activationUrl.includes("project=")) {
+    const urlProj = activationUrl.split("project=")[1]?.split("&")[0];
+    if (urlProj) detectedProject = urlProj;
+  }
+
+  if (!activationUrl && rawMsg) {
+    const match = rawMsg.match(
+      /https:\/\/console\.developers\.google\.com\/apis\/api\/drive\.googleapis\.com\/[^\s]+/
+    );
+    if (match) {
+      activationUrl = match[0].replace(/[.,;]+$/, "");
+    }
+  }
+
+  const cleanMessage = isServiceDisabled
+    ? `Google Drive API is disabled in your Google Cloud project (${detectedProject}). Enable it in Google Cloud Console to save files to Google Drive.`
+    : (parsed?.error?.message || rawMsg || `Google Drive API error (${status})`);
+
+  return {
+    status,
+    isServiceDisabled,
+    activationUrl,
+    message: cleanMessage,
+    projectId: detectedProject,
+  };
+}
+
+export function createDriveError(status: number, rawText: string): GoogleDriveApiError {
+  const errInfo = parseDriveApiError(status, rawText);
+  const err: GoogleDriveApiError = new Error(errInfo.message);
+  err.isServiceDisabled = errInfo.isServiceDisabled;
+  err.activationUrl = errInfo.activationUrl;
+  err.projectId = errInfo.projectId;
+  return err;
+}
+
 /**
  * Converts a base64 Data URL to a Blob safely without throwing
  */
@@ -104,12 +184,16 @@ export async function getOrProvisionClientFolder(
       return folderInfo;
     } else {
       const errJson = await proxyRes.json().catch(() => null);
-      if (errJson?.error) {
-        throw new Error(errJson.error);
+      if (errJson) {
+        const driveErr: GoogleDriveApiError = new Error(errJson.error || "Failed to provision client folder");
+        driveErr.isServiceDisabled = !!errJson.isServiceDisabled;
+        driveErr.activationUrl = errJson.activationUrl;
+        driveErr.projectId = errJson.projectId;
+        throw driveErr;
       }
     }
   } catch (proxyErr: any) {
-    if (proxyErr.message && !proxyErr.message.includes("Failed to fetch")) {
+    if (proxyErr.isServiceDisabled || (proxyErr.message && !proxyErr.message.includes("Failed to fetch"))) {
       throw proxyErr;
     }
     console.warn("[Google Drive] Server proxy provision notice, trying direct client API...", proxyErr);
@@ -140,8 +224,15 @@ export async function getOrProvisionClientFolder(
             folderName: fileData.name || targetFolderName,
           };
         }
+      } else {
+        const checkErrText = await checkRes.text();
+        const errInfo = parseDriveApiError(checkRes.status, checkErrText);
+        if (errInfo.isServiceDisabled) {
+          throw createDriveError(checkRes.status, checkErrText);
+        }
       }
-    } catch (e) {
+    } catch (e: any) {
+      if (e.isServiceDisabled) throw e;
       console.warn("[Google Drive] Saved folder lookup failed, searching parent...", e);
     }
   }
@@ -162,7 +253,7 @@ export async function getOrProvisionClientFolder(
 
   if (!listRes.ok) {
     const errText = await listRes.text();
-    throw new Error(`Failed to list folders in shared Google Drive: ${errText}`);
+    throw createDriveError(listRes.status, errText);
   }
 
   const listData = await listRes.json();
@@ -203,7 +294,7 @@ export async function getOrProvisionClientFolder(
 
   if (!createRes.ok) {
     const errText = await createRes.text();
-    throw new Error(`Failed to create client folder in Google Drive: ${errText}`);
+    throw createDriveError(createRes.status, errText);
   }
 
   const newFolder = await createRes.json();
@@ -278,11 +369,15 @@ export async function uploadMediaToClientFolder(params: {
       if (proxyRes.status === 401) {
         throw new Error(`Google Drive authorization has expired. Please re-authenticate your Google account: ${errMsg}`);
       }
-      throw new Error(errMsg);
+      const driveErr: GoogleDriveApiError = new Error(errMsg);
+      driveErr.isServiceDisabled = !!errJson?.isServiceDisabled;
+      driveErr.activationUrl = errJson?.activationUrl;
+      driveErr.projectId = errJson?.projectId;
+      throw driveErr;
     }
   } catch (proxyErr: any) {
     // If the proxy threw a definitive error with details, rethrow it
-    if (proxyErr.message && !proxyErr.message.includes("Failed to fetch")) {
+    if (proxyErr.isServiceDisabled || (proxyErr.message && !proxyErr.message.includes("Failed to fetch"))) {
       throw proxyErr;
     }
     console.warn("[Google Drive] Server proxy upload notice, trying direct client fallback...", proxyErr);
@@ -329,7 +424,7 @@ export async function uploadMediaToClientFolder(params: {
 
     if (!uploadRes.ok) {
       const errText = await uploadRes.text();
-      throw new Error(`Google Drive upload failed (${uploadRes.status}): ${errText}`);
+      throw createDriveError(uploadRes.status, errText);
     }
 
     const data = await uploadRes.json();
