@@ -1,0 +1,15 @@
+[
+  {
+    "id": "email-1788432560182",
+    "timestamp": "2026-09-03T10:49:20.182Z",
+    "action": "created",
+    "recipient": "raed.sight@gmail.com",
+    "subject": "[Sight Portal Alert] New Bug #t-9209 (High) - Hyperion Luxury Living: Sample ArchViz Test Bug Notification",
+    "status": "delivered",
+    "mode": "ethereal",
+    "previewUrl": "https://ethereal.email/message/aplQrwlT7djrgllnaplQsN4vWvYlxL6GAAAAAfQXIBE5OZXnlJdtAewRtmc",
+    "bugId": "test-9209",
+    "bugTitle": "Sample ArchViz Test Bug Notification",
+    "clientCompany": "Hyperion Luxury Living"
+  }
+]

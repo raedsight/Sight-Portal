@@ -56,6 +56,7 @@ import { extractSpreadsheetId, getStoredClientSheet, saveStoredClientSheet, SPRE
 import { initAuth, googleSignIn, logout, getAccessToken } from "../firebaseAuth";
 import { saveClientSheetData } from "../firebase";
 import MediaResourcesTab from "./MediaResourcesTab";
+import { notifyAdminBugEvent } from "../services/bugNotificationService";
 
 interface ClientDashboardProps {
   client: Client;
@@ -102,14 +103,19 @@ export default function ClientDashboard({
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Email dispatcher modal/hud simulation
+  // Email dispatcher modal/hud and real notification tracking
   const [showMailLogs, setShowMailLogs] = useState(false);
   const [mailSentAlert, setMailSentAlert] = useState<{
     to_client: string;
     to_dev: string;
     subject: string;
     timestamp: string;
+    status?: "sending" | "delivered" | "error";
+    mode?: string;
+    previewUrl?: string;
+    message?: string;
   } | null>(null);
+  const [newBugComment, setNewBugComment] = useState("");
 
   // Spreadsheet inline editing state
   const [editingCell, setEditingCell] = useState<{ rowIndex: number; colName: string } | null>(null);
@@ -1437,11 +1443,11 @@ export default function ClientDashboard({
     setShowAddBugForm(false);
     setSelectedBugId(newBugId);
 
-    // Email dispatcher notification trigger
-    triggerEmailNotification(
-      `[Bug #${newBugId.slice(-4)}] - ${newBug.title}`,
-      `New High-Fidelity ArchViz bug filed for company ${client.company}.\n\nSeverity: ${newBug.severity}\nDescription: ${newBug.description}\n\nClient Email: ${client.id}-portal@archviz-bridge.com\nDeveloper Email: raed.sight@gmail.com`
-    );
+    // Real email notification trigger dispatched to Admin (raed.sight@gmail.com)
+    triggerEmailNotification("created", newBug, {
+      user: currentUser?.email || "Client Operator",
+      message: `Initial bug ticket filed with ${newBug.severity} severity.`
+    });
 
     // Record central system log
     onRecordLog({
@@ -1449,28 +1455,33 @@ export default function ClientDashboard({
       clientName: client.name,
       type: "config_change",
       status: "success",
-      details: `Dispatched Bug Tracker Ticket #${newBugId.slice(-4)} and triggered email relays to developer & client`,
+      details: `Dispatched Bug Tracker Ticket #${newBugId.slice(-4)} and sent notification email to raed.sight@gmail.com`,
       payload: JSON.stringify(newBug)
     });
   };
 
   const handleUpdateBugStatus = (bugId: string, nextStatus: BugIssue["status"]) => {
     const timestamp = new Date().toISOString();
+    const previousStatus = clientBugs.find(b => b.id === bugId)?.status || "Open";
+    const operatorUser = currentUser?.email || "Developer (raed.sight@gmail.com)";
     
+    let targetBug: BugIssue | undefined;
+
     const updatedBugs = clientBugs.map((bug) => {
       if (bug.id === bugId) {
         const newAct: BugActivity = {
           id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
           timestamp,
-          message: `Status transitioned to '${nextStatus}' by Developer.`,
-          user: "Developer (raed.sight@gmail.com)"
+          message: `Status transitioned from '${previousStatus}' to '${nextStatus}' by ${operatorUser}.`,
+          user: operatorUser
         };
-        return {
+        targetBug = {
           ...bug,
           status: nextStatus,
           updatedAt: timestamp,
           activities: [...bug.activities, newAct]
         };
+        return targetBug;
       }
       return bug;
     });
@@ -1482,22 +1493,76 @@ export default function ClientDashboard({
 
     onUpdateClient(updatedClient);
 
-    // Get updated bug
-    const targetBug = updatedBugs.find(b => b.id === bugId);
-
-    // Trigger SMTP notification simulation
-    triggerEmailNotification(
-      `[Bug Update #${bugId.slice(-4)}] Status: ${nextStatus}`,
-      `The ticket status for "${targetBug?.title}" has been updated to "${nextStatus}" by Developer raed.sight@gmail.com.\n\nTime of response: ${timestamp}\nReview latest progress in your interactive client portal.`
-    );
+    if (targetBug) {
+      // Trigger Real Email notification to Admin on bug status update
+      triggerEmailNotification("updated", targetBug, {
+        user: operatorUser,
+        previousStatus,
+        newStatus: nextStatus,
+        message: `Status updated to '${nextStatus}'.`
+      });
+    }
 
     onRecordLog({
       clientId: client.id,
       clientName: client.name,
       type: "config_change",
       status: "success",
-      details: `Developer transitioned status of Bug Ticket #${bugId.slice(-4)} to '${nextStatus}'`,
+      details: `Status of Bug Ticket #${bugId.slice(-4)} transitioned to '${nextStatus}' & notification email sent`,
       payload: JSON.stringify(targetBug)
+    });
+  };
+
+  const handleAddBugComment = (bugId: string) => {
+    if (!newBugComment.trim()) return;
+    const timestamp = new Date().toISOString();
+    const commentUser = currentUser?.email || "Client Operator";
+    const commentMsg = newBugComment.trim();
+
+    const newAct: BugActivity = {
+      id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      timestamp,
+      message: commentMsg,
+      user: commentUser
+    };
+
+    let targetUpdatedBug: BugIssue | undefined;
+
+    const updatedBugs = clientBugs.map((bug) => {
+      if (bug.id === bugId) {
+        targetUpdatedBug = {
+          ...bug,
+          updatedAt: timestamp,
+          activities: [...bug.activities, newAct]
+        };
+        return targetUpdatedBug;
+      }
+      return bug;
+    });
+
+    if (!targetUpdatedBug) return;
+
+    const updatedClient = {
+      ...client,
+      bugs: updatedBugs
+    };
+
+    onUpdateClient(updatedClient);
+    setNewBugComment("");
+
+    // Trigger real email notification to Admin on bug comment update
+    triggerEmailNotification("commented", targetUpdatedBug, {
+      user: commentUser,
+      message: commentMsg
+    });
+
+    onRecordLog({
+      clientId: client.id,
+      clientName: client.name,
+      type: "config_change",
+      status: "success",
+      details: `New activity comment logged on Bug #${bugId.slice(-4)} & notification dispatched: "${commentMsg.slice(0, 45)}..."`,
+      payload: JSON.stringify(newAct)
     });
   };
 
@@ -1558,22 +1623,67 @@ export default function ClientDashboard({
     reader.readAsDataURL(file);
   };
 
-  const triggerEmailNotification = (subject: string, bodyText: string) => {
-    // Populate an elegant alert window simulation
+  const triggerEmailNotification = async (
+    action: "created" | "updated" | "commented",
+    targetBug: BugIssue,
+    updateDetails?: { user?: string; previousStatus?: string; newStatus?: string; message?: string }
+  ) => {
+    const defaultDevEmail = "raed.sight@gmail.com";
+    const shortId = targetBug.id.slice(-6);
+    const subject = action === "created"
+      ? `[Sight Portal Bug] #${shortId} (${targetBug.severity}) - ${targetBug.title}`
+      : `[Sight Portal Bug Update] #${shortId} [${targetBug.status}] - ${targetBug.title}`;
+
     setMailSentAlert({
-      to_client: `coordinator@${client.id}-ventures.com`,
-      to_dev: "raed.sight@gmail.com",
-      subject: subject,
-      timestamp: new Date().toLocaleTimeString()
+      to_client: `${client.name} (${client.company})`,
+      to_dev: defaultDevEmail,
+      subject,
+      timestamp: new Date().toLocaleTimeString(),
+      status: "sending"
     });
 
-    // Auto dismiss modal alert after 8 seconds
-    setTimeout(() => {
-      setMailSentAlert(prev => {
-        if (prev?.subject === subject) return null;
-        return prev;
+    try {
+      const result = await notifyAdminBugEvent({
+        action,
+        client: {
+          id: client.id,
+          name: client.name,
+          company: client.company,
+        },
+        bug: targetBug,
+        updateDetails,
+        adminEmails: [defaultDevEmail],
       });
-    }, 7000);
+
+      setMailSentAlert({
+        to_client: `${client.name} (${client.company})`,
+        to_dev: result.recipient || defaultDevEmail,
+        subject: result.subject || subject,
+        timestamp: new Date().toLocaleTimeString(),
+        status: result.success ? "delivered" : "error",
+        mode: result.mode,
+        previewUrl: result.previewUrl,
+        message: result.message
+      });
+
+      // Auto dismiss after 10s if delivered successfully
+      setTimeout(() => {
+        setMailSentAlert(prev => {
+          if (prev?.status === "delivered") return null;
+          return prev;
+        });
+      }, 10000);
+    } catch (err: any) {
+      console.warn("Error dispatching email:", err);
+      setMailSentAlert({
+        to_client: `${client.name} (${client.company})`,
+        to_dev: defaultDevEmail,
+        subject,
+        timestamp: new Date().toLocaleTimeString(),
+        status: "error",
+        message: err.message || "Email dispatch failed"
+      });
+    }
   };
 
   // --- END BUG TRACKER CONTROLLERS ---
@@ -1801,25 +1911,60 @@ export default function ClientDashboard({
           </button>
         </div>
 
-        {/* Floating SMTP Simulation E-mail Logger Banner */}
+        {/* Automated Admin Notification Email Banner */}
         {mailSentAlert && (
-          <div className="p-4 mb-6 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-xs flex items-start gap-3.5 shadow-lg animate-fadeIn">
-            <Mail className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
-            <div className="flex-1">
+          <div className={`p-4 mb-6 rounded-lg border text-xs flex items-start gap-3.5 shadow-lg animate-fadeIn ${
+            mailSentAlert.status === "error" 
+              ? "bg-red-500/10 border-red-500/25 text-red-300"
+              : mailSentAlert.status === "sending"
+              ? "bg-blue-500/10 border-blue-500/25 text-blue-300"
+              : "bg-emerald-500/10 border-emerald-500/25 text-emerald-400"
+          }`}>
+            <Mail className={`h-5 w-5 shrink-0 mt-0.5 ${
+              mailSentAlert.status === "error" ? "text-red-400" : mailSentAlert.status === "sending" ? "text-blue-400 animate-pulse" : "text-emerald-400"
+            }`} />
+            <div className="flex-1 space-y-1.5">
               <div className="flex items-center justify-between">
-                <strong className="font-bold uppercase tracking-wider text-emerald-200">✉️ SMTP Real-time Relay Dispatched</strong>
+                <strong className={`font-bold uppercase tracking-wider text-xs ${
+                  mailSentAlert.status === "error" ? "text-red-200" : mailSentAlert.status === "sending" ? "text-blue-200" : "text-emerald-200"
+                }`}>
+                  {mailSentAlert.status === "sending" 
+                    ? "✉️ Dispatching Bug Notification Email..." 
+                    : mailSentAlert.status === "error"
+                    ? "⚠️ Email Dispatch Notice"
+                    : mailSentAlert.mode === "ethereal"
+                    ? "✉️ Bug Notification Recorded (Sandbox Preview)"
+                    : "✉️ Admin Notification Email Delivered to Inbox"}
+                </strong>
                 <span className="text-[10px] text-gray-400 font-mono">{mailSentAlert.timestamp}</span>
               </div>
-              <p className="mt-1 text-gray-300">
-                Automatic QA bridge mail notification sent to client stakeholders and developer support inbox:
+              <p className="text-gray-300">
+                {mailSentAlert.message || (
+                  mailSentAlert.mode === "ethereal"
+                    ? "Automated notification formatted and captured in sandbox preview (connect Resend or Gmail SMTP in Settings for live inbox delivery):"
+                    : "Automated email notification delivered to Administrator's inbox for this bug event:"
+                )}
               </p>
-              <div className="mt-2.5 grid grid-cols-1 md:grid-cols-3 gap-2 text-[10px] font-mono bg-black/40 p-2.5 rounded border border-white/5 text-gray-400">
-                <div>📥 <span className="text-gray-350 italic">Developer Recipient:</span> <strong className="text-gray-200">{mailSentAlert.to_dev}</strong></div>
-                <div>📥 <span className="text-gray-350 italic">Client Recipient:</span> <strong className="text-gray-200">{mailSentAlert.to_client}</strong></div>
-                <div>📋 <span className="text-gray-350 italic">Subject Line:</span> <strong className="text-gray-200">{mailSentAlert.subject.slice(0, 32)}...</strong></div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-[10px] font-mono bg-black/40 p-2.5 rounded border border-white/5 text-gray-400">
+                <div>📥 <span className="text-gray-350 italic">Admin Recipient:</span> <strong className="text-white select-all">{mailSentAlert.to_dev}</strong></div>
+                <div>🏢 <span className="text-gray-350 italic">Client Context:</span> <strong className="text-gray-200">{mailSentAlert.to_client}</strong></div>
+                <div>📋 <span className="text-gray-350 italic">Subject:</span> <strong className="text-gray-200">{mailSentAlert.subject.slice(0, 36)}...</strong></div>
               </div>
+              {mailSentAlert.previewUrl && (
+                <div className="mt-2 pt-1.5 border-t border-white/5 flex items-center justify-between text-[11px]">
+                  <span className="text-amber-300 font-medium">📬 Sandbox Web Preview Ready:</span>
+                  <a
+                    href={mailSentAlert.previewUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 font-bold text-amber-400 hover:text-amber-300 underline"
+                  >
+                    Inspect Delivered HTML Email in Browser &rarr;
+                  </a>
+                </div>
+              )}
             </div>
-            <button onClick={() => setMailSentAlert(null)} className="text-gray-400 hover:text-white font-bold cursor-pointer text-xs" title="Dismiss Alert">✕</button>
+            <button onClick={() => setMailSentAlert(null)} className="text-gray-400 hover:text-white font-bold cursor-pointer text-xs p-1" title="Dismiss Alert">✕</button>
           </div>
         )}
 
@@ -3200,6 +3345,37 @@ export default function ClientDashboard({
                                 </p>
                               </div>
                             ))}
+                          </div>
+
+                          {/* Post activity note / comment input */}
+                          <div className="pt-3 border-t border-white/5 space-y-1.5">
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                placeholder="Post an update note or question for admin..."
+                                value={newBugComment}
+                                onChange={(e) => setNewBugComment(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && !e.shiftKey) {
+                                    e.preventDefault();
+                                    handleAddBugComment(bug.id);
+                                  }
+                                }}
+                                className="flex-1 bg-black/60 border border-white/10 rounded px-2.5 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-amber-500 font-sans"
+                              />
+                              <button
+                                onClick={() => handleAddBugComment(bug.id)}
+                                disabled={!newBugComment.trim()}
+                                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:hover:bg-amber-500 text-black text-xs font-bold rounded flex items-center gap-1.5 cursor-pointer transition shrink-0"
+                              >
+                                <Send className="h-3 w-3" />
+                                Post & Notify Admin
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[9px] text-gray-400">
+                              <Mail className="h-2.5 w-2.5 text-amber-400 shrink-0" />
+                              <span>Posting an update or transitioning status automatically sends a notification email to <strong>raed.sight@gmail.com</strong>.</span>
+                            </div>
                           </div>
                         </div>
 

@@ -2,6 +2,12 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { WebSocketServer, WebSocket } from "ws";
+import { 
+  sendBugNotificationEmail, 
+  DEFAULT_ADMIN_EMAIL, 
+  getEmailAuditHistory 
+} from "./src/serverEmailNotifier";
+import { BugNotificationPayload } from "./src/types";
 
 async function startServer() {
   const app = express();
@@ -236,6 +242,104 @@ async function startServer() {
         target_class: data.target_class,
         attributes_matrix: data.attributes_matrix
       }
+    });
+  });
+
+  // -------------------------------------------------------------
+  // AUTOMATED ADMIN EMAIL NOTIFICATION DISPATCHER FOR BUGS
+  // Sends notification email to admin (raed.sight@gmail.com) on bug report or update
+  // -------------------------------------------------------------
+  app.post("/api/notify-bug", async (req, res) => {
+    try {
+      const payload = req.body as BugNotificationPayload;
+      if (!payload || !payload.client || !payload.bug) {
+        return res.status(400).json({ error: "Missing required 'client' or 'bug' payload object." });
+      }
+
+      // Infer current app URL if not provided
+      const host = req.get("host") || "localhost:3000";
+      const protocol = req.protocol === "https" || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+      const currentAppUrl = process.env.APP_URL || `${protocol}://${host}`;
+      payload.appUrl = payload.appUrl || currentAppUrl;
+
+      console.log(`[Bug Notification Endpoint] Action: ${payload.action} on Bug #${payload.bug.id} (${payload.bug.title}) for client '${payload.client.company}'`);
+
+      const result = await sendBugNotificationEmail(payload);
+      return res.json(result);
+    } catch (err: any) {
+      console.error("[Bug Notification Endpoint Error]", err);
+      return res.status(500).json({ 
+        success: false, 
+        error: err.message || "Failed to dispatch bug notification email",
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  // Endpoint to send a test email to admin's address
+  app.post("/api/notify-test-email", async (req, res) => {
+    try {
+      const { targetEmail } = req.body;
+      const recipient = targetEmail || DEFAULT_ADMIN_EMAIL;
+
+      const host = req.get("host") || "localhost:3000";
+      const protocol = req.protocol === "https" || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+      const currentAppUrl = process.env.APP_URL || `${protocol}://${host}`;
+
+      const testPayload: BugNotificationPayload = {
+        action: "created",
+        client: {
+          id: "hyperion-vis",
+          name: "Hyperion Real Estate Test",
+          company: "Hyperion Luxury Living",
+        },
+        bug: {
+          id: `test-${Date.now().toString().slice(-4)}`,
+          title: "Sample ArchViz Test Bug Notification",
+          description: "This is a live test notification verifying that the automated bug email dispatcher is properly connected and functioning for Sight Portal.",
+          severity: "High",
+          status: "Open",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          activities: [
+            {
+              id: "act-test",
+              timestamp: new Date().toISOString(),
+              message: "System self-test executed by administrator.",
+              user: "Sight Portal QA Automation",
+            }
+          ]
+        },
+        adminEmails: [recipient],
+        appUrl: currentAppUrl
+      };
+
+      const result = await sendBugNotificationEmail(testPayload);
+      return res.json({
+        ...result,
+        test: true,
+        message: `Test email successfully dispatched to ${recipient}`,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || "Test email dispatch failed" });
+    }
+  });
+
+  // Endpoint to fetch email audit history
+  app.get("/api/notify-audit-history", (req, res) => {
+    return res.json({
+      history: getEmailAuditHistory(),
+      defaultAdminEmail: DEFAULT_ADMIN_EMAIL,
+    });
+  });
+
+  // Endpoint to inspect notification configuration
+  app.get("/api/notify-config", (req, res) => {
+    return res.json({
+      adminEmail: DEFAULT_ADMIN_EMAIL,
+      hasSmtp: Boolean(process.env.SMTP_HOST && process.env.SMTP_USER),
+      hasResend: Boolean(process.env.RESEND_API_KEY),
+      mode: process.env.SMTP_HOST ? "smtp" : (process.env.RESEND_API_KEY ? "resend" : "test/ethereal"),
     });
   });
 

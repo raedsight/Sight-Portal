@@ -31,12 +31,16 @@ import {
   Lock,
   Copy,
   Check,
-  Save
+  Save,
+  Mail,
+  Bug,
+  Send
 } from "lucide-react";
-import { Client, Log, BgStyleType, ThemePreset } from "../types";
+import { Client, Log, BgStyleType, ThemePreset, BugIssue } from "../types";
 import { SPREADSHEET_TEMPLATES } from "../data";
 import { UserProfile, syncThemePresets, saveThemePreset, deleteThemePreset } from "../firebase";
 import ThemePresets from "./ThemePresets";
+import { sendTestBugEmail, getNotificationAuditHistory, getNotificationConfig } from "../services/bugNotificationService";
 
 interface AdminConsoleProps {
   clients: Client[];
@@ -76,7 +80,15 @@ export default function AdminConsole({
   databaseId,
 }: AdminConsoleProps) {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"portals" | "users" | "themes">("portals");
+  const [activeTab, setActiveTab] = useState<"portals" | "users" | "themes" | "notifications">("portals");
+
+  // Email Notification States
+  const [testEmailLoading, setTestEmailLoading] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState<{ success: boolean; message: string; previewUrl?: string } | null>(null);
+  const [emailAuditLogs, setEmailAuditLogs] = useState<any[]>([]);
+  const [loadingEmailLogs, setLoadingEmailLogs] = useState(false);
+  const [emailConfig, setEmailConfig] = useState<{ adminEmail: string; hasSmtp: boolean; hasResend: boolean; mode: string } | null>(null);
+  const [customTestEmail, setCustomTestEmail] = useState("");
 
   // Form & Search States
   const [showAddForm, setShowAddForm] = useState(false);
@@ -247,6 +259,47 @@ export default function AdminConsole({
     u.uid.toLowerCase().includes(userSearchQuery.toLowerCase())
   );
 
+  const allTrackedBugs = clients.flatMap(c => (c.bugs || []).map(b => ({ ...b, client: c })));
+
+  useEffect(() => {
+    if (activeTab === "notifications") {
+      setLoadingEmailLogs(true);
+      Promise.all([
+        getNotificationAuditHistory(),
+        getNotificationConfig(),
+      ]).then(([auditData, configData]) => {
+        setEmailAuditLogs(auditData.history || []);
+        setEmailConfig(configData);
+      }).catch(err => {
+        console.warn("Failed to load email notification details:", err);
+      }).finally(() => {
+        setLoadingEmailLogs(false);
+      });
+    }
+  }, [activeTab]);
+
+  const handleSendTestEmail = async () => {
+    setTestEmailLoading(true);
+    setTestEmailResult(null);
+    try {
+      const res = await sendTestBugEmail(customTestEmail || undefined);
+      setTestEmailResult({
+        success: true,
+        message: res.message || "Test notification email dispatched successfully to admin!",
+        previewUrl: res.previewUrl,
+      });
+      const audit = await getNotificationAuditHistory();
+      setEmailAuditLogs(audit.history || []);
+    } catch (err: any) {
+      setTestEmailResult({
+        success: false,
+        message: err.message || "Failed to dispatch test notification email.",
+      });
+    } finally {
+      setTestEmailLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-8" id="admin-main-view">
       
@@ -325,6 +378,22 @@ export default function AdminConsole({
             <span className="px-1.5 py-0.5 text-[9px] bg-amber-500/20 text-amber-300 rounded-full font-sans font-bold">
               {themePresets.length}
             </span>
+          </button>
+          <button
+            onClick={() => setActiveTab("notifications")}
+            className={`px-4 py-2 text-xs font-mono uppercase tracking-wider font-bold transition border-b-2 -mb-[2px] cursor-pointer flex items-center gap-1.5 ${
+              activeTab === "notifications"
+                ? "border-amber-500 text-amber-400"
+                : "border-transparent text-gray-500 hover:text-gray-300"
+            }`}
+          >
+            <Mail className="h-3.5 w-3.5" />
+            Email & Bug Alerts
+            {clients.flatMap(c => c.bugs || []).filter(b => b.status === "Open" || b.status === "In Progress").length > 0 && (
+              <span className="px-1.5 py-0.5 text-[9px] bg-red-500 text-white rounded-full font-sans font-bold">
+                {clients.flatMap(c => c.bugs || []).filter(b => b.status === "Open" || b.status === "In Progress").length}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -1131,6 +1200,348 @@ export default function AdminConsole({
               </ul>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Notifications & Bug Alerts Tab */}
+      {activeTab === "notifications" && (
+        <div className="space-y-6 animate-fadeIn" id="notifications-panel">
+          
+          {/* Email Service Control Card */}
+          <div className="glass rounded-xl p-6 border border-white/10 shadow-2xl space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
+              <div>
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Mail className="h-5 w-5 text-amber-500" />
+                  Automated Admin Bug Notification Service
+                </h2>
+                <p className="text-xs text-gray-400 mt-1 font-sans">
+                  Whenever a client reports a new bug or updates any ticket status/comment, an automated notification email is immediately dispatched to the admin.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {emailConfig?.hasSmtp || emailConfig?.hasResend ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Live Inbox Delivery Active
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Sandbox Preview Mode
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Notice when in Sandbox Mode */}
+            {!(emailConfig?.hasSmtp || emailConfig?.hasResend) && (
+              <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-200 text-xs space-y-2">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <strong className="text-amber-300 font-bold block">Why didn't an email arrive in your Gmail inbox yet?</strong>
+                    <p className="text-gray-300 leading-relaxed text-[11.5px]">
+                      The application is currently running in <strong>Sandbox Mode</strong>. Every bug report and status update is properly formatted and recorded into test previews (which you can inspect via the links below), but <em>Google's public Gmail servers reject unauthenticated automated relays</em> without an outbound mail service.
+                    </p>
+                    <p className="text-gray-300 leading-relaxed text-[11.5px]">
+                      To receive notifications directly in your personal <strong>raed.sight@gmail.com</strong> inbox, configure either <strong>Resend</strong> (free, takes 30 seconds) or <strong>Gmail App Password</strong> in the AI Studio Settings menu.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1.5 border-t border-amber-500/20 text-[11px]">
+                  <div className="bg-black/40 p-2 rounded border border-white/5 space-y-1">
+                    <span className="text-amber-400 font-bold block">Option 1: Free Resend Key (Easiest)</span>
+                    <p className="text-gray-400">1. Sign up free with Google at <a href="https://resend.com" target="_blank" rel="noreferrer" className="underline text-amber-300">resend.com</a></p>
+                    <p className="text-gray-400">2. Generate an API key starting with <code className="text-white">re_...</code></p>
+                    <p className="text-gray-400">3. Set <code className="text-amber-300 font-mono">RESEND_API_KEY</code> in Settings.</p>
+                  </div>
+                  <div className="bg-black/40 p-2 rounded border border-white/5 space-y-1">
+                    <span className="text-amber-400 font-bold block">Option 2: Gmail App Password (No signup)</span>
+                    <p className="text-gray-400">1. Open <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="underline text-amber-300">myaccount.google.com/apppasswords</a></p>
+                    <p className="text-gray-400">2. Generate a 16-character password named "Sight Portal".</p>
+                    <p className="text-gray-400">3. Set <code className="text-amber-300 font-mono">SMTP_HOST=smtp.gmail.com</code>, <code className="text-amber-300 font-mono">SMTP_PORT=465</code>, <code className="text-amber-300 font-mono">SMTP_USER=raed.sight@gmail.com</code>, <code className="text-amber-300 font-mono">SMTP_PASS=your-16-chars</code>.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Recipient and Transport Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-black/40 border border-white/10 rounded-lg p-4 space-y-1.5">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Designated Admin Recipient</span>
+                <div className="text-sm font-bold text-white font-mono flex items-center gap-2 select-all">
+                  <span>{emailConfig?.adminEmail || "raed.sight@gmail.com"}</span>
+                </div>
+                <span className="text-[10px] text-amber-400/80 block">Configured as primary recipient for all client bug reports & updates</span>
+              </div>
+
+              <div className="bg-black/40 border border-white/10 rounded-lg p-4 space-y-1.5">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Delivery Transport Mode</span>
+                <div className="text-sm font-bold text-white flex items-center gap-2">
+                  <span className="capitalize">{emailConfig?.hasSmtp ? "Live SMTP Relay" : emailConfig?.hasResend ? "Resend Direct API" : "Sandbox Ethereal Preview"}</span>
+                  {emailConfig?.hasSmtp && <span className="text-[10px] px-1.5 py-0.5 bg-blue-500/20 text-blue-300 rounded font-mono">SMTP</span>}
+                  {emailConfig?.hasResend && <span className="text-[10px] px-1.5 py-0.5 bg-purple-500/20 text-purple-300 rounded font-mono">Resend</span>}
+                </div>
+                <span className="text-[10px] text-gray-400 block">
+                  {emailConfig?.hasSmtp || emailConfig?.hasResend ? "Delivering real emails to inbox" : "Capturing into test inspector"}
+                </span>
+              </div>
+
+              <div className="bg-black/40 border border-white/10 rounded-lg p-4 space-y-1.5">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Total Dispatched Alerts</span>
+                <div className="text-sm font-bold text-amber-400 font-mono">
+                  {emailAuditLogs.length} notifications logged
+                </div>
+                <span className="text-[10px] text-gray-400 block">Audit logs stored with web preview URLs</span>
+              </div>
+            </div>
+
+            {/* Send Live Test Email to Admin */}
+            <div className="p-4 rounded-lg bg-white/5 border border-white/10 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <Send className="h-3.5 w-3.5 text-amber-400" />
+                    Verify Email Delivery Pipeline
+                  </h3>
+                  <p className="text-[11px] text-gray-400 mt-0.5 font-sans">
+                    Send a test bug notification to verify that the email dispatcher reaches <strong>raed.sight@gmail.com</strong>.
+                  </p>
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    placeholder="Custom recipient (optional)"
+                    value={customTestEmail}
+                    onChange={(e) => setCustomTestEmail(e.target.value)}
+                    className="px-2.5 py-1.5 bg-black/60 border border-white/10 rounded text-xs text-white placeholder-gray-500 focus:outline-none focus:border-amber-500 w-52 font-mono"
+                  />
+                  <button
+                    onClick={handleSendTestEmail}
+                    disabled={testEmailLoading}
+                    className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-bold text-xs rounded cursor-pointer transition flex items-center gap-1.5 shrink-0"
+                  >
+                    <Mail className="h-3.5 w-3.5" />
+                    {testEmailLoading ? "Dispatching..." : "Send Test Email"}
+                  </button>
+                </div>
+              </div>
+
+              {testEmailResult && (
+                <div className={`p-3 rounded text-xs border ${
+                  testEmailResult.success 
+                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                    : "bg-red-500/10 border-red-500/30 text-red-300"
+                }`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span>{testEmailResult.message}</span>
+                    {testEmailResult.previewUrl && (
+                      <a
+                        href={testEmailResult.previewUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 font-bold text-amber-400 hover:text-amber-300 underline shrink-0"
+                      >
+                        Inspect HTML Email in Web Preview &rarr;
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Cross-Client Bug Tracker Central Monitor */}
+          <div className="glass rounded-xl p-6 border border-white/10 shadow-2xl space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
+              <div>
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <Bug className="h-4 w-4 text-amber-500" />
+                  Cross-Client QA Bug Monitor ({allTrackedBugs.length})
+                </h2>
+                <p className="text-xs text-gray-400 mt-0.5 font-sans">
+                  All active and historical bug issues reported across client staging portals.
+                </p>
+              </div>
+
+              <div className="flex gap-2 text-xs font-mono">
+                <span className="px-2.5 py-1 rounded bg-red-500/20 text-red-300 border border-red-500/30 font-bold">
+                  {allTrackedBugs.filter(b => b.status === "Open").length} Open
+                </span>
+                <span className="px-2.5 py-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+                  {allTrackedBugs.filter(b => b.status === "In Progress").length} In Progress
+                </span>
+                <span className="px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                  {allTrackedBugs.filter(b => b.status === "Resolved").length} Resolved
+                </span>
+              </div>
+            </div>
+
+            {allTrackedBugs.length === 0 ? (
+              <div className="py-12 text-center text-gray-500">
+                <Bug className="h-8 w-8 text-gray-700 mx-auto mb-2" />
+                No bugs have been filed by any clients yet.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs font-sans border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/10 text-gray-500 uppercase text-[10px] tracking-wider font-mono">
+                      <th className="py-2.5 px-3">Ticket ID</th>
+                      <th className="py-2.5 px-3">Client Portal</th>
+                      <th className="py-2.5 px-3">Bug Title & Summary</th>
+                      <th className="py-2.5 px-3">Severity</th>
+                      <th className="py-2.5 px-3">Status</th>
+                      <th className="py-2.5 px-3">Reported</th>
+                      <th className="py-2.5 px-3 text-right">Portal Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {allTrackedBugs.map((bug) => (
+                      <tr key={bug.id} className="hover:bg-white/5 transition-colors">
+                        <td className="py-3 px-3 font-mono text-[11px] text-blue-400 font-bold">
+                          #{bug.id.slice(-6)}
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="text-white font-semibold block">{bug.client.company}</span>
+                          <span className="text-[10px] text-gray-500 font-mono block">{bug.client.id}</span>
+                        </td>
+                        <td className="py-3 px-3 max-w-xs">
+                          <span className="text-gray-200 font-medium block truncate">{bug.title}</span>
+                          <span className="text-[10px] text-gray-400 block truncate">{bug.description}</span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                            bug.severity === "Critical" ? "bg-red-500/20 text-red-300 border border-red-500/40" :
+                            bug.severity === "High" ? "bg-orange-500/20 text-orange-300 border border-orange-500/40" :
+                            bug.severity === "Medium" ? "bg-amber-500/20 text-amber-300 border border-amber-500/40" :
+                            "bg-slate-500/20 text-slate-300 border border-slate-500/40"
+                          }`}>
+                            {bug.severity}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                            bug.status === "Open" ? "bg-purple-500/20 text-purple-300" :
+                            bug.status === "In Progress" ? "bg-amber-500/20 text-amber-300" :
+                            bug.status === "Resolved" ? "bg-emerald-500/20 text-emerald-300" :
+                            "bg-gray-500/20 text-gray-400"
+                          }`}>
+                            {bug.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-[10px] text-gray-400 font-mono">
+                          {new Date(bug.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <button
+                            onClick={() => onSelectClientView(bug.client)}
+                            className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white font-mono text-[11px] rounded transition cursor-pointer"
+                          >
+                            Launch Portal &rarr;
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Email Notification Audit Trail */}
+          <div className="glass rounded-xl p-6 border border-white/10 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div>
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-amber-500" />
+                  Recent Email Dispatch Audit Logs
+                </h2>
+                <p className="text-xs text-gray-400 mt-0.5 font-sans">
+                  Real-time history of emails sent to <strong>raed.sight@gmail.com</strong> on bug report or update triggers.
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  setLoadingEmailLogs(true);
+                  getNotificationAuditHistory()
+                    .then(data => setEmailAuditLogs(data.history || []))
+                    .finally(() => setLoadingEmailLogs(false));
+                }}
+                disabled={loadingEmailLogs}
+                className="p-1.5 rounded hover:bg-white/10 text-gray-400 hover:text-white transition cursor-pointer"
+                title="Refresh Logs"
+              >
+                <RefreshCw className={`h-4 w-4 ${loadingEmailLogs ? "animate-spin text-amber-400" : ""}`} />
+              </button>
+            </div>
+
+            {emailAuditLogs.length === 0 ? (
+              <div className="py-8 text-center text-gray-500 text-xs font-sans">
+                No notification emails have been dispatched in this server session yet. File or update a bug in a client portal to trigger an automated notification.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs font-mono border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/10 text-gray-500 uppercase text-[10px] tracking-wider">
+                      <th className="py-2.5 px-3">Timestamp</th>
+                      <th className="py-2.5 px-3">Event Action</th>
+                      <th className="py-2.5 px-3">Recipient</th>
+                      <th className="py-2.5 px-3">Email Subject Line</th>
+                      <th className="py-2.5 px-3">Transport</th>
+                      <th className="py-2.5 px-3 text-right">Preview</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {emailAuditLogs.map((log) => (
+                      <tr key={log.id} className="hover:bg-white/5 transition-colors">
+                        <td className="py-2.5 px-3 text-gray-400 text-[10px]">
+                          {new Date(log.timestamp).toLocaleTimeString()}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-[9.5px] uppercase font-bold ${
+                            log.action === "created" ? "bg-red-500/20 text-red-300" : "bg-amber-500/20 text-amber-300"
+                          }`}>
+                            {log.action}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-gray-300 select-all">
+                          {log.recipient}
+                        </td>
+                        <td className="py-2.5 px-3 text-white max-w-xs truncate">
+                          {log.subject}
+                        </td>
+                        <td className="py-2.5 px-3 text-gray-400 capitalize text-[10px]">
+                          {log.mode}
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          {log.previewUrl ? (
+                            <a
+                              href={log.previewUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-amber-400 hover:text-amber-300 underline text-[10px] font-bold"
+                            >
+                              Inspect Email &rarr;
+                            </a>
+                          ) : (
+                            <span className="text-gray-600 text-[10px]">Delivered</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
         </div>
       )}
     </div>

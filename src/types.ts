@@ -42,6 +42,34 @@ export interface BugIssue {
   activities: BugActivity[];
 }
 
+export interface BugNotificationPayload {
+  action: "created" | "updated" | "commented";
+  client: {
+    id: string;
+    name: string;
+    company: string;
+  };
+  bug: BugIssue;
+  updateDetails?: {
+    user?: string;
+    message?: string;
+    previousStatus?: string;
+    newStatus?: string;
+  };
+  adminEmails?: string[];
+  appUrl?: string;
+}
+
+export interface BugNotificationResult {
+  success: boolean;
+  message: string;
+  recipient: string;
+  subject: string;
+  previewUrl?: string;
+  mode: "smtp" | "resend" | "ethereal" | "logged";
+  timestamp: string;
+}
+
 export type MediaCategory = "project" | "services" | "properties";
 
 export interface MediaResource {
