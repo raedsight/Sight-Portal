@@ -1,12 +1,12 @@
 {
-  "projectId": "gen-lang-client-0650989075",
-  "appId": "1:1093239403558:web:fcd2eaf665b304130362e7",
-  "apiKey": "AIzaSyAZ44pN66RQNAHQQrlBgRLmThBvO6-IV8I",
-  "authDomain": "gen-lang-client-0650989075.firebaseapp.com",
+  "projectId": "sight-portal-adc29",
+  "appId": "1:652369042640:web:b65adfe7c022cbbec292d5",
+  "apiKey": "AIzaSyA06_CxsLgoEf1suKIKszsWzIXaEKAdn3Q",
+  "authDomain": "sight-portal-adc29.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-sightportal-2d45d543-8907-448c-b944-988fea3d6185",
-  "storageBucket": "gen-lang-client-0650989075.firebasestorage.app",
-  "messagingSenderId": "1093239403558",
+  "storageBucket": "sight-portal-adc29.firebasestorage.app",
+  "messagingSenderId": "652369042640",
   "measurementId": "",
-  "oAuthClientId": "1093239403558-e3t0feerk04bvspon1g1qkt1pnh6rlt7.apps.googleusercontent.com",
+  "oAuthClientId": "652369042640-0010sie04mkt8n0kbnqnkbtm22b5ch5n.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

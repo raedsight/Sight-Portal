@@ -426,6 +426,25 @@ export async function clearAllLogs(): Promise<void> {
   }
 }
 
+export async function fetchLogsFromServer(): Promise<Log[]> {
+  try {
+    const q = query(collection(db, "logs"), orderBy("timestamp", "desc"), limit(100));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => d.data() as Log);
+  } catch (err) {
+    console.warn("[Firestore] fetchLogsFromServer error notice:", err);
+    try {
+      const snap = await getDocs(collection(db, "logs"));
+      const logs = snap.docs.map(d => d.data() as Log);
+      logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      return logs;
+    } catch (fallbackErr) {
+      handleFirestoreError(fallbackErr, OperationType.LIST, "logs");
+      return [];
+    }
+  }
+}
+
 // Interactive Google Account Connection (requires Sheets + Drive scopes)
 export async function triggerGoogleAuthPopup(): Promise<{ user: User; accessToken: string }> {
   try {

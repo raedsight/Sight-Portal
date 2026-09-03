@@ -22,6 +22,7 @@ import {
   triggerGoogleAuthPopup,
   triggerGoogleLogin,
   fetchClientsFromServer,
+  fetchLogsFromServer,
   purgeDefaultSampleClients,
   configuredDatabaseId
 } from "./firebase";
@@ -71,9 +72,17 @@ export default function App() {
     setIsSyncingDb(true);
     setSyncDbStatus(`Querying Firestore (${configuredDatabaseId})...`);
     try {
-      const serverClients = await fetchClientsFromServer();
+      const [serverClients, serverUsers, serverLogs] = await Promise.all([
+        fetchClientsFromServer(),
+        fetchAllUserProfiles(),
+        fetchLogsFromServer(),
+      ]);
       setClients(serverClients);
-      setSyncDbStatus(`Synced ${serverClients.length} portal(s) directly from Firestore.`);
+      setUserProfilesList(serverUsers);
+      if (serverLogs && serverLogs.length > 0) {
+        setLogs(serverLogs);
+      }
+      setSyncDbStatus(`Synchronized database: ${serverClients.length} client(s), ${serverUsers.length} user(s), ${serverLogs.length} log(s).`);
       setTimeout(() => setSyncDbStatus(null), 5000);
     } catch (err: any) {
       setSyncDbStatus(`Sync failed: ${err?.message || "Check network/permissions"}`);
