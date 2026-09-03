@@ -509,7 +509,19 @@ void USightPortalHUDWidget::TriggerGalleryAction()
         UUserWidget* CreatedWidget = CreateWidget<UUserWidget>(GetOwningPlayer(), GalleryWidgetClass);
         if (CreatedWidget)
         {
+            CreatedWidget->SetVisibility(ESlateVisibility::Visible);
             CreatedWidget->AddToViewport(20);
+
+            if (APlayerController* PC = GetOwningPlayer())
+            {
+                PC->bShowMouseCursor = true;
+                PC->bEnableClickEvents = true;
+                PC->bEnableMouseOverEvents = true;
+                FInputModeGameAndUI InputMode;
+                InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+                InputMode.SetHideCursorDuringCapture(false);
+                PC->SetInputMode(InputMode);
+            }
         }
     }
 }
@@ -528,7 +540,19 @@ void USightPortalHUDWidget::TriggerServicesAction()
         UUserWidget* CreatedWidget = CreateWidget<UUserWidget>(GetOwningPlayer(), ServicesWidgetClass);
         if (CreatedWidget)
         {
+            CreatedWidget->SetVisibility(ESlateVisibility::Visible);
             CreatedWidget->AddToViewport(20);
+
+            if (APlayerController* PC = GetOwningPlayer())
+            {
+                PC->bShowMouseCursor = true;
+                PC->bEnableClickEvents = true;
+                PC->bEnableMouseOverEvents = true;
+                FInputModeGameAndUI InputMode;
+                InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+                InputMode.SetHideCursorDuringCapture(false);
+                PC->SetInputMode(InputMode);
+            }
         }
     }
 }
@@ -547,7 +571,19 @@ void USightPortalHUDWidget::TriggerUnitSearchAction()
         UUserWidget* CreatedWidget = CreateWidget<UUserWidget>(GetOwningPlayer(), UnitSearchWidgetClass);
         if (CreatedWidget)
         {
+            CreatedWidget->SetVisibility(ESlateVisibility::Visible);
             CreatedWidget->AddToViewport(20);
+
+            if (APlayerController* PC = GetOwningPlayer())
+            {
+                PC->bShowMouseCursor = true;
+                PC->bEnableClickEvents = true;
+                PC->bEnableMouseOverEvents = true;
+                FInputModeGameAndUI InputMode;
+                InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+                InputMode.SetHideCursorDuringCapture(false);
+                PC->SetInputMode(InputMode);
+            }
         }
     }
 }

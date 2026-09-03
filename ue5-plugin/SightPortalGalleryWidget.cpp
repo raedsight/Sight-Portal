@@ -23,6 +23,14 @@ void USightPortalGalleryCardWidget::ResolveUnboundWidgets()
         if (!CardButton) CardButton = Cast<UButton>(GetWidgetFromName(FName(TEXT("Btn_Card"))));
         if (!CardButton) CardButton = Cast<UButton>(GetWidgetFromName(FName(TEXT("ImageButton"))));
         if (!CardButton) CardButton = Cast<UButton>(GetWidgetFromName(FName(TEXT("Button_Image"))));
+        if (!CardButton) CardButton = Cast<UButton>(GetWidgetFromName(FName(TEXT("Button"))));
+        if (!CardButton && WidgetTree)
+        {
+            WidgetTree->ForEachWidget([this](UWidget* Widget)
+            {
+                if (!CardButton) CardButton = Cast<UButton>(Widget);
+            });
+        }
     }
 
     if (!CardImage)
@@ -32,6 +40,13 @@ void USightPortalGalleryCardWidget::ResolveUnboundWidgets()
         if (!CardImage) CardImage = Cast<UImage>(GetWidgetFromName(FName(TEXT("Img_Card"))));
         if (!CardImage) CardImage = Cast<UImage>(GetWidgetFromName(FName(TEXT("MainImage"))));
         if (!CardImage) CardImage = Cast<UImage>(GetWidgetFromName(FName(TEXT("Image"))));
+        if (!CardImage && WidgetTree)
+        {
+            WidgetTree->ForEachWidget([this](UWidget* Widget)
+            {
+                if (!CardImage) CardImage = Cast<UImage>(Widget);
+            });
+        }
     }
 
     if (!ReflectionImage)
@@ -203,12 +218,21 @@ void USightPortalGalleryWidget::ResolveUnboundWidgets()
         if (!CarouselCanvas) CarouselCanvas = Cast<UCanvasPanel>(GetWidgetFromName(FName(TEXT("CardsCanvas"))));
         if (!CarouselCanvas) CarouselCanvas = Cast<UCanvasPanel>(GetWidgetFromName(FName(TEXT("CarouselBox"))));
         if (!CarouselCanvas) CarouselCanvas = Cast<UCanvasPanel>(GetWidgetFromName(FName(TEXT("MainCanvas"))));
+        if (!CarouselCanvas && WidgetTree)
+        {
+            WidgetTree->ForEachWidget([this](UWidget* Widget)
+            {
+                if (!CarouselCanvas) CarouselCanvas = Cast<UCanvasPanel>(Widget);
+            });
+        }
     }
 }
 
 void USightPortalGalleryWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+
+    SetVisibility(ESlateVisibility::Visible);
 
     ResolveUnboundWidgets();
 
@@ -263,11 +287,34 @@ void USightPortalGalleryWidget::NativeTick(const FGeometry& MyGeometry, float In
 
 void USightPortalGalleryWidget::RebuildCarousel()
 {
-    CardWidgets.Empty();
+    if (!CarouselCanvas)
+    {
+        ResolveUnboundWidgets();
+    }
 
     if (!CarouselCanvas) return;
 
-    CarouselCanvas->ClearChildren();
+    // Safely remove only previously generated card widgets so we don't delete buttons/headers
+    for (USightPortalGalleryCardWidget* OldCard : CardWidgets)
+    {
+        if (OldCard && IsValid(OldCard))
+        {
+            CarouselCanvas->RemoveChild(OldCard);
+        }
+    }
+    CardWidgets.Empty();
+
+    if (GalleryItems.Num() == 0 && GalleryTextures.Num() > 0)
+    {
+        for (int32 i = 0; i < GalleryTextures.Num(); ++i)
+        {
+            if (GalleryTextures[i])
+            {
+                FString ItemTitle = FString::Printf(TEXT("Perspective View %d"), i + 1);
+                GalleryItems.Add(FSightPortalGalleryItem(GalleryTextures[i], ItemTitle));
+            }
+        }
+    }
 
     if (GalleryItems.Num() == 0) return;
 
@@ -279,6 +326,7 @@ void USightPortalGalleryWidget::RebuildCarousel()
         USightPortalGalleryCardWidget* NewCard = CreateWidget<USightPortalGalleryCardWidget>(this, ClassToSpawn);
         if (NewCard)
         {
+            NewCard->SetVisibility(ESlateVisibility::Visible);
             NewCard->SetupCard(i, GalleryItems[i].Texture, this);
 
             UCanvasPanelSlot* CanvasSlot = CarouselCanvas->AddChildToCanvas(NewCard);
