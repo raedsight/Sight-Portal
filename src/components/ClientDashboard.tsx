@@ -521,7 +521,7 @@ export default function ClientDashboard({
     return () => unsubscribe();
   }, []);
 
-  const handleGoogleLogin = async () => {
+  const handleGoogleLogin = async (): Promise<string | null> => {
     try {
       const result = await googleSignIn();
       if (result) {
@@ -532,12 +532,15 @@ export default function ClientDashboard({
           clientName: client.name,
           type: "config_change",
           status: "success",
-          details: `Connected client-side Google Sheets service for user: ${result.user.email}`,
+          details: `Connected client-side Google Sheets & Drive service for user: ${result.user.email}`,
         });
+        return result.accessToken;
       }
+      return null;
     } catch (err: any) {
       console.error("[Google Login Error]", err);
       alert(`Sign-in failed: ${err.message || "Unknown authentication error"}`);
+      return null;
     }
   };
 
@@ -2780,6 +2783,9 @@ export default function ClientDashboard({
             sheetData={sheetData}
             onUpdateClient={onUpdateClient}
             onRecordLog={onRecordLog}
+            googleAccessToken={googleAccessToken}
+            onTriggerGoogleSignIn={handleGoogleLogin}
+            clientEmail={currentUser?.email}
           />
         )}
 

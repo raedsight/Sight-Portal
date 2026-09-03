@@ -7,9 +7,9 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // JSON parsing and large coordinate matrices helper setting
-  app.use(express.json({ limit: "15mb" }));
-  app.use(express.urlencoded({ extended: true, limit: "15mb" }));
+  // JSON parsing and large coordinate matrices and image base64 payloads helper setting
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
   // Shared server-side state repository holding compiled client-specific real-estate attributes
   const clientsData: Record<string, {
@@ -237,6 +237,283 @@ async function startServer() {
         attributes_matrix: data.attributes_matrix
       }
     });
+  });
+
+  // -------------------------------------------------------------
+  // GOOGLE DRIVE FULL-STACK API PROXY ENDPOINTS
+  // Proxies client-side requests server-to-server to avoid browser CORS and iframe sandbox restrictions
+  // -------------------------------------------------------------
+  const ROOT_DRIVE_FOLDER_ID = "13fE2R_-qxOMlT2U7tY1NtK36xpwahMkg";
+
+  // Helper to extract bearer token from request
+  const getAuthToken = (req: express.Request): string | null => {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      return authHeader.slice(7).trim();
+    }
+    return null;
+  };
+
+  // Endpoint: Provision or locate client dedicated folder
+  app.post("/api/drive/provision-folder", async (req, res) => {
+    const token = getAuthToken(req);
+    if (!token) {
+      return res.status(401).json({ error: "Google OAuth access token missing from Authorization header" });
+    }
+
+    const { client } = req.body;
+    if (!client) {
+      return res.status(400).json({ error: "Missing client parameter in request body" });
+    }
+
+    const targetFolderName = `${client.company || client.name} (${client.id})`;
+
+    try {
+      // 1. Check if existing folder ID is valid
+      if (client.driveFolderId) {
+        try {
+          const checkRes = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${client.driveFolderId}?fields=id,name,webViewLink,trashed`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (checkRes.ok) {
+            const fileData = (await checkRes.json()) as any;
+            if (!fileData.trashed) {
+              return res.json({
+                folderId: fileData.id,
+                folderUrl: fileData.webViewLink || `https://drive.google.com/drive/folders/${fileData.id}`,
+                folderName: fileData.name || targetFolderName,
+              });
+            }
+          }
+        } catch (checkErr) {
+          console.warn("[Drive Proxy] Existing folder check notice:", checkErr);
+        }
+      }
+
+      // 2. Query shared root folder
+      const query = encodeURIComponent(
+        `'${ROOT_DRIVE_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
+      );
+      const listRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,webViewLink)&pageSize=100`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (listRes.ok) {
+        const listData = (await listRes.json()) as any;
+        const existingFolder = (listData.files || []).find(
+          (f: any) =>
+            f.name.toLowerCase() === targetFolderName.toLowerCase() ||
+            f.name.toLowerCase().includes(`(${client.id.toLowerCase()})`) ||
+            (client.driveFolderId && f.id === client.driveFolderId)
+        );
+
+        if (existingFolder) {
+          return res.json({
+            folderId: existingFolder.id,
+            folderUrl: existingFolder.webViewLink || `https://drive.google.com/drive/folders/${existingFolder.id}`,
+            folderName: existingFolder.name,
+          });
+        }
+      }
+
+      // 3. Create dedicated folder inside root directory
+      const createRes = await fetch("https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: targetFolderName,
+          mimeType: "application/vnd.google-apps.folder",
+          parents: [ROOT_DRIVE_FOLDER_ID],
+          description: `Dedicated media repository for client ${client.name} (${client.company})`,
+        }),
+      });
+
+      if (!createRes.ok) {
+        const errText = await createRes.text();
+        return res.status(createRes.status).json({ error: `Failed to create folder in Google Drive: ${errText}` });
+      }
+
+      const newFolder = (await createRes.json()) as any;
+      return res.json({
+        folderId: newFolder.id,
+        folderUrl: newFolder.webViewLink || `https://drive.google.com/drive/folders/${newFolder.id}`,
+        folderName: newFolder.name,
+      });
+    } catch (err: any) {
+      console.error("[Drive Proxy Provision Error]", err);
+      return res.status(500).json({ error: err.message || "Internal server error provisioning Google Drive folder" });
+    }
+  });
+
+  // Endpoint: Upload file directly to Google Drive
+  app.post("/api/drive/upload", async (req, res) => {
+    const token = getAuthToken(req);
+    if (!token) {
+      return res.status(401).json({ error: "Google OAuth access token missing from Authorization header" });
+    }
+
+    const { fileName, mimeType, dataUrl, base64Data, url, folderId, description } = req.body;
+
+    if (!fileName) {
+      return res.status(400).json({ error: "Missing required 'fileName'" });
+    }
+
+    try {
+      let fileBuffer: Buffer | null = null;
+      let effectiveMime = mimeType || "image/jpeg";
+
+      if (base64Data) {
+        fileBuffer = Buffer.from(base64Data, "base64");
+      } else if (dataUrl && dataUrl.startsWith("data:")) {
+        const commaIdx = dataUrl.indexOf(",");
+        if (commaIdx !== -1) {
+          const header = dataUrl.substring(0, commaIdx);
+          const mimeMatch = header.match(/:(.*?);/);
+          if (mimeMatch) effectiveMime = mimeMatch[1];
+          fileBuffer = Buffer.from(dataUrl.substring(commaIdx + 1), "base64");
+        }
+      } else if (url && (url.startsWith("http://") || url.startsWith("https://"))) {
+        const imgRes = await fetch(url);
+        if (imgRes.ok) {
+          fileBuffer = Buffer.from(await imgRes.arrayBuffer());
+          const cType = imgRes.headers.get("content-type");
+          if (cType) effectiveMime = cType.split(";")[0];
+        } else {
+          return res.status(400).json({ error: `Could not fetch remote media from URL: ${url}` });
+        }
+      }
+
+      if (!fileBuffer || fileBuffer.length === 0) {
+        return res.status(400).json({ error: "No valid image payload provided (base64Data, dataUrl, or URL required)" });
+      }
+
+      const parentFolder = folderId || ROOT_DRIVE_FOLDER_ID;
+      const metadata = {
+        name: fileName,
+        parents: [parentFolder],
+        description: description || "Uploaded via Client Portal Media Center",
+      };
+
+      const boundary = `-------SightPortalUpload_${Date.now()}`;
+      const delimiter = `\r\n--${boundary}\r\n`;
+      const closeDelimiter = `\r\n--${boundary}--`;
+
+      const metadataPart = Buffer.from(
+        delimiter + "Content-Type: application/json; charset=UTF-8\r\n\r\n" + JSON.stringify(metadata) + "\r\n"
+      );
+      const fileHeader = Buffer.from(delimiter + `Content-Type: ${effectiveMime}\r\n\r\n`);
+      const closing = Buffer.from(closeDelimiter);
+
+      const multipartBody = Buffer.concat([metadataPart, fileHeader, fileBuffer, closing]);
+
+      const driveRes = await fetch(
+        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,thumbnailLink,webContentLink",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": `multipart/related; boundary=${boundary}`,
+            "Content-Length": String(multipartBody.length),
+          },
+          body: multipartBody,
+        }
+      );
+
+      if (!driveRes.ok) {
+        const errText = await driveRes.text();
+        console.error(`[Drive Proxy Upload Failed] HTTP ${driveRes.status}:`, errText);
+        return res.status(driveRes.status).json({
+          error: `Google Drive API error (${driveRes.status}): ${errText}`,
+        });
+      }
+
+      const data = (await driveRes.json()) as any;
+      return res.json({
+        fileId: data.id,
+        webViewLink: data.webViewLink,
+        thumbnailLink: data.thumbnailLink,
+        webContentLink: data.webContentLink,
+      });
+    } catch (err: any) {
+      console.error("[Drive Proxy Upload Error]", err);
+      return res.status(500).json({ error: err.message || "Failed to upload file to Google Drive" });
+    }
+  });
+
+  // Endpoint: Query folder files
+  app.get("/api/drive/files", async (req, res) => {
+    const token = getAuthToken(req);
+    if (!token) {
+      return res.status(401).json({ error: "Google OAuth access token missing from Authorization header" });
+    }
+
+    const folderId = req.query.folderId as string;
+    if (!folderId) {
+      return res.status(400).json({ error: "Missing required 'folderId' parameter" });
+    }
+
+    try {
+      const query = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
+      const listRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,mimeType,webViewLink,thumbnailLink,size,createdTime)&orderBy=createdTime desc&pageSize=100`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (!listRes.ok) {
+        const errText = await listRes.text();
+        return res.status(listRes.status).json({ error: `Google Drive API error: ${errText}` });
+      }
+
+      const data = (await listRes.json()) as any;
+      return res.json({ files: data.files || [] });
+    } catch (err: any) {
+      console.error("[Drive Proxy Files Error]", err);
+      return res.status(500).json({ error: err.message || "Failed to list Google Drive files" });
+    }
+  });
+
+  // Endpoint: Grant folder permissions to client email
+  app.post("/api/drive/share-folder", async (req, res) => {
+    const token = getAuthToken(req);
+    if (!token) {
+      return res.status(401).json({ error: "Google OAuth access token missing from Authorization header" });
+    }
+
+    const { folderId, clientEmail, role } = req.body;
+    if (!folderId || !clientEmail) {
+      return res.status(400).json({ error: "Missing required 'folderId' or 'clientEmail'" });
+    }
+
+    try {
+      const shareRes = await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}/permissions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          role: role || "reader",
+          type: "user",
+          emailAddress: clientEmail,
+        }),
+      });
+
+      if (!shareRes.ok) {
+        const errText = await shareRes.text();
+        console.warn(`[Drive Proxy Share Notice] HTTP ${shareRes.status}:`, errText);
+        return res.status(shareRes.status).json({ error: errText });
+      }
+
+      return res.json({ success: true });
+    } catch (err: any) {
+      console.warn("[Drive Proxy Share Error]", err);
+      return res.status(500).json({ error: err.message || "Failed to share Google Drive folder" });
+    }
   });
 
   // Attach Vite development server or production static distribution layer

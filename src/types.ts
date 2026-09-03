@@ -62,6 +62,9 @@ export interface MediaResource {
   serviceName?: string;   // For 'services' category: service building name
   tags?: string[];
   uploadedAt: string;     // ISO timestamp
+  driveFileId?: string;   // Google Drive File ID
+  driveWebViewLink?: string; // Direct Google Drive View Link
+  driveThumbnailLink?: string; // Google Drive thumbnail
 }
 
 export interface Client {
@@ -77,6 +80,8 @@ export interface Client {
   sheetData?: SpreadsheetData; // Live property portfolio spreadsheet rows and columns saved in Firebase
   bugs?: BugIssue[];     // Optional list of tracked bug issues
   mediaResources?: MediaResource[]; // Categorized media resources (Project, Services, Properties)
+  driveFolderId?: string; // Dedicated Google Drive folder ID under shared root
+  driveFolderUrl?: string; // Direct link to client's dedicated Google Drive folder
 }
 
 export interface Log {

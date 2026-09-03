@@ -50,6 +50,11 @@ interface AdminConsoleProps {
   userProfiles: UserProfile[];
   onUpdateUserProfile: (profile: UserProfile) => void;
   onDeleteUserProfile: (uid: string) => void;
+  onForceSyncDatabase?: () => Promise<void>;
+  onPurgeDefaultClients?: () => Promise<void>;
+  isSyncing?: boolean;
+  syncStatus?: string | null;
+  databaseId?: string;
 }
 
 export default function AdminConsole({
@@ -64,6 +69,11 @@ export default function AdminConsole({
   userProfiles,
   onUpdateUserProfile,
   onDeleteUserProfile,
+  onForceSyncDatabase,
+  onPurgeDefaultClients,
+  isSyncing = false,
+  syncStatus = null,
+  databaseId,
 }: AdminConsoleProps) {
   // Navigation tabs
   const [activeTab, setActiveTab] = useState<"portals" | "users" | "themes">("portals");
@@ -696,21 +706,97 @@ export default function AdminConsole({
                   <span className="text-[var(--accent)] font-bold">{themePresets.length.toString().padStart(2, "0")}</span>
                 </div>
               </div>
+              <div className="pt-3 border-t border-[var(--ink-faint)]">
+                <div className="label">Database Sync</div>
+                <div className="mt-2 text-[10px] font-mono text-emerald-400 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
+                  <span className="truncate" title={databaseId || "ai-studio-sightportal-2d45d543-8907-448c-b944-988fea3d6185"}>
+                    {databaseId ? (databaseId.length > 20 ? databaseId.substring(0, 18) + "..." : databaseId) : "Custom DB"}
+                  </span>
+                </div>
+              </div>
             </div>
           </aside>
 
           {/* Pane 2: Client Portals Main Center */}
           <main className="lg:col-span-6 pane">
-            <div className="flex justify-between items-baseline mb-8">
-              <div className="h-display text-2xl text-[var(--ink)]">Client Portals</div>
-              <div className="label">Count: [{filteredClients.length.toString().padStart(2, "0")}]</div>
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+              <div>
+                <div className="h-display text-2xl text-[var(--ink)]">Client Portals</div>
+                <div className="text-[11px] font-mono text-[var(--ink-muted)] mt-0.5">
+                  Firestore: <span className="text-[var(--accent)]">{databaseId || "ai-studio-sightportal-2d45d543-8907-448c-b944-988fea3d6185"}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {onForceSyncDatabase && (
+                  <button
+                    id="force-sync-database-btn"
+                    onClick={onForceSyncDatabase}
+                    disabled={isSyncing}
+                    className="btn-ghost flex items-center gap-1.5 text-xs py-1.5 px-3 border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent-soft)] transition"
+                    title="Bypass local cache and query Firestore database directly"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin text-amber-400" : ""}`} />
+                    <span>{isSyncing ? "Syncing..." : "Force Sync DB"}</span>
+                  </button>
+                )}
+                <div className="label">Count: [{filteredClients.length.toString().padStart(2, "0")}]</div>
+              </div>
             </div>
+
+            {/* Sync Status Banner */}
+            {syncStatus && (
+              <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded text-xs font-mono text-amber-300 flex items-center gap-2">
+                <Database className="h-4 w-4 text-amber-400 shrink-0" />
+                <span>{syncStatus}</span>
+              </div>
+            )}
+
+            {/* Default sample clients detection & purge action */}
+            {clients.some(c => ["neon-nebula", "overlord-stadium", "overlord-egames", "hyperion-vis"].includes(c.id)) && onPurgeDefaultClients && (
+              <div className="mb-6 p-3 bg-amber-950/30 border border-amber-500/40 rounded-lg flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-amber-200">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+                  <span>
+                    <strong>Default template clients detected</strong> (Neon Nebula, Overlord, Hyperion). Click below to purge them and show only your database records.
+                  </span>
+                </div>
+                <button
+                  id="purge-default-clients-btn"
+                  onClick={onPurgeDefaultClients}
+                  disabled={isSyncing}
+                  className="btn-ghost text-rose-400 border-rose-500/40 hover:bg-rose-500/20 text-xs py-1 px-3 whitespace-nowrap ml-auto"
+                >
+                  Purge Template Clients
+                </button>
+              </div>
+            )}
 
             {filteredClients.length === 0 ? (
               <div className="text-center py-16 border border-dashed border-[var(--ink-faint)] rounded-lg bg-black/20">
                 <Building2 className="h-10 w-10 text-[var(--ink-muted)] mx-auto mb-3" />
-                <span className="text-[var(--ink-muted)] text-sm block font-sans">No Client Portals Match Filter</span>
-                <span className="text-[var(--ink-muted)] text-xs font-mono mt-1 block">Register a client to activate a live UE5 connection bridge</span>
+                <span className="text-[var(--ink-muted)] text-sm block font-sans">No Client Portals Found in Database</span>
+                <span className="text-[var(--ink-muted)] text-xs font-mono mt-1 block">
+                  Connected to {databaseId || "ai-studio-sightportal-2d45d543-8907-448c-b944-988fea3d6185"}.
+                </span>
+                <div className="mt-4 flex justify-center gap-3">
+                  {onForceSyncDatabase && (
+                    <button
+                      onClick={onForceSyncDatabase}
+                      disabled={isSyncing}
+                      className="btn-ghost text-xs py-1 px-3 text-[var(--accent)] border-[var(--accent)]"
+                    >
+                      <RefreshCw className={`h-3 w-3 inline mr-1 ${isSyncing ? "animate-spin" : ""}`} />
+                      Retry Sync
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowAddForm(true)}
+                    className="btn-primary text-xs py-1 px-3"
+                  >
+                    Register New Client
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="grid gap-4" id="clients-list">

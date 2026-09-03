@@ -14,6 +14,7 @@ import {
   doc, 
   getDoc, 
   getDocs, 
+  getDocsFromServer,
   setDoc, 
   query, 
   collection, 
@@ -27,6 +28,34 @@ import {
 import { Client, Log, ThemePreset } from "./types";
 import { DEFAULT_CLIENTS, DEFAULT_LOGS } from "./data";
 import firebaseConfig from "../firebase-applet-config.json";
+import { setCachedAccessToken } from "./firebaseAuth";
+
+// Initialize Firebase with Authentication & Firestore support using designated Database ID
+const app = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
+export const configuredDatabaseId: string = (firebaseConfig as Record<string, any>).firestoreDatabaseId || "(default)";
+export const db = configuredDatabaseId && configuredDatabaseId !== "(default)"
+  ? getFirestore(app, configuredDatabaseId)
+  : getFirestore(app);
+
+/**
+ * Recursively cleans objects to remove 'undefined' fields before passing them to Firestore.
+ * Firestore strictly rejects undefined field values with 'Unsupported field value: undefined'.
+ */
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === undefined) return null as any;
+  if (data === null || typeof data !== "object") return data;
+  if (Array.isArray(data)) {
+    return data.map((item) => sanitizeForFirestore(item)) as any;
+  }
+  const cleaned: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data as Record<string, any>)) {
+    if (value !== undefined) {
+      cleaned[key] = sanitizeForFirestore(value);
+    }
+  }
+  return cleaned as T;
+}
 
 // -------------------------------------------------------------
 // THEME PRESET OPERATIONS (REAL FIRESTORE)
@@ -49,7 +78,8 @@ export async function syncThemePresets(onUpdate: (presets: ThemePreset[]) => voi
 
 export async function saveThemePreset(preset: ThemePreset): Promise<void> {
   try {
-    await setDoc(doc(db, "themePresets", preset.id), preset, { merge: true });
+    const cleaned = sanitizeForFirestore(preset);
+    await setDoc(doc(db, "themePresets", preset.id), cleaned, { merge: true });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `themePresets/${preset.id}`);
   }
@@ -62,13 +92,6 @@ export async function deleteThemePreset(presetId: string): Promise<void> {
     handleFirestoreError(err, OperationType.DELETE, `themePresets/${presetId}`);
   }
 }
-
-// Initialize Firebase with Authentication & Firestore support
-const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== "(default)"
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-  : getFirestore(app);
 
 // 8-Pillar Error Handling conforming strictly to standard integration skills
 export enum OperationType {
@@ -98,8 +121,14 @@ export interface FirestoreErrorInfo {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errMsg = error instanceof Error ? error.message : String(error);
+  // Suppress verbose offline errors in dev mode to avoid cluttering UI logs
+  if (errMsg.includes("the client is offline") || errMsg.includes("offline")) {
+    console.warn(`[Firestore Offline: ${operationType} on ${path}]`);
+    return;
+  }
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errMsg,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -118,19 +147,6 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Ensure database connection is online on startup
-export async function validateDbConnection() {
-  try {
-    await getDocFromServer(doc(db, "test", "connection"));
-    console.log("[Firestore] Connection test verified.");
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("the client is offline")) {
-      console.error("Please check your Firebase configuration or network status.");
-    }
-  }
-}
-validateDbConnection();
-
 // User Role Definition
 export interface UserProfile {
   uid: string;
@@ -147,7 +163,12 @@ export async function fetchUserProfile(uid: string): Promise<UserProfile | null>
   try {
     const snap = await getDoc(doc(db, "users", uid));
     return snap.exists() ? (snap.data() as UserProfile) : null;
-  } catch (err) {
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    if (msg.includes("client is offline") || msg.includes("offline")) {
+      console.warn(`[Firestore] Profile lookup offline for user: ${uid}`);
+      return null;
+    }
     handleFirestoreError(err, OperationType.GET, `users/${uid}`);
     return null;
   }
@@ -155,7 +176,8 @@ export async function fetchUserProfile(uid: string): Promise<UserProfile | null>
 
 export async function saveUserProfile(profile: UserProfile): Promise<void> {
   try {
-    await setDoc(doc(db, "users", profile.uid), profile, { merge: true });
+    const cleaned = sanitizeForFirestore(profile);
+    await setDoc(doc(db, "users", profile.uid), cleaned, { merge: true });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `users/${profile.uid}`);
   }
@@ -184,14 +206,52 @@ export async function deleteUserProfile(uid: string): Promise<void> {
 // CLIENT OPERATIONS (REAL FIRESTORE)
 // -------------------------------------------------------------
 
+function normalizeClientDoc(id: string, rawData: any): Client {
+  const data = rawData || {};
+  return {
+    id: id,
+    name: data.name || id.replace(/[-_]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+    company: data.company || "Sight Real Estate & Production",
+    sheetId: data.sheetId || "1BxiMVs0XRA5nFMdKv1aM9ldm5i-YSgcbL1g6xGoS18A",
+    sheetTab: data.sheetTab || "MainSpawns",
+    ue5Endpoint: data.ue5Endpoint || "http://localhost:8008/remote/object/call",
+    webSocketEndpoint: data.webSocketEndpoint || `ws://127.0.0.1:8009/ws/${id}`,
+    branding: {
+      primaryColor: data.branding?.primaryColor || "#d97706",
+      accentColor: data.branding?.accentColor || "#f59e0b",
+      logoText: data.branding?.logoText || (data.name || id).toUpperCase(),
+      bgStyle: data.branding?.bgStyle || "dark",
+      fontFamily: data.branding?.fontFamily || "sans",
+      logoUrl: data.branding?.logoUrl || undefined,
+    },
+    updatedAt: data.updatedAt || new Date().toISOString(),
+    sheetData: data.sheetData,
+    bugs: data.bugs || [],
+    mediaResources: data.mediaResources || []
+  };
+}
+
 export async function syncClients(onUpdate: (clients: Client[]) => void): Promise<() => void> {
   try {
-    const q = query(collection(db, "clients"), orderBy("updatedAt", "desc"));
+    // Avoid orderBy in Firestore query so documents lacking updatedAt field are NOT dropped
+    const q = query(collection(db, "clients"));
     return onSnapshot(q, (snap) => {
-      const clients = snap.docs.map(d => d.data() as Client);
+      const clients = snap.docs.map(d => normalizeClientDoc(d.id, d.data()));
+      // Sort in-memory safely by updatedAt descending, fallback to name
+      clients.sort((a, b) => {
+        const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        if (timeB !== timeA) return timeB - timeA;
+        return (a.name || "").localeCompare(b.name || "");
+      });
       onUpdate(clients);
     }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, "clients");
+      console.warn("[Firestore] Sync clients error notice:", err);
+      try {
+        handleFirestoreError(err, OperationType.LIST, "clients");
+      } catch (e) {
+        // Handled to protect event loop
+      }
     });
   } catch (e) {
     console.error("Failed to attach clients listener:", e);
@@ -199,12 +259,80 @@ export async function syncClients(onUpdate: (clients: Client[]) => void): Promis
   }
 }
 
+/**
+ * Force fetch all clients directly from Firestore server, bypassing local offline cache
+ */
+export async function fetchClientsFromServer(): Promise<Client[]> {
+  try {
+    let clients: Client[] = [];
+    try {
+      const snap = await getDocsFromServer(collection(db, "clients"));
+      clients = snap.docs.map(d => normalizeClientDoc(d.id, d.data()));
+    } catch (serverErr) {
+      console.warn("[Firestore] Direct server read notice, trying fallback getDocs:", serverErr);
+      const snap = await getDocs(collection(db, "clients"));
+      clients = snap.docs.map(d => normalizeClientDoc(d.id, d.data()));
+    }
+
+    // Check alias collections if main collection is empty
+    if (clients.length === 0) {
+      const altCollections = ["clientPortals", "client_portals", "portals"];
+      for (const collName of altCollections) {
+        try {
+          const altSnap = await getDocs(collection(db, collName));
+          if (altSnap.docs.length > 0) {
+            console.log(`[Firestore] Discovered ${altSnap.docs.length} clients in alias collection '${collName}'`);
+            clients = altSnap.docs.map(d => normalizeClientDoc(d.id, d.data()));
+            break;
+          }
+        } catch (e) {
+          // ignore alias lookup
+        }
+      }
+    }
+
+    clients.sort((a, b) => {
+      const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      if (timeB !== timeA) return timeB - timeA;
+      return (a.name || "").localeCompare(b.name || "");
+    });
+
+    return clients;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, "clients");
+    return [];
+  }
+}
+
+/**
+ * Delete default sample clients if they were seeded into Firestore by mistake
+ */
+export async function purgeDefaultSampleClients(): Promise<number> {
+  const defaultSampleIds = ["neon-nebula", "overlord-stadium", "overlord-egames", "hyperion-vis"];
+  let purgedCount = 0;
+  for (const id of defaultSampleIds) {
+    try {
+      await deleteDoc(doc(db, "clients", id));
+      purgedCount++;
+    } catch (e) {
+      console.warn(`[Firestore] Note on deleting default client ${id}:`, e);
+    }
+  }
+  return purgedCount;
+}
+
 export async function syncSingleClient(clientId: string, onUpdate: (client: Client | null) => void): Promise<() => void> {
   try {
     return onSnapshot(doc(db, "clients", clientId), (snap) => {
       onUpdate(snap.exists() ? (snap.data() as Client) : null);
     }, (err) => {
-      handleFirestoreError(err, OperationType.GET, `clients/${clientId}`);
+      console.warn(`[Firestore] Sync client (${clientId}) error notice:`, err);
+      try {
+        handleFirestoreError(err, OperationType.GET, `clients/${clientId}`);
+      } catch (e) {
+        // Handled to protect event loop
+      }
     });
   } catch (e) {
     console.error("Failed to attach single client listener:", e);
@@ -214,7 +342,8 @@ export async function syncSingleClient(clientId: string, onUpdate: (client: Clie
 
 export async function createOrUpdateClient(client: Client): Promise<void> {
   try {
-    await setDoc(doc(db, "clients", client.id), client, { merge: true });
+    const cleaned = sanitizeForFirestore(client);
+    await setDoc(doc(db, "clients", client.id), cleaned, { merge: true });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `clients/${client.id}`);
   }
@@ -222,8 +351,9 @@ export async function createOrUpdateClient(client: Client): Promise<void> {
 
 export async function saveClientSheetData(clientId: string, sheetData: import("./types").SpreadsheetData): Promise<void> {
   try {
+    const cleaned = sanitizeForFirestore(sheetData);
     await setDoc(doc(db, "clients", clientId), { 
-      sheetData, 
+      sheetData: cleaned, 
       updatedAt: new Date().toISOString() 
     }, { merge: true });
   } catch (err) {
@@ -264,7 +394,12 @@ export async function syncLogs(onUpdate: (logs: Log[]) => void): Promise<() => v
       const logs = snap.docs.map(d => d.data() as Log);
       onUpdate(logs);
     }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, "logs");
+      console.warn("[Firestore] Sync logs error notice:", err);
+      try {
+        handleFirestoreError(err, OperationType.LIST, "logs");
+      } catch (e) {
+        // Handled to protect event loop
+      }
     });
   } catch (e) {
     console.error("Failed to attach logs listener:", e);
@@ -274,7 +409,8 @@ export async function syncLogs(onUpdate: (logs: Log[]) => void): Promise<() => v
 
 export async function writeLog(log: Log): Promise<void> {
   try {
-    await setDoc(doc(db, "logs", log.id), log);
+    const cleaned = sanitizeForFirestore(log);
+    await setDoc(doc(db, "logs", log.id), cleaned);
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `logs/${log.id}`);
   }
@@ -290,16 +426,19 @@ export async function clearAllLogs(): Promise<void> {
   }
 }
 
-// Interactive Google Account Connection (requires Sheets scope)
+// Interactive Google Account Connection (requires Sheets + Drive scopes)
 export async function triggerGoogleAuthPopup(): Promise<{ user: User; accessToken: string }> {
   try {
     const provider = new GoogleAuthProvider();
     provider.addScope("https://www.googleapis.com/auth/spreadsheets");
+    provider.addScope("https://www.googleapis.com/auth/drive");
+    provider.addScope("https://www.googleapis.com/auth/drive.file");
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
-      throw new Error("Missing Sheets API access token in verified Google response");
+      throw new Error("Missing Google API access token in verified Google response");
     }
+    setCachedAccessToken(credential.accessToken);
     return { user: result.user, accessToken: credential.accessToken };
   } catch (error: any) {
     console.error("[Google Auth Popup error]", error);
@@ -319,11 +458,18 @@ export async function triggerGoogleAuthPopup(): Promise<{ user: User; accessToke
   }
 }
 
-// Standard Google Sign-In for general authentication (no extra scopes)
+// Standard Google Sign-In for general authentication
 export async function triggerGoogleLogin(): Promise<User> {
   try {
     const provider = new GoogleAuthProvider();
+    provider.addScope("https://www.googleapis.com/auth/spreadsheets");
+    provider.addScope("https://www.googleapis.com/auth/drive");
+    provider.addScope("https://www.googleapis.com/auth/drive.file");
     const result = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (credential?.accessToken) {
+      setCachedAccessToken(credential.accessToken);
+    }
     return result.user;
   } catch (error: any) {
     console.error("[Google Login error]", error);
@@ -336,7 +482,7 @@ export async function triggerGoogleLogin(): Promise<User> {
       error.code === "auth/cancelled-popup-request"
     ) {
       throw new Error(
-        "Google Sign-In popup was blocked or interrupted by the iframe preview environment. Please click 'Open in New Tab' at the top, or use Email/Password login."
+        "Google Sign-In popup was blocked or interrupted by the iframe preview environment. Please click 'Open in New Tab' to sign in smoothly outside the sandbox."
       );
     }
     throw error;
