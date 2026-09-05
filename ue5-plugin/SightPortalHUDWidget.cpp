@@ -1,5 +1,7 @@
 #include "SightPortalHUDWidget.h"
 #include "SightPortalGalleryWidget.h"
+#include "SightPortalUnitSearchWidget.h"
+#include "SightPortalPlayerController.h"
 #include "Components/TextBlock.h"
 #include "Components/Slider.h"
 #include "Components/Button.h"
@@ -33,6 +35,10 @@ USightPortalHUDWidget::USightPortalHUDWidget(const FObjectInitializer& ObjectIni
     , bAutoCaptureStartLocationAsHome(true)
     , HomeTransitionSpeed(8.0f)
     , GalleryWidgetClass(USightPortalGalleryWidget::StaticClass())
+    , ServicesWidgetClass(nullptr)
+    , bTriggerGodModeOnServicesClick(true)
+    , UnitSearchWidgetClass(USightPortalUnitSearchWidget::StaticClass())
+    , ActiveUnitSearchWidget(nullptr)
     , bIsSettingTimeSlider(false)
     , bIsHomeLocationInitialized(false)
     , bIsTransitioningToHome(false)
@@ -478,6 +484,15 @@ void USightPortalHUDWidget::GoToHomeLocation()
     APlayerController* PC = GetOwningPlayer();
     if (!PC) return;
 
+    // If currently in God Mode, cleanly exit God Mode so Home navigation takes over smoothly
+    if (ASightPortalPlayerController* SightPC = Cast<ASightPortalPlayerController>(PC))
+    {
+        if (SightPC->IsInGodMode() || SightPC->IsTransitioningToGodMode())
+        {
+            SightPC->ExitGodMode();
+        }
+    }
+
     APawn* ControlledPawn = PC->GetPawn();
     if (!ControlledPawn) return;
 
@@ -535,6 +550,18 @@ void USightPortalHUDWidget::TriggerServicesAction()
 {
     OnServicesButtonClicked.Broadcast();
 
+    // Toggle God Mode in Player Controller: fly high and look down to reveal Services POIs
+    if (bTriggerGodModeOnServicesClick)
+    {
+        if (APlayerController* PC = GetOwningPlayer())
+        {
+            if (ASightPortalPlayerController* SightPC = Cast<ASightPortalPlayerController>(PC))
+            {
+                SightPC->ToggleGodMode();
+            }
+        }
+    }
+
     if (ServicesWidgetClass)
     {
         UUserWidget* CreatedWidget = CreateWidget<UUserWidget>(GetOwningPlayer(), ServicesWidgetClass);
@@ -557,19 +584,47 @@ void USightPortalHUDWidget::TriggerServicesAction()
     }
 }
 
+void USightPortalHUDWidget::ExploreServicesInGodMode()
+{
+    if (APlayerController* PC = GetOwningPlayer())
+    {
+        if (ASightPortalPlayerController* SightPC = Cast<ASightPortalPlayerController>(PC))
+        {
+            SightPC->ToggleGodMode();
+            return;
+        }
+    }
+    TriggerServicesAction();
+}
+
 void USightPortalHUDWidget::OnUnitSearchClicked()
 {
-    TriggerUnitSearchAction();
+    ToggleUnitSearch();
 }
 
 void USightPortalHUDWidget::TriggerUnitSearchAction()
 {
+    ToggleUnitSearch();
+}
+
+bool USightPortalHUDWidget::IsUnitSearchOpen() const
+{
+    return ActiveUnitSearchWidget != nullptr && ActiveUnitSearchWidget->IsInViewport() && ActiveUnitSearchWidget->GetVisibility() != ESlateVisibility::Collapsed && ActiveUnitSearchWidget->GetVisibility() != ESlateVisibility::Hidden;
+}
+
+void USightPortalHUDWidget::OpenUnitSearch()
+{
     OnUnitSearchButtonClicked.Broadcast();
 
-    if (UnitSearchWidgetClass)
+    if (IsUnitSearchOpen())
     {
-        UUserWidget* CreatedWidget = CreateWidget<UUserWidget>(GetOwningPlayer(), UnitSearchWidgetClass);
-        if (CreatedWidget)
+        return;
+    }
+
+    if (!ActiveUnitSearchWidget || !IsValid(ActiveUnitSearchWidget))
+    {
+        TSubclassOf<UUserWidget> ClassToSpawn = UnitSearchWidgetClass ? UnitSearchWidgetClass : TSubclassOf<UUserWidget>(USightPortalUnitSearchWidget::StaticClass());
+        if (ClassToSpawn)
         {
             CreatedWidget->SetVisibility(ESlateVisibility::Visible);
             CreatedWidget->AddToViewport(20);
@@ -585,5 +640,18 @@ void USightPortalHUDWidget::TriggerUnitSearchAction()
                 PC->SetInputMode(InputMode);
             }
         }
+        ActiveUnitSearchWidget = nullptr;
+    }
+}
+
+void USightPortalHUDWidget::ToggleUnitSearch()
+{
+    if (IsUnitSearchOpen())
+    {
+        CloseUnitSearch();
+    }
+    else
+    {
+        OpenUnitSearch();
     }
 }

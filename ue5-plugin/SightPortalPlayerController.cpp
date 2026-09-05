@@ -3,6 +3,7 @@
 #include "PropertyVisualizer.h"
 #include "Blueprint/UserWidget.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/SpectatorPawn.h"
 #include "GameFramework/PawnMovementComponent.h"
@@ -39,6 +40,18 @@ ASightPortalPlayerController::ASightPortalPlayerController()
     bIsTransitioningCamera = false;
     TargetFocusLocation = FVector::ZeroVector;
     TargetFocusRotation = FRotator::ZeroRotator;
+
+    // God Mode defaults (Services POI Exploration - fly high and look down)
+    GodModeLocation = FVector(0.0f, 0.0f, 15000.0f);
+    GodModeRotation = FRotator(-65.0f, 0.0f, 0.0f);
+    GodModeTransitionSpeed = 5.0f;
+    bIsInGodMode = false;
+    bIsTransitioningToGodMode = false;
+    GodModeTransitionTimeElapsed = 0.0f;
+    bAutoRevealServicePOIsInGodMode = true;
+    ServicePOITag = FName(TEXT("ServicePOI"));
+    PreGodModeLocation = FVector::ZeroVector;
+    PreGodModeRotation = FRotator::ZeroRotator;
 
     Detail2DWidgetClass = USightPortal2DPropertyDetailWidget::StaticClass();
     Active2DDetailWidget = nullptr;
@@ -157,8 +170,62 @@ void ASightPortalPlayerController::PlayerTick(float DeltaTime)
         }
     }
 
-    // If movement is locked (static at LookAt point), skip WASD navigation polling
-    if (bIsMovementLocked)
+    // --- God Mode Camera Travel (Fly High and Look Down) ---
+    if (bIsTransitioningToGodMode)
+    {
+        AActor* TargetActor = GetPawn();
+        if (!TargetActor)
+        {
+            TargetActor = GetSpectatorPawn();
+        }
+        if (!TargetActor)
+        {
+            TargetActor = GetViewTarget();
+        }
+
+        if (TargetActor)
+        {
+            GodModeTransitionTimeElapsed += DeltaTime;
+
+            const FVector TargetLoc = bIsInGodMode ? GodModeLocation : PreGodModeLocation;
+            const FRotator TargetRot = bIsInGodMode ? GodModeRotation : PreGodModeRotation;
+
+            const FVector CurrentLoc = TargetActor->GetActorLocation();
+            const FRotator CurrentRot = GetControlRotation();
+
+            const FVector NewLoc = FMath::VInterpTo(CurrentLoc, TargetLoc, DeltaTime, GodModeTransitionSpeed);
+            const FRotator NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaTime, GodModeTransitionSpeed);
+
+            TargetActor->SetActorLocation(NewLoc, false);
+            SetControlRotation(NewRot);
+
+            const float DistSq = FVector::DistSquared(NewLoc, TargetLoc);
+            const float RotDiff = FMath::Abs(FMath::FindDeltaAngleDegrees(NewRot.Pitch, TargetRot.Pitch)) +
+                                  FMath::Abs(FMath::FindDeltaAngleDegrees(NewRot.Yaw, TargetRot.Yaw));
+
+            // Snap when sufficiently close OR if transition watchdog timer expires
+            if ((DistSq < 10000.0f && RotDiff < 2.0f) || GodModeTransitionTimeElapsed > 4.0f)
+            {
+                TargetActor->SetActorLocation(TargetLoc, false);
+                SetControlRotation(TargetRot);
+                bIsTransitioningToGodMode = false;
+                GodModeTransitionTimeElapsed = 0.0f;
+
+                if (bIsInGodMode && bAutoRevealServicePOIsInGodMode)
+                {
+                    RevealServicePOIs();
+                }
+            }
+        }
+        else
+        {
+            bIsTransitioningToGodMode = false;
+            GodModeTransitionTimeElapsed = 0.0f;
+        }
+    }
+
+    // If movement is locked (static at LookAt point) or animating into God Mode, skip WASD navigation polling
+    if (bIsMovementLocked || bIsTransitioningToGodMode)
     {
         CurrentMovementInput = FVector::ZeroVector;
         return;
@@ -513,6 +580,17 @@ void ASightPortalPlayerController::FocusOnPropertyVisualizer(APropertyVisualizer
         return;
     }
 
+    // If currently in God Mode, cleanly exit God Mode so camera smoothly swoops to property
+    if (bIsInGodMode || bIsTransitioningToGodMode)
+    {
+        bIsInGodMode = false;
+        bIsTransitioningToGodMode = false;
+        GodModeTransitionTimeElapsed = 0.0f;
+        HideServicePOIs();
+        OnGodModeToggled.Broadcast(false);
+        OnGodModeStateChanged(false);
+    }
+
     TargetFocusLocation = TargetVisualizer->GetLookAtLocation();
     TargetFocusRotation = TargetVisualizer->GetLookAtRotation();
     TargetFocusRotation.Roll = 0.0f; // Keep camera upright and level with horizon
@@ -771,6 +849,12 @@ USightPortalHUDWidget* ASightPortalPlayerController::ShowMainHUD()
         ActiveMainHUDWidget->AddToViewport(10);
     }
 
+    if (ActiveMainHUDWidget)
+    {
+        ActiveMainHUDWidget->OnServicesButtonClicked.AddUniqueDynamic(this, &ASightPortalPlayerController::OnHUDServicesClicked);
+        ActiveMainHUDWidget->OnHomeNavigationTriggered.AddUniqueDynamic(this, &ASightPortalPlayerController::OnHUDHomeTriggered);
+    }
+
     return ActiveMainHUDWidget;
 }
 
@@ -792,6 +876,180 @@ void ASightPortalPlayerController::ToggleMainHUD()
     {
         ShowMainHUD();
     }
+}
+
+// --- God Mode (Services POI Exploration) Implementation ---
+
+void ASightPortalPlayerController::EnterGodMode()
+{
+    AActor* CurrentActor = GetPawn();
+    if (!CurrentActor)
+    {
+        CurrentActor = GetSpectatorPawn();
+    }
+    if (!CurrentActor)
+    {
+        CurrentActor = GetViewTarget();
+    }
+
+    if (CurrentActor)
+    {
+        const FVector CurrentLoc = CurrentActor->GetActorLocation();
+        // Save current location and rotation before flying up to God Mode (if on ground or below God Mode altitude)
+        if (!bIsInGodMode || CurrentLoc.Z < (GodModeLocation.Z - 2000.0f))
+        {
+            PreGodModeLocation = CurrentLoc;
+            PreGodModeRotation = GetControlRotation();
+        }
+    }
+
+    // Dismiss any active property detail 2D widget
+    if (IsPropertyDetailWidgetOpen())
+    {
+        HidePropertyDetailWidget();
+    }
+
+    bIsInGodMode = true;
+    bIsTransitioningToGodMode = true;
+    GodModeTransitionTimeElapsed = 0.0f;
+    bIsTransitioningCamera = false; // Cancel any active property LookAt transition
+    bIsMovementLocked = false;
+
+    // Ensure cursor and interaction events are active
+    bShowMouseCursor = true;
+    bEnableClickEvents = true;
+    bEnableMouseOverEvents = true;
+
+    // Reveal Service POIs immediately so they are visible during flight
+    if (bAutoRevealServicePOIsInGodMode)
+    {
+        RevealServicePOIs();
+    }
+
+    OnGodModeToggled.Broadcast(true);
+    OnGodModeStateChanged(true);
+}
+
+void ASightPortalPlayerController::ExitGodMode()
+{
+    bIsInGodMode = false;
+    bIsTransitioningToGodMode = true;
+    GodModeTransitionTimeElapsed = 0.0f;
+
+    // If PreGodModeLocation was never set or is near zero, safely fallback to HomeLocation
+    if (PreGodModeLocation.IsNearlyZero())
+    {
+        if (ActiveMainHUDWidget && ActiveMainHUDWidget->IsHomeLocationInitialized() && !ActiveMainHUDWidget->HomeLocation.IsNearlyZero())
+        {
+            PreGodModeLocation = ActiveMainHUDWidget->HomeLocation;
+            PreGodModeRotation = ActiveMainHUDWidget->HomeRotation;
+        }
+        else
+        {
+            PreGodModeLocation = FVector(GodModeLocation.X, GodModeLocation.Y, 200.0f);
+            PreGodModeRotation = FRotator(0.0f, GodModeRotation.Yaw, 0.0f);
+        }
+    }
+
+    // Hide service POI 3D widgets
+    HideServicePOIs();
+
+    OnGodModeToggled.Broadcast(false);
+    OnGodModeStateChanged(false);
+}
+
+void ASightPortalPlayerController::ToggleGodMode()
+{
+    const double CurrentTime = FPlatformTime::Seconds();
+    static double LastToggleTime = 0.0;
+    if (CurrentTime - LastToggleTime < 0.2)
+    {
+        return; // Debounce rapid double-calls within 200ms
+    }
+    LastToggleTime = CurrentTime;
+
+    if (bIsInGodMode)
+    {
+        ExitGodMode();
+    }
+    else
+    {
+        EnterGodMode();
+    }
+}
+
+void ASightPortalPlayerController::SetGodModeTransform(FVector InLocation, FRotator InRotation)
+{
+    GodModeLocation = InLocation;
+    GodModeRotation = InRotation;
+
+    if (bIsInGodMode)
+    {
+        bIsTransitioningToGodMode = true;
+    }
+}
+
+void ASightPortalPlayerController::RevealServicePOIs()
+{
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return;
+    }
+
+    for (TActorIterator<APropertyVisualizer> It(World); It; ++It)
+    {
+        APropertyVisualizer* Visualizer = *It;
+        if (Visualizer && IsValid(Visualizer))
+        {
+            // If ServicePOITag is specified, only reveal visualizers tagged with it
+            if (ServicePOITag.IsNone() || ServicePOITag.IsEqual(NAME_None) || Visualizer->ActorHasTag(ServicePOITag))
+            {
+                Visualizer->Show3DWidget();
+            }
+        }
+    }
+}
+
+void ASightPortalPlayerController::HideServicePOIs()
+{
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return;
+    }
+
+    for (TActorIterator<APropertyVisualizer> It(World); It; ++It)
+    {
+        APropertyVisualizer* Visualizer = *It;
+        if (Visualizer && IsValid(Visualizer))
+        {
+            if (ServicePOITag.IsNone() || ServicePOITag.IsEqual(NAME_None) || Visualizer->ActorHasTag(ServicePOITag))
+            {
+                Visualizer->Hide3DWidget();
+            }
+        }
+    }
+}
+
+void ASightPortalPlayerController::OnHUDServicesClicked()
+{
+    ToggleGodMode();
+}
+
+void ASightPortalPlayerController::OnHUDHomeTriggered(FVector InLocation, FRotator InRotation)
+{
+    if (bIsInGodMode || bIsTransitioningToGodMode)
+    {
+        bIsInGodMode = false;
+        bIsTransitioningToGodMode = false;
+        GodModeTransitionTimeElapsed = 0.0f;
+        HideServicePOIs();
+        OnGodModeToggled.Broadcast(false);
+        OnGodModeStateChanged(false);
+    }
+    PreGodModeLocation = InLocation;
+    PreGodModeRotation = InRotation;
 }
 
 

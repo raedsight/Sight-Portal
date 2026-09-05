@@ -112,9 +112,11 @@ You can derive UMG Widget Blueprints from these C++ classes in the Unreal Editor
 1. **3D Compact Widget:** Create a Widget Blueprint derived from `USightPortal3DPropertyWidget`.
    * Add `UTextBlock` elements named `SurfaceText`, `BedroomsText`, `PropertyNameText`.
    * Add a `UButton` element named `ExploreButton`.
+   * **Room Type Config:** Set `RoomType` in Details or Blueprint (defaults to `"Beds"`, e.g. `"Beds"`, `"Bedrooms"`, `"Rooms"`, `"Offices"`).
 2. **2D Detail Modal Widget:** Create a Widget Blueprint derived from `USightPortal2DPropertyDetailWidget`.
    * Add `UTextBlock` elements named `NameText`, `ZoneText`, `BlockText`, `DoorNoText`, `PriceText`, `SurfaceText`, `BuildingSurfaceText`, `AvailabilityText`, `BedroomsCountText`, `BathroomsCountText`, `ClassText`.
    * Add a `UButton` named `CloseButton`.
+   * **Room Type Config:** Set `RoomType` in Details or Blueprint (defaults to `"Bedrooms"`, e.g. `"Bedrooms"`, `"Rooms"`, `"Offices"`, `"Suites"`).
 
 ### 4. Placing in the Level
 1. Drag an `ASightPortalSiteManager` actor into your scene.
@@ -246,6 +248,33 @@ The plugin includes `USightPortalHUDWidget` for the top and bottom navigation ba
 
 ---
 
+## 🦅 Services Exploration & God Mode View
+
+When clicking on the **Services** button in the HUD (or calling `EnterGodMode()`), the pawn flies high into the air and looks down in **God Mode** to reveal all surrounding amenities and Service Points of Interest (POIs), such as shopping malls, schools, parks, playgrounds, and swimming pools.
+
+### Configuration on Player Controller (`ASightPortalPlayerController`):
+* **`God Mode Location` (`FVector`)**: The 3D world location high in the sky where the camera flies to (e.g. `X=0, Y=0, Z=15000`).
+* **`God Mode Rotation` (`FRotator`)**: The downward-looking pitch and yaw angle (e.g. `Pitch = -65.0f, Yaw = 0.0f, Roll = 0.0f`).
+* **`God Mode Transition Speed` (`float`)**: Camera interpolation speed when ascending to or descending from God Mode (default: `5.0`).
+* **`Auto Reveal Service POIs in God Mode` (`bool`)**: When enabled (default `true`), all Service POI `APropertyVisualizer` 3D widgets are automatically revealed/displayed.
+* **`Service POI Tag` (`FName`)**: Optional Actor Tag to designate which `APropertyVisualizer` actors are Service POIs (default: `ServicePOI`). If left blank or set to `None`, all visualizers in the level will display their 3D POI badges.
+
+### Using `APropertyVisualizer` as a Service POI:
+1. Place `APropertyVisualizer` actors at your service and amenity locations (e.g., Mall, Park, School, Gym, Pool).
+2. Set their property details (e.g. `Title = "Central Park"`, `Class = "Amenity"`, `Zone = "North Sector"`).
+3. In the Actor's **Actor Details -> Actor -> Tags**, add the tag **`ServicePOI`** (or your configured `Service POI Tag`).
+4. When clicking **Services**, the camera transitions to `GodModeLocation`/`GodModeRotation` and activates their 3D floating markers!
+
+### Blueprint & C++ API:
+* `EnterGodMode()`: Smoothly fly up to the God Mode aerial vantage point and reveal Service POIs.
+* `ExitGodMode()`: Return smoothly to your previous ground location and rotation.
+* `ToggleGodMode()`: Toggle between aerial overview and ground exploration.
+* `SetGodModeTransform(Location, Rotation)`: Dynamically update God Mode camera coordinates.
+* `RevealServicePOIs()` / `HideServicePOIs()`: Show or hide 3D world widgets for all service POI actors.
+* `OnGodModeToggled` / `OnGodModeStateChanged`: Delegates notifying UI or audio systems when God Mode activates/deactivates.
+
+---
+
 ## 🖼️ 3D Cover-Flow Gallery Carousel Widget (`SightPortalGalleryWidget`)
 
 The plugin includes `USightPortalGalleryWidget` for the interactive 3D Cover-Flow Carousel image viewer:
@@ -267,6 +296,59 @@ The plugin includes `USightPortalGalleryWidget` for the interactive 3D Cover-Flo
    * **(Optional) Counter Text**: `CounterText` (aliases: `Counter`, `PageCount`).
 4. In the Details panel under **SightPortal | GalleryData**, add your textures to **`Gallery Textures`** (or `Gallery Items`).
 5. On your `WBP_MainHUD`, set **`Gallery Widget Class`** to your `WBP_Gallery`.
+
+---
+
+## 🔍 Unit Search & Filtering Widget (`SightPortalUnitSearchWidget`)
+
+The plugin includes `USightPortalUnitSearchWidget` and `USightPortalUnitSearchResultWidget` for live real estate searching, multi-criteria filtering, and fast camera travel:
+
+1. **Multi-Parameter Search & Filtering**:
+   * **Keyword Search Box**: Instant search across unit names, door numbers, zones, blocks, and property classes.
+   * **Dropdown Filters**: Zone, Block, Property Class (e.g. Villa, Apartment, Penthouse), and Availability (Available, Reserved, Sold). Automatically populated from the current project dataset.
+   * **Room Count Filter**: Dropdown filtering by minimum bedroom count (`"Any"`, `"1+ Bedrooms"`, `"2+ Bedrooms"`, etc.) and bathroom count. Uses configurable `RoomType` label (e.g. `"Bedrooms"`, `"Beds"`, `"Rooms"`, `"Offices"`).
+   * **Price & Surface Sliders/Inputs**: Dual sliders and numerical text inputs for min/max price range and min/max surface area (m²).
+   * **Multi-Criteria Sorting**: Sort by Price (Low to High / High to Low), Surface Area (Small to Large / Large to Small), Bedrooms count, or Name (A-Z / Z-A).
+   * **Multi-Currency Selection & Iraqi Dinar Default**: Dropdown to select currency (`IQD`, `USD`, `EUR`, `GBP`, `AED`, `SAR`, `TRY`, `JPY`, etc.). The default base currency is **Iraqi Dinars (IQD / د.ع)** matching the raw SightPortal data, with default numeric formatting `0000000000.00` (two decimal places). Other currencies dynamically convert card prices in real time based on configured exchange rates.
+   * **Reset & Close**: One-click reset to restore all default filters, and dismiss button to return to the interactive viewport.
+
+2. **Result Cards (`USightPortalUnitSearchResultWidget`)**:
+   * Dynamic list populating with unit cards showing title, zone/block, price (formatted with active currency symbol and exchange rate in `0000000000.00` format), surface area, room count, availability, and category class.
+   * **Locate / Focus Button** (or clicking card): Automatically points and smoothly flies the camera to the property's LookAt framing arrow (`FocusOnPropertyVisualizer`).
+   * **Explore / Details Button**: Opens the full 2D detail popup (`SightPortal2DPropertyDetailWidget`) displaying all property specifications.
+
+### Creating Your Unit Search Blueprints (`WBP_UnitSearch` & `WBP_UnitCard`)
+
+#### 1. Result Card Widget Blueprint (`WBP_UnitCard`):
+1. Create a Widget Blueprint derived from **`USightPortalUnitSearchResultWidget`**.
+2. Add text elements (mark "Is Variable"):
+   * `NameText` (aliases: `UnitNameText`, `TitleText`)
+   * `ZoneText`, `BlockText`, `ZoneBlockText`
+   * `PriceText`, `SurfaceText`, `BedroomsText`, `BathroomsText`, `AvailabilityText`, `ClassText`
+3. In Details panel:
+   * **`Active Currency`**: Configure default currency code (defaults to `IQD`), currency symbol (`د.ع`), exchange rate (`1.0`), display label (`IQD (د.ع)`), decimal places (`2` for `0000000000.00`), and symbol prefix/suffix placement.
+4. Add action buttons:
+   * `CardButton` (clicking anywhere on the item row focuses on the unit)
+   * `LocateButton` (fly camera to unit in 3D)
+   * `ExploreButton` (open full 2D detail modal)
+
+#### 2. Search & Filter Modal Blueprint (`WBP_UnitSearch`):
+1. Create a Widget Blueprint derived from **`USightPortalUnitSearchWidget`**.
+2. Add filter controls (mark "Is Variable"):
+   * **Search**: `SearchInputBox` (Editable Text Box), `ClearSearchButton` (Button)
+   * **Dropdowns**: `ZoneComboBox`, `BlockComboBox`, `ClassComboBox`, `AvailabilityComboBox`, `BedroomsComboBox`, `BathroomsComboBox`, `SortComboBox`, `CurrencyComboBox` (Combo Box String)
+   * **Ranges**: `MinPriceSlider`, `MaxPriceSlider`, `MinPriceInputBox`, `MaxPriceInputBox`, `MinSurfaceSlider`, `MaxSurfaceSlider`, `MinSurfaceInputBox`, `MaxSurfaceInputBox`
+   * **Actions**: `ResetFiltersButton`, `ApplyFiltersButton`, `CloseButton`
+   * **Results**: `ResultsScrollBox` (Scroll Box) or `ResultsContainer` (Vertical Box)
+   * **Feedback**: `ResultCountText` (`"Showing X of Y units"`), `NoResultsText` / `EmptyStateWidget`
+3. In Details panel:
+   * Set **`Result Card Widget Class`** to your `WBP_UnitCard`.
+   * **`Currencies`**: Add and configure available currencies and their exchange rates. Defaults to Iraqi Dinars as base (`IQD` rate `1.0`, `USD` rate `1/1310`, `EUR` rate `1/1420`, `GBP` rate `1/1670`, `AED` rate `1/356.7`, etc.) with symbol, display label, and prefix/suffix options.
+   * Set **`Default Currency Code`** (defaults to `"IQD"`).
+   * Set **`Room Type`** to your desired room label (defaults to `"Bedrooms"`).
+   * Set **`Close On Unit Selected`** to `true` if you want the search modal to close automatically when a unit is located.
+4. On `WBP_MainHUD`:
+   * Set **`Unit Search Widget Class`** to your `WBP_UnitSearch`. Clicking the **Unit Search** button in the HUD now opens your search interface!
 
 ---
 

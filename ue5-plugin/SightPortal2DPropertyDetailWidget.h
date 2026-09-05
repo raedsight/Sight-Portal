@@ -20,12 +20,42 @@ class SIGHTPORTAL_API USightPortal2DPropertyDetailWidget : public UUserWidget
     GENERATED_BODY()
 
 public:
+    USightPortal2DPropertyDetailWidget(const FObjectInitializer& ObjectInitializer);
+
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
 
     // Main update method to read all values from FSightPortalProperty structure and refresh UMG controls
     UFUNCTION(BlueprintCallable, Category = "SightPortal|2DWidget")
     void DisplayPropertyDetails(const FSightPortalProperty& InProperty);
+
+    // Label/suffix used for room count display (defaults to "Bedrooms", e.g. "Bedrooms", "Rooms", "Offices", "Suites")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|2DWidget")
+    FString RoomType;
+
+    // Set custom room type label (e.g. "Bedrooms", "Rooms", "Offices", "Suites")
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|2DWidget")
+    void SetRoomType(const FString& InRoomType) { RoomType = InRoomType; }
+
+    // Get current room type label
+    UFUNCTION(BlueprintPure, Category = "SightPortal|2DWidget")
+    FString GetRoomType() const { return RoomType; }
+
+    // Currency symbol (defaults to Iraqi Dinars "د.ع")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Currency")
+    FString CurrencySymbol;
+
+    // Whether the currency symbol should be placed before the amount or after (e.g. 150000000.00 د.ع)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Currency")
+    bool bSymbolPrefix;
+
+    // Number of decimal places (default 2 for 0000000000.00 format)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Currency")
+    int32 DecimalPlaces;
+
+    // Exchange rate relative to base price (Portal prices are in Iraqi Dinars, so IQD = 1.0)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Currency")
+    float ExchangeRate;
 
     // Dynamic delegate fired when user closes or dismisses the detail modal
     UPROPERTY(BlueprintAssignable, Category = "SightPortal|2DWidget")

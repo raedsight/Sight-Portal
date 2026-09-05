@@ -6,3 +6,15 @@ coverage/
 *.log
 .env*
 !.env.example
+/SightVizPlugin/.vs/SightVizPlugin/CopilotIndices
+/SightVizPlugin/.vs/SightVizPlugin/FileContentIndex
+/SightVizPlugin/Intermediate
+/SightVizPlugin/DerivedDataCache
+/SightVizPlugin/Plugins/SightPortal/Binaries
+/SightVizPlugin/Saved
+/SightVizPlugin/Binaries
+/SightVizPlugin/.vs
+/PackagedPlugin/SightPortal/HostProject/DerivedDataCache
+/PackagedPlugin/SightPortal/HostProject/Intermediate
+/PackagedPlugin/SightPortal/HostProject/Plugins/SightPortal/Binaries
+/PackagedPlugin/SightPortal/HostProject/Saved

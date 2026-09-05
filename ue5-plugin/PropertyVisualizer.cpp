@@ -306,6 +306,76 @@ void APropertyVisualizer::OnCloseRequestedFrom3DWidget()
     }
 }
 
+void APropertyVisualizer::SetSceneIsolationState(bool bIsMatching, bool bIsFilterActive, bool bHideNonMatching)
+{
+    if (!bIsFilterActive)
+    {
+        ResetSceneIsolation();
+        return;
+    }
+
+    if (bHideNonMatching)
+    {
+        SetActorHiddenInGame(!bIsMatching);
+        SetActorEnableCollision(bIsMatching);
+        if (Widget3DComponent)
+        {
+            Widget3DComponent->SetVisibility(bIsMatching);
+        }
+    }
+    else
+    {
+        // Unhide all actors
+        SetActorHiddenInGame(false);
+        SetActorEnableCollision(true);
+
+        // Highlight matching units via custom depth stencil
+        TArray<UPrimitiveComponent*> PrimitiveComponents;
+        GetComponents<UPrimitiveComponent>(PrimitiveComponents);
+        for (UPrimitiveComponent* PrimComp : PrimitiveComponents)
+        {
+            if (PrimComp && PrimComp != SelectionCollisionBox)
+            {
+                PrimComp->SetRenderCustomDepth(bIsMatching);
+                if (bIsMatching)
+                {
+                    PrimComp->SetCustomDepthStencilValue(250); // Stencil highlight index
+                }
+            }
+        }
+
+        if (Widget3DComponent)
+        {
+            Widget3DComponent->SetVisibility(bIsMatching);
+        }
+    }
+
+    OnSceneIsolationStateChanged(bIsMatching, bIsFilterActive);
+}
+
+void APropertyVisualizer::ResetSceneIsolation()
+{
+    SetActorHiddenInGame(false);
+    SetActorEnableCollision(true);
+
+    TArray<UPrimitiveComponent*> PrimitiveComponents;
+    GetComponents<UPrimitiveComponent>(PrimitiveComponents);
+    for (UPrimitiveComponent* PrimComp : PrimitiveComponents)
+    {
+        if (PrimComp)
+        {
+            PrimComp->SetRenderCustomDepth(false);
+        }
+    }
+
+    if (Widget3DComponent)
+    {
+        Widget3DComponent->SetVisibility(true);
+    }
+
+    OnSceneIsolationStateChanged(true, false);
+}
+
 #if WITH_EDITOR
 void APropertyVisualizer::PostEditMove(bool bFinished)
 {
