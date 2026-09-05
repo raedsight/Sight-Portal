@@ -11,6 +11,7 @@ class USightPortalHUDWidget;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSightPortalPropertySelected, APropertyVisualizer*, SelectedVisualizer);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSightPortalPropertyDeselected);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSightPortalGodModeToggled, bool, bActive);
 
 /**
  * ASightPortalPlayerController
@@ -78,6 +79,49 @@ public:
     // Whether camera is currently animating towards a property's LookAt point
     UPROPERTY(BlueprintReadOnly, Category = "SightPortal|State")
     bool bIsTransitioningCamera;
+
+    // --- God Mode (Services Exploration) Configuration ---
+
+    // 3D world location where the pawn/camera flies to in God Mode overlooking the project and services
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|GodMode", meta = (MakeEditWidget = true))
+    FVector GodModeLocation;
+
+    // 3D camera rotation when in God Mode (e.g. Pitch -65.0f looking down at the masterplan/services)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|GodMode")
+    FRotator GodModeRotation;
+
+    // Camera interpolation speed when flying up into or returning from God Mode (Default: 5.0f)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|GodMode")
+    float GodModeTransitionSpeed;
+
+    // Whether the player controller is currently in God Mode (aerial services overview)
+    UPROPERTY(BlueprintReadOnly, Category = "SightPortal|GodMode")
+    bool bIsInGodMode;
+
+    // Whether camera is currently animating into or out of God Mode
+    UPROPERTY(BlueprintReadOnly, Category = "SightPortal|GodMode")
+    bool bIsTransitioningToGodMode;
+
+    // Whether entering God Mode should automatically reveal/show all Service POI (PropertyVisualizer) 3D widgets
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|GodMode")
+    bool bAutoRevealServicePOIsInGodMode;
+
+    // Optional Actor Tag used to identify Service POI PropertyVisualizers (default: "ServicePOI")
+    // If left None or Empty, all PropertyVisualizers in the level will have their 3D POI widgets revealed
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|GodMode")
+    FName ServicePOITag;
+
+    // Saved player location before entering God Mode (used to return when exiting God Mode)
+    UPROPERTY(BlueprintReadOnly, Category = "SightPortal|GodMode")
+    FVector PreGodModeLocation;
+
+    // Saved player control rotation before entering God Mode
+    UPROPERTY(BlueprintReadOnly, Category = "SightPortal|GodMode")
+    FRotator PreGodModeRotation;
+
+    // Watchdog timer to track transition progress and prevent getting stuck
+    UPROPERTY(BlueprintReadOnly, Category = "SightPortal|GodMode")
+    float GodModeTransitionTimeElapsed;
 
     // --- UI & Interaction Properties ---
 
@@ -259,6 +303,68 @@ public:
     UFUNCTION(BlueprintPure, Category = "SightPortal|UI")
     USightPortalHUDWidget* GetActiveMainHUDWidget() const { return ActiveMainHUDWidget; }
 
+    // --- God Mode (Services POI Exploration) Functions ---
+
+    /**
+     * Fly high and look down in God Mode to reveal the Services point of interests (POI).
+     */
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|GodMode")
+    void EnterGodMode();
+
+    /**
+     * Exit God Mode and return smoothly to pre-God Mode location.
+     */
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|GodMode")
+    void ExitGodMode();
+
+    /**
+     * Toggle between God Mode aerial overview and ground exploration.
+     */
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|GodMode")
+    void ToggleGodMode();
+
+    /**
+     * Check whether player controller is currently in God Mode.
+     */
+    UFUNCTION(BlueprintPure, Category = "SightPortal|GodMode")
+    bool IsInGodMode() const { return bIsInGodMode; }
+
+    /**
+     * Check whether camera is currently transitioning into or out of God Mode.
+     */
+    UFUNCTION(BlueprintPure, Category = "SightPortal|GodMode")
+    bool IsTransitioningToGodMode() const { return bIsTransitioningToGodMode; }
+
+    /**
+     * Set custom 3D location and rotation for God Mode.
+     */
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|GodMode")
+    void SetGodModeTransform(FVector InLocation, FRotator InRotation);
+
+    /**
+     * Reveal and display 3D widgets for all Service POI (PropertyVisualizer) actors in the level.
+     */
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|GodMode")
+    void RevealServicePOIs();
+
+    /**
+     * Hide/collapse 3D widgets for Service POIs in the level.
+     */
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|GodMode")
+    void HideServicePOIs();
+
+    /**
+     * Internal callback invoked when Services button on the HUD widget is clicked.
+     */
+    UFUNCTION()
+    void OnHUDServicesClicked();
+
+    /**
+     * Internal callback invoked when Home button on the HUD widget is triggered.
+     */
+    UFUNCTION()
+    void OnHUDHomeTriggered(FVector InLocation, FRotator InRotation);
+
     // --- Dynamic Event Delegates ---
 
     UPROPERTY(BlueprintAssignable, Category = "SightPortal|Events")
@@ -266,6 +372,15 @@ public:
 
     UPROPERTY(BlueprintAssignable, Category = "SightPortal|Events")
     FOnSightPortalPropertyDeselected OnPropertyDeselected;
+
+    UPROPERTY(BlueprintAssignable, Category = "SightPortal|Events")
+    FOnSightPortalGodModeToggled OnGodModeToggled;
+
+    /**
+     * Dynamic Blueprint Implementable Event triggered when God Mode is activated or deactivated.
+     */
+    UFUNCTION(BlueprintImplementableEvent, Category = "SightPortal|Events")
+    void OnGodModeStateChanged(bool bActive);
 
 protected:
     // Internal callback when detail widget is closed via its internal close button

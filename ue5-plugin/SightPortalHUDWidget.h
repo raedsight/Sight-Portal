@@ -116,6 +116,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Navigation")
     bool bAutoCaptureStartLocationAsHome;
 
+    // Indicates whether the Home coordinates have been initialized (via auto-capture or SetHomeTransform)
+    UPROPERTY(BlueprintReadOnly, Category = "SightPortal|Navigation")
+    bool bIsHomeLocationInitialized;
+
     // Smooth camera transition duration when hitting the Home button (0 = instantaneous)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Navigation")
     float HomeTransitionSpeed;
@@ -127,8 +131,16 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Navigation")
     TSubclassOf<UUserWidget> ServicesWidgetClass;
 
+    // If true, clicking the Services button triggers God Mode (flying high and looking down) on the SightPortal Player Controller
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Navigation")
+    bool bTriggerGodModeOnServicesClick;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Navigation")
     TSubclassOf<UUserWidget> UnitSearchWidgetClass;
+
+    // Active Unit Search Widget instance in viewport
+    UPROPERTY(BlueprintReadOnly, Category = "SightPortal|Navigation")
+    UUserWidget* ActiveUnitSearchWidget;
 
     // --- Dynamic Event Delegates ---
 
@@ -169,9 +181,33 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SightPortal|Navigation")
     void TriggerServicesAction();
 
+    // Trigger Services exploration in God Mode (fly high and look down at POIs)
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Navigation")
+    void ExploreServicesInGodMode();
+
     // Trigger unit search action
     UFUNCTION(BlueprintCallable, Category = "SightPortal|Navigation")
     void TriggerUnitSearchAction();
+
+    // Toggle unit search modal/drawer open or closed
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Navigation")
+    void ToggleUnitSearch();
+
+    // Open unit search modal/drawer
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Navigation")
+    void OpenUnitSearch();
+
+    // Close unit search modal/drawer if open
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Navigation")
+    void CloseUnitSearch();
+
+    // Check if unit search modal/drawer is open
+    UFUNCTION(BlueprintPure, Category = "SightPortal|Navigation")
+    bool IsUnitSearchOpen() const;
+
+    // Check if Home coordinates have been initialized
+    UFUNCTION(BlueprintPure, Category = "SightPortal|Navigation")
+    bool IsHomeLocationInitialized() const { return bIsHomeLocationInitialized; }
 
     // Auto-discover and resolve unbound UMG child widgets by name and alias
     UFUNCTION(BlueprintCallable, Category = "SightPortal|HUD")
@@ -208,7 +244,6 @@ protected:
 
 private:
     bool bIsSettingTimeSlider;
-    bool bIsHomeLocationInitialized;
     bool bIsTransitioningToHome;
     FVector HomeTransitionStartLocation;
     FRotator HomeTransitionStartRotation;

@@ -113,6 +113,18 @@ public:
     UFUNCTION(BlueprintImplementableEvent, Category = "SightPortal|Events")
     void OnPortfolioSynchronizedFromPortal(const TArray<FSightPortalProperty>& FullPortfolio);
 
+    // Scene isolation support: highlight matching property or dim/hide non-matching in 3D level
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|SceneIsolation")
+    void SetSceneIsolationState(bool bIsMatching, bool bIsFilterActive, bool bHideNonMatching = false);
+
+    // Reset isolation visual state back to normal
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|SceneIsolation")
+    void ResetSceneIsolation();
+
+    // Blueprint Implementable Event for custom visualizer styling when scene isolation state changes
+    UFUNCTION(BlueprintImplementableEvent, Category = "SightPortal|Events")
+    void OnSceneIsolationStateChanged(bool bIsMatching, bool bIsFilterActive);
+
     // Track if this visualizer has been manually moved by the user in the editor
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|State")
     bool bHasBeenManuallyMoved = false;

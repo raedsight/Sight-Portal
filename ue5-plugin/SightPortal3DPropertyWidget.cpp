@@ -3,6 +3,15 @@
 #include "Components/Button.h"
 #include "Blueprint/WidgetTree.h"
 
+USightPortal3DPropertyWidget::USightPortal3DPropertyWidget(const FObjectInitializer& ObjectInitializer)
+    : Super(ObjectInitializer)
+    , RoomType(TEXT("Beds"))
+    , CurrencySymbol(TEXT("د.ع"))
+    , bSymbolPrefix(false)
+    , DecimalPlaces(2)
+{
+}
+
 void USightPortal3DPropertyWidget::ResolveUnboundWidgets()
 {
     auto FindTextBlockWithAliases = [this](const TArray<FString>& Aliases) -> UTextBlock*
@@ -118,7 +127,8 @@ void USightPortal3DPropertyWidget::SetPropertyData(const FSightPortalProperty& I
 
     if (BedroomsText)
     {
-        FString BedroomsString = FString::Printf(TEXT("%d Beds"), InProperty.BedroomsCount);
+        const FString EffectiveRoomType = RoomType.IsEmpty() ? TEXT("Beds") : RoomType;
+        FString BedroomsString = FString::Printf(TEXT("%d %s"), InProperty.BedroomsCount, *EffectiveRoomType);
         BedroomsText->SetText(FText::FromString(BedroomsString));
     }
 
@@ -129,7 +139,11 @@ void USightPortal3DPropertyWidget::SetPropertyData(const FSightPortalProperty& I
 
     if (PriceText)
     {
-        FString PriceString = FString::Printf(TEXT("$%.2f"), InProperty.Price);
+        const FString Symbol = CurrencySymbol.IsEmpty() ? TEXT("د.ع") : CurrencySymbol;
+        const FString FormattedNumber = FString::Printf(TEXT("%.*f"), DecimalPlaces, InProperty.Price);
+        const FString PriceString = bSymbolPrefix
+            ? FString::Printf(TEXT("%s%s"), *Symbol, *FormattedNumber)
+            : FString::Printf(TEXT("%s %s"), *FormattedNumber, *Symbol);
         PriceText->SetText(FText::FromString(PriceString));
     }
 
