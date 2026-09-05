@@ -24,7 +24,10 @@ import {
   fetchClientsFromServer,
   fetchLogsFromServer,
   purgeDefaultSampleClients,
-  configuredDatabaseId
+  configuredDatabaseId,
+  subscribeToQuotaStatus,
+  resetQuotaStatus,
+  QuotaStatusInfo
 } from "./firebase";
 import { 
   onAuthStateChanged, 
@@ -56,7 +59,10 @@ import {
   UserCheck,
   Database,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  AlertTriangle,
+  ExternalLink,
+  X
 } from "lucide-react";
 
 export default function App() {
@@ -67,6 +73,20 @@ export default function App() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [isSyncingDb, setIsSyncingDb] = useState<boolean>(false);
   const [syncDbStatus, setSyncDbStatus] = useState<string | null>(null);
+  const [quotaInfo, setQuotaInfo] = useState<QuotaStatusInfo>({
+    exceeded: false,
+    message: "",
+    url: `https://console.firebase.google.com/project/sight-portal-adc29/firestore/databases/${configuredDatabaseId}/data?openUpgradeDialog=true`
+  });
+  const [quotaBannerDismissed, setQuotaBannerDismissed] = useState<boolean>(false);
+
+  // Subscribe to real-time quota status notifications
+  useEffect(() => {
+    const unsub = subscribeToQuotaStatus((info) => {
+      setQuotaInfo(info);
+    });
+    return () => unsub();
+  }, []);
 
   const handleForceSyncDatabase = async () => {
     setIsSyncingDb(true);
@@ -1039,6 +1059,55 @@ export default function App() {
 
         </div>
       </header>
+
+      {/* Firestore Quota Exceeded Alert Banner */}
+      {quotaInfo.exceeded && !quotaBannerDismissed && (
+        <div className="bg-amber-950/80 border-b border-amber-500/30 px-6 py-3 text-xs text-amber-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-lg z-50 backdrop-blur-md">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-semibold text-amber-300 tracking-wide font-mono flex flex-wrap items-center gap-2">
+                <span>FIRESTORE DAILY READ QUOTA EXCEEDED (FREE TIER)</span>
+                <span className="bg-amber-500/20 text-amber-300 text-[10px] px-2 py-0.5 rounded border border-amber-500/30">Local Cache Fallback Active</span>
+              </div>
+              <p className="text-[11px] text-amber-200/80 mt-0.5 leading-relaxed">
+                The free daily read quota (50,000 read units/day) for this Firestore database has been reached. Quotas reset automatically every 24 hours (at midnight PST). The portal is operating smoothly using locally cached client configurations.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+            <button
+              type="button"
+              onClick={() => {
+                resetQuotaStatus();
+                handleForceSyncDatabase();
+              }}
+              className="px-2.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 font-mono text-[11px] rounded transition flex items-center gap-1.5 cursor-pointer"
+              title="Reset quota guard and attempt direct database sync"
+            >
+              <RefreshCw className="h-3 w-3" />
+              <span>Retry Sync</span>
+            </button>
+            <a
+              href={quotaInfo.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-bold font-mono text-[11px] rounded transition flex items-center gap-1.5 shadow"
+            >
+              <span>Upgrade in Firebase Console</span>
+              <ExternalLink className="h-3 w-3" />
+            </a>
+            <button
+              type="button"
+              onClick={() => setQuotaBannerDismissed(true)}
+              className="p-1.5 hover:bg-amber-500/20 rounded text-amber-300 transition cursor-pointer"
+              title="Dismiss notice"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Container */}
       <main className="flex-1 w-full" id="app-main-content">

@@ -62,6 +62,9 @@ export function sanitizeForFirestore<T>(data: T): T {
 // -------------------------------------------------------------
 
 export async function syncThemePresets(onUpdate: (presets: ThemePreset[]) => void): Promise<() => void> {
+  if (isQuotaExceeded()) {
+    return () => {};
+  }
   try {
     const q = query(collection(db, "themePresets"), orderBy("updatedAt", "desc"));
     return onSnapshot(q, (snap) => {
@@ -71,12 +74,13 @@ export async function syncThemePresets(onUpdate: (presets: ThemePreset[]) => voi
       handleFirestoreError(err, OperationType.LIST, "themePresets");
     });
   } catch (e) {
-    console.error("Failed to attach theme presets listener:", e);
+    console.warn("Failed to attach theme presets listener:", e);
     return () => {};
   }
 }
 
 export async function saveThemePreset(preset: ThemePreset): Promise<void> {
+  if (isQuotaExceeded()) return;
   try {
     const cleaned = sanitizeForFirestore(preset);
     await setDoc(doc(db, "themePresets", preset.id), cleaned, { merge: true });
@@ -86,6 +90,7 @@ export async function saveThemePreset(preset: ThemePreset): Promise<void> {
 }
 
 export async function deleteThemePreset(presetId: string): Promise<void> {
+  if (isQuotaExceeded()) return;
   try {
     await deleteDoc(doc(db, "themePresets", presetId));
   } catch (err) {
@@ -120,6 +125,142 @@ export interface FirestoreErrorInfo {
   };
 }
 
+export interface QuotaStatusInfo {
+  exceeded: boolean;
+  message: string;
+  url: string;
+}
+
+const QUOTA_STORAGE_KEY = "sightportal_quota_exceeded_v1";
+
+const quotaListeners = new Set<(info: QuotaStatusInfo) => void>();
+let currentQuotaStatus: QuotaStatusInfo = {
+  exceeded: false,
+  message: "",
+  url: `https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore/databases/${configuredDatabaseId}/data?openUpgradeDialog=true`
+};
+
+export function isQuotaExceeded(): boolean {
+  if (currentQuotaStatus.exceeded) return true;
+  try {
+    const raw = localStorage.getItem(QUOTA_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Quotas in Firestore reset at midnight PST. If marked within last 24 hours, keep flag active
+      if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
+        currentQuotaStatus.exceeded = true;
+        currentQuotaStatus.message = parsed.message || "Daily free tier Firestore read quota reached (50,000 read units/day).";
+        return true;
+      } else {
+        localStorage.removeItem(QUOTA_STORAGE_KEY);
+      }
+    }
+  } catch (e) {}
+  return false;
+}
+
+export function markQuotaExceeded(msg: string) {
+  currentQuotaStatus = {
+    exceeded: true,
+    message: msg,
+    url: `https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore/databases/${configuredDatabaseId}/data?openUpgradeDialog=true`
+  };
+  try {
+    localStorage.setItem(QUOTA_STORAGE_KEY, JSON.stringify({
+      timestamp: Date.now(),
+      message: msg
+    }));
+  } catch (e) {}
+  quotaListeners.forEach((l) => l(currentQuotaStatus));
+}
+
+export function resetQuotaStatus() {
+  currentQuotaStatus = {
+    exceeded: false,
+    message: "",
+    url: `https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore/databases/${configuredDatabaseId}/data?openUpgradeDialog=true`
+  };
+  try {
+    localStorage.removeItem(QUOTA_STORAGE_KEY);
+  } catch (e) {}
+  quotaListeners.forEach((l) => l(currentQuotaStatus));
+}
+
+export function subscribeToQuotaStatus(listener: (info: QuotaStatusInfo) => void): () => void {
+  quotaListeners.add(listener);
+  // Trigger immediately if already exceeded
+  if (isQuotaExceeded()) {
+    listener(currentQuotaStatus);
+  }
+  return () => quotaListeners.delete(listener);
+}
+
+export function getQuotaStatus(): QuotaStatusInfo {
+  isQuotaExceeded();
+  return currentQuotaStatus;
+}
+
+// Client cache helpers
+export function getCachedClients(): Client[] {
+  try {
+    const raw = localStorage.getItem("sightportal_cached_clients");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {}
+  return DEFAULT_CLIENTS;
+}
+
+export function setCachedClients(clients: Client[]) {
+  try {
+    localStorage.setItem("sightportal_cached_clients", JSON.stringify(clients));
+  } catch (e) {}
+}
+
+// Log cache helpers
+export function getCachedLogs(): Log[] {
+  try {
+    const raw = localStorage.getItem("sightportal_cached_logs");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {}
+  return DEFAULT_LOGS;
+}
+
+export function setCachedLogs(logs: Log[]) {
+  try {
+    localStorage.setItem("sightportal_cached_logs", JSON.stringify(logs.slice(0, 100)));
+  } catch (e) {}
+}
+
+// User profile cache helpers
+export function getCachedUsers(): UserProfile[] {
+  try {
+    const raw = localStorage.getItem("sightportal_cached_users");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {}
+  return [
+    {
+      uid: "GDtCCZxWf2brJSU2aoamHTKmrrA3",
+      email: "raed.sight@gmail.com",
+      role: "owner",
+      clientId: null
+    }
+  ];
+}
+
+export function setCachedUsers(users: UserProfile[]) {
+  try {
+    localStorage.setItem("sightportal_cached_users", JSON.stringify(users));
+  } catch (e) {}
+}
+
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errMsg = error instanceof Error ? error.message : String(error);
   // Suppress verbose offline errors in dev mode to avoid cluttering UI logs
@@ -127,6 +268,14 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     console.warn(`[Firestore Offline: ${operationType} on ${path}]`);
     return;
   }
+
+  // Detect and broadcast Firestore quota limit
+  if (errMsg.includes("Quota limit exceeded") || errMsg.includes("Quota exceeded")) {
+    markQuotaExceeded(errMsg);
+    console.warn(`[Firestore Quota Notice: ${operationType} on ${path} paused. Active local cache engaged.]`);
+    return;
+  }
+
   const errInfo: FirestoreErrorInfo = {
     error: errMsg,
     authInfo: {
@@ -160,9 +309,26 @@ export interface UserProfile {
 // -------------------------------------------------------------
 
 export async function fetchUserProfile(uid: string): Promise<UserProfile | null> {
+  if (isQuotaExceeded()) {
+    const cached = getCachedUsers().find(u => u.uid === uid || u.email === auth.currentUser?.email);
+    if (cached) return cached;
+    if (auth.currentUser?.email === "raed.sight@gmail.com") {
+      return { uid, email: "raed.sight@gmail.com", role: "owner", clientId: null };
+    }
+    return null;
+  }
   try {
     const snap = await getDoc(doc(db, "users", uid));
-    return snap.exists() ? (snap.data() as UserProfile) : null;
+    if (snap.exists()) {
+      const profile = snap.data() as UserProfile;
+      const users = getCachedUsers();
+      const idx = users.findIndex(u => u.uid === profile.uid);
+      if (idx >= 0) users[idx] = profile;
+      else users.push(profile);
+      setCachedUsers(users);
+      return profile;
+    }
+    return null;
   } catch (err: any) {
     const msg = err?.message || String(err);
     if (msg.includes("client is offline") || msg.includes("offline")) {
@@ -170,11 +336,23 @@ export async function fetchUserProfile(uid: string): Promise<UserProfile | null>
       return null;
     }
     handleFirestoreError(err, OperationType.GET, `users/${uid}`);
+    const cached = getCachedUsers().find(u => u.uid === uid || u.email === auth.currentUser?.email);
+    if (cached) return cached;
+    if (auth.currentUser?.email === "raed.sight@gmail.com") {
+      return { uid, email: "raed.sight@gmail.com", role: "owner", clientId: null };
+    }
     return null;
   }
 }
 
 export async function saveUserProfile(profile: UserProfile): Promise<void> {
+  const users = getCachedUsers();
+  const idx = users.findIndex(u => u.uid === profile.uid);
+  if (idx >= 0) users[idx] = profile;
+  else users.push(profile);
+  setCachedUsers(users);
+
+  if (isQuotaExceeded()) return;
   try {
     const cleaned = sanitizeForFirestore(profile);
     await setDoc(doc(db, "users", profile.uid), cleaned, { merge: true });
@@ -184,17 +362,28 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
 }
 
 export async function fetchAllUserProfiles(): Promise<UserProfile[]> {
+  if (isQuotaExceeded()) {
+    return getCachedUsers();
+  }
   try {
     const q = query(collection(db, "users"));
     const snap = await getDocs(q);
-    return snap.docs.map(d => d.data() as UserProfile);
+    const users = snap.docs.map(d => d.data() as UserProfile);
+    if (users.length > 0) {
+      setCachedUsers(users);
+    }
+    return users;
   } catch (err) {
     handleFirestoreError(err, OperationType.LIST, "users");
-    return [];
+    return getCachedUsers();
   }
 }
 
 export async function deleteUserProfile(uid: string): Promise<void> {
+  const users = getCachedUsers().filter(u => u.uid !== uid);
+  setCachedUsers(users);
+
+  if (isQuotaExceeded()) return;
   try {
     await deleteDoc(doc(db, "users", uid));
   } catch (err) {
@@ -232,6 +421,10 @@ function normalizeClientDoc(id: string, rawData: any): Client {
 }
 
 export async function syncClients(onUpdate: (clients: Client[]) => void): Promise<() => void> {
+  if (isQuotaExceeded()) {
+    onUpdate(getCachedClients());
+    return () => {};
+  }
   try {
     // Avoid orderBy in Firestore query so documents lacking updatedAt field are NOT dropped
     const q = query(collection(db, "clients"));
@@ -244,17 +437,15 @@ export async function syncClients(onUpdate: (clients: Client[]) => void): Promis
         if (timeB !== timeA) return timeB - timeA;
         return (a.name || "").localeCompare(b.name || "");
       });
+      setCachedClients(clients);
       onUpdate(clients);
     }, (err) => {
-      console.warn("[Firestore] Sync clients error notice:", err);
-      try {
-        handleFirestoreError(err, OperationType.LIST, "clients");
-      } catch (e) {
-        // Handled to protect event loop
-      }
+      handleFirestoreError(err, OperationType.LIST, "clients");
+      onUpdate(getCachedClients());
     });
   } catch (e) {
-    console.error("Failed to attach clients listener:", e);
+    console.warn("Failed to attach clients listener:", e);
+    onUpdate(getCachedClients());
     return () => {};
   }
 }
@@ -263,12 +454,18 @@ export async function syncClients(onUpdate: (clients: Client[]) => void): Promis
  * Force fetch all clients directly from Firestore server, bypassing local offline cache
  */
 export async function fetchClientsFromServer(): Promise<Client[]> {
+  if (isQuotaExceeded()) {
+    return getCachedClients();
+  }
   try {
     let clients: Client[] = [];
     try {
       const snap = await getDocsFromServer(collection(db, "clients"));
       clients = snap.docs.map(d => normalizeClientDoc(d.id, d.data()));
     } catch (serverErr) {
+      if (String(serverErr).includes("Quota")) {
+        throw serverErr;
+      }
       console.warn("[Firestore] Direct server read notice, trying fallback getDocs:", serverErr);
       const snap = await getDocs(collection(db, "clients"));
       clients = snap.docs.map(d => normalizeClientDoc(d.id, d.data()));
@@ -298,10 +495,14 @@ export async function fetchClientsFromServer(): Promise<Client[]> {
       return (a.name || "").localeCompare(b.name || "");
     });
 
+    if (clients.length > 0) {
+      setCachedClients(clients);
+    }
+
     return clients;
   } catch (err) {
     handleFirestoreError(err, OperationType.LIST, "clients");
-    return [];
+    return getCachedClients();
   }
 }
 
@@ -309,6 +510,7 @@ export async function fetchClientsFromServer(): Promise<Client[]> {
  * Delete default sample clients if they were seeded into Firestore by mistake
  */
 export async function purgeDefaultSampleClients(): Promise<number> {
+  if (isQuotaExceeded()) return 0;
   const defaultSampleIds = ["neon-nebula", "overlord-stadium", "overlord-egames", "hyperion-vis"];
   let purgedCount = 0;
   for (const id of defaultSampleIds) {
@@ -323,24 +525,35 @@ export async function purgeDefaultSampleClients(): Promise<number> {
 }
 
 export async function syncSingleClient(clientId: string, onUpdate: (client: Client | null) => void): Promise<() => void> {
+  if (isQuotaExceeded()) {
+    const cached = getCachedClients().find(c => c.id === clientId) || null;
+    onUpdate(cached);
+    return () => {};
+  }
   try {
     return onSnapshot(doc(db, "clients", clientId), (snap) => {
       onUpdate(snap.exists() ? (snap.data() as Client) : null);
     }, (err) => {
-      console.warn(`[Firestore] Sync client (${clientId}) error notice:`, err);
-      try {
-        handleFirestoreError(err, OperationType.GET, `clients/${clientId}`);
-      } catch (e) {
-        // Handled to protect event loop
-      }
+      handleFirestoreError(err, OperationType.GET, `clients/${clientId}`);
+      const cached = getCachedClients().find(c => c.id === clientId) || null;
+      onUpdate(cached);
     });
   } catch (e) {
-    console.error("Failed to attach single client listener:", e);
+    console.warn("Failed to attach single client listener:", e);
+    const cached = getCachedClients().find(c => c.id === clientId) || null;
+    onUpdate(cached);
     return () => {};
   }
 }
 
 export async function createOrUpdateClient(client: Client): Promise<void> {
+  const clients = getCachedClients();
+  const idx = clients.findIndex(c => c.id === client.id);
+  if (idx >= 0) clients[idx] = client;
+  else clients.unshift(client);
+  setCachedClients(clients);
+
+  if (isQuotaExceeded()) return;
   try {
     const cleaned = sanitizeForFirestore(client);
     await setDoc(doc(db, "clients", client.id), cleaned, { merge: true });
@@ -350,6 +563,14 @@ export async function createOrUpdateClient(client: Client): Promise<void> {
 }
 
 export async function saveClientSheetData(clientId: string, sheetData: import("./types").SpreadsheetData): Promise<void> {
+  const clients = getCachedClients();
+  const idx = clients.findIndex(c => c.id === clientId);
+  if (idx >= 0) {
+    clients[idx] = { ...clients[idx], sheetData, updatedAt: new Date().toISOString() };
+    setCachedClients(clients);
+  }
+
+  if (isQuotaExceeded()) return;
   try {
     const cleaned = sanitizeForFirestore(sheetData);
     await setDoc(doc(db, "clients", clientId), { 
@@ -362,6 +583,10 @@ export async function saveClientSheetData(clientId: string, sheetData: import(".
 }
 
 export async function fetchClientSheetData(clientId: string): Promise<import("./types").SpreadsheetData | null> {
+  if (isQuotaExceeded()) {
+    const cached = getCachedClients().find(c => c.id === clientId);
+    return cached?.sheetData || null;
+  }
   try {
     const snap = await getDoc(doc(db, "clients", clientId));
     if (snap.exists()) {
@@ -371,11 +596,16 @@ export async function fetchClientSheetData(clientId: string): Promise<import("./
     return null;
   } catch (err) {
     handleFirestoreError(err, OperationType.GET, `clients/${clientId}`);
-    return null;
+    const cached = getCachedClients().find(c => c.id === clientId);
+    return cached?.sheetData || null;
   }
 }
 
 export async function removeClient(clientId: string): Promise<void> {
+  const clients = getCachedClients().filter(c => c.id !== clientId);
+  setCachedClients(clients);
+
+  if (isQuotaExceeded()) return;
   try {
     await deleteDoc(doc(db, "clients", clientId));
   } catch (err) {
@@ -388,26 +618,33 @@ export async function removeClient(clientId: string): Promise<void> {
 // -------------------------------------------------------------
 
 export async function syncLogs(onUpdate: (logs: Log[]) => void): Promise<() => void> {
+  if (isQuotaExceeded()) {
+    onUpdate(getCachedLogs());
+    return () => {};
+  }
   try {
     const q = query(collection(db, "logs"), orderBy("timestamp", "desc"), limit(100));
     return onSnapshot(q, (snap) => {
       const logs = snap.docs.map(d => d.data() as Log);
+      setCachedLogs(logs);
       onUpdate(logs);
     }, (err) => {
-      console.warn("[Firestore] Sync logs error notice:", err);
-      try {
-        handleFirestoreError(err, OperationType.LIST, "logs");
-      } catch (e) {
-        // Handled to protect event loop
-      }
+      handleFirestoreError(err, OperationType.LIST, "logs");
+      onUpdate(getCachedLogs());
     });
   } catch (e) {
-    console.error("Failed to attach logs listener:", e);
+    console.warn("Failed to attach logs listener:", e);
+    onUpdate(getCachedLogs());
     return () => {};
   }
 }
 
 export async function writeLog(log: Log): Promise<void> {
+  const logs = getCachedLogs();
+  logs.unshift(log);
+  setCachedLogs(logs);
+
+  if (isQuotaExceeded()) return;
   try {
     const cleaned = sanitizeForFirestore(log);
     await setDoc(doc(db, "logs", log.id), cleaned);
@@ -417,6 +654,8 @@ export async function writeLog(log: Log): Promise<void> {
 }
 
 export async function clearAllLogs(): Promise<void> {
+  setCachedLogs([]);
+  if (isQuotaExceeded()) return;
   try {
     const snap = await getDocs(collection(db, "logs"));
     const promises = snap.docs.map(d => deleteDoc(d.ref));
@@ -427,21 +666,18 @@ export async function clearAllLogs(): Promise<void> {
 }
 
 export async function fetchLogsFromServer(): Promise<Log[]> {
+  if (isQuotaExceeded()) {
+    return getCachedLogs();
+  }
   try {
     const q = query(collection(db, "logs"), orderBy("timestamp", "desc"), limit(100));
     const snap = await getDocs(q);
-    return snap.docs.map(d => d.data() as Log);
+    const logs = snap.docs.map(d => d.data() as Log);
+    setCachedLogs(logs);
+    return logs;
   } catch (err) {
-    console.warn("[Firestore] fetchLogsFromServer error notice:", err);
-    try {
-      const snap = await getDocs(collection(db, "logs"));
-      const logs = snap.docs.map(d => d.data() as Log);
-      logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      return logs;
-    } catch (fallbackErr) {
-      handleFirestoreError(fallbackErr, OperationType.LIST, "logs");
-      return [];
-    }
+    handleFirestoreError(err, OperationType.LIST, "logs");
+    return getCachedLogs();
   }
 }
 
