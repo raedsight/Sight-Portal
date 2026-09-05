@@ -7,11 +7,17 @@ import {
 import { auth } from "./firebase";
 
 const provider = new GoogleAuthProvider();
-// Request Google Sheets scope (matching what user confirmed)
+// Request Google Sheets and Google Drive scopes for client media storage and spreadsheet bridge
 provider.addScope("https://www.googleapis.com/auth/spreadsheets");
+provider.addScope("https://www.googleapis.com/auth/drive");
+provider.addScope("https://www.googleapis.com/auth/drive.file");
 
 let isSigningIn = false;
 let cachedAccessToken: string | null = null;
+
+export const setCachedAccessToken = (token: string | null) => {
+  cachedAccessToken = token;
+};
 
 // Listen for Auth changes and restore or clear cached tokens
 export const initAuth = (
@@ -55,7 +61,7 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
       error.code === "auth/cancelled-popup-request"
     ) {
       throw new Error(
-        "Google Sign-In popup was blocked or interrupted by the iframe preview environment. Please click 'Open in New Tab' to run outside the sandbox, or use email/password sign-in."
+        "Google Sign-In popup was blocked or interrupted by the iframe preview environment. Please click 'Open in New Tab' to sign in smoothly outside the sandbox."
       );
     }
     throw error;

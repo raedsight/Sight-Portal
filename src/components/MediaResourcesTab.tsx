@@ -26,15 +26,37 @@ import {
   X,
   Tag,
   Grid,
-  List as ListIcon
+  List as ListIcon,
+  Folder,
+  FolderCheck,
+  HardDrive,
+  Cloud,
+  CloudUpload,
+  RefreshCw,
+  Lock,
+  ShieldCheck,
 } from "lucide-react";
 import { Client, MediaResource, MediaCategory, SpreadsheetData, Log } from "../types";
+import {
+  DRIVE_ROOT_MEDIA_FOLDER_ID,
+  DRIVE_ROOT_FOLDER_URL,
+  getOrProvisionClientFolder,
+  uploadMediaToClientFolder,
+  dataUrlToBlob,
+  grantClientFolderAccess,
+  DriveFolderInfo,
+  GoogleDriveApiError,
+} from "../services/googleDrive";
+import { getAccessToken } from "../firebaseAuth";
 
 interface MediaResourcesTabProps {
   client: Client;
   sheetData: SpreadsheetData | null;
   onUpdateClient: (updatedClient: Client) => void;
   onRecordLog: (log: Omit<Log, "id" | "timestamp">) => void;
+  googleAccessToken?: string | null;
+  onTriggerGoogleSignIn?: () => Promise<string | null>;
+  clientEmail?: string;
 }
 
 export default function MediaResourcesTab({
@@ -42,6 +64,9 @@ export default function MediaResourcesTab({
   sheetData,
   onUpdateClient,
   onRecordLog,
+  googleAccessToken,
+  onTriggerGoogleSignIn,
+  clientEmail,
 }: MediaResourcesTabProps) {
   // Active Category Filter
   const [selectedCategory, setSelectedCategory] = useState<"all" | MediaCategory>("all");
@@ -54,6 +79,18 @@ export default function MediaResourcesTab({
   const [inspectingMedia, setInspectingMedia] = useState<MediaResource | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [pushingToUE5, setPushingToUE5] = useState(false);
+
+  // Google Drive Integration States
+  const [saveToGoogleDrive, setSaveToGoogleDrive] = useState(true);
+  const [isProvisioningDrive, setIsProvisioningDrive] = useState(false);
+  const [driveStatusMessage, setDriveStatusMessage] = useState<string | null>(null);
+  const [batchSyncingDrive, setBatchSyncingDrive] = useState(false);
+  const [uploadingSingleDriveId, setUploadingSingleDriveId] = useState<string | null>(null);
+  const [driveApiNotice, setDriveApiNotice] = useState<{
+    isServiceDisabled: boolean;
+    activationUrl: string;
+    projectId?: string;
+  } | null>(null);
 
   // Upload Form Fields
   const [formCategory, setFormCategory] = useState<MediaCategory>("project");
@@ -102,6 +139,11 @@ export default function MediaResourcesTab({
     const servicesCount = mediaList.filter((m) => m.category === "services").length;
     const propertiesCount = mediaList.filter((m) => m.category === "properties").length;
     return { total: mediaList.length, project: projectCount, services: servicesCount, properties: propertiesCount };
+  }, [mediaList]);
+
+  // Count of items synced to Google Drive
+  const driveSyncedCount = useMemo(() => {
+    return mediaList.filter((m) => Boolean(m.driveFileId)).length;
   }, [mediaList]);
 
   // Filtered media list
@@ -207,8 +249,23 @@ export default function MediaResourcesTab({
     setShowUploadModal(true);
   };
 
-  // Submit media upload
-  const handleSaveMedia = (e: React.FormEvent) => {
+  // Helper to obtain active Google OAuth access token
+  const resolveAccessToken = async (): Promise<string | null> => {
+    if (googleAccessToken) return googleAccessToken;
+    if (onTriggerGoogleSignIn) {
+      try {
+        const token = await onTriggerGoogleSignIn();
+        if (token) return token;
+      } catch (e) {
+        console.warn("[Google Drive] Interactive auth failed or was cancelled:", e);
+      }
+    }
+    const cached = await getAccessToken();
+    return cached;
+  };
+
+  // Submit media upload with Google Drive persistence
+  const handleSaveMedia = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formMediaUrl) {
@@ -237,6 +294,66 @@ export default function MediaResourcesTab({
       return;
     }
 
+    let driveFileId: string | undefined = undefined;
+    let driveWebViewLink: string | undefined = undefined;
+    let driveThumbnailLink: string | undefined = undefined;
+    let folderInfoResult: DriveFolderInfo | null = null;
+
+    if (saveToGoogleDrive) {
+      setUploadProcessing(true);
+      setDriveStatusMessage("Connecting to Google Drive...");
+      try {
+        const token = await resolveAccessToken();
+        if (token) {
+          setDriveStatusMessage("Locating/creating client's dedicated Google Drive folder...");
+          folderInfoResult = await getOrProvisionClientFolder(client, token);
+
+          setDriveStatusMessage(`Uploading media into ${folderInfoResult.folderName}...`);
+          const { blob, mimeType } = dataUrlToBlob(formMediaUrl);
+          const uploadRes = await uploadMediaToClientFolder({
+            blob,
+            dataUrl: formMediaUrl.startsWith("data:") ? formMediaUrl : undefined,
+            url: !formMediaUrl.startsWith("data:") ? formMediaUrl : undefined,
+            fileName: formFileName || `${formTitle.trim().replace(/\s+/g, "_")}.jpg`,
+            mimeType,
+            folderId: folderInfoResult.folderId,
+            token,
+            description: `${formTitle.trim()} (${formCategory}) - Client: ${client.name}`,
+          });
+
+          driveFileId = uploadRes.fileId;
+          driveWebViewLink = uploadRes.webViewLink;
+          driveThumbnailLink = uploadRes.thumbnailLink;
+
+          // Client Isolation: If client email is known, grant access to their specific folder only
+          if (clientEmail) {
+            grantClientFolderAccess(folderInfoResult.folderId, clientEmail, token, "reader").catch((err) =>
+              console.warn("[Google Drive] Folder share fallback:", err)
+            );
+          }
+        } else {
+          console.warn("[Google Drive] No token available, media will be registered without Drive link.");
+          alert("Notice: Google account is not connected. The media asset has been safely registered in your local client portal. To automatically save future assets to Google Drive, connect your Google account in the top bar.");
+        }
+      } catch (driveErr: any) {
+        console.warn("[Google Drive Upload Notice]", driveErr);
+        if (driveErr.isServiceDisabled || driveErr.message?.includes("Google Drive API") || driveErr.message?.includes("SERVICE_DISABLED")) {
+          setDriveApiNotice({
+            isServiceDisabled: true,
+            activationUrl:
+              driveErr.activationUrl ||
+              "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=sodium-icon-v8gvj",
+            projectId: driveErr.projectId || "sodium-icon-v8gvj",
+          });
+        } else {
+          alert(`Google Drive notice: ${driveErr.message || driveErr}\n\nThe media resource was still saved in the client portal.`);
+        }
+      } finally {
+        setDriveStatusMessage(null);
+        setUploadProcessing(false);
+      }
+    }
+
     const timestamp = new Date().toISOString();
     const newMedia: MediaResource = {
       id: `med-${Date.now()}`,
@@ -258,12 +375,17 @@ export default function MediaResourcesTab({
             .filter(Boolean)
         : undefined,
       uploadedAt: timestamp,
+      driveFileId,
+      driveWebViewLink,
+      driveThumbnailLink,
     };
 
     const updatedMediaList = [newMedia, ...mediaList];
     const updatedClient: Client = {
       ...client,
       mediaResources: updatedMediaList,
+      driveFolderId: folderInfoResult?.folderId || client.driveFolderId,
+      driveFolderUrl: folderInfoResult?.folderUrl || client.driveFolderUrl,
       updatedAt: timestamp,
     };
 
@@ -275,11 +397,245 @@ export default function MediaResourcesTab({
       type: "config_change",
       status: "success",
       details: `Added new ${formCategory} media resource: "${newMedia.title}" ${
-        newMedia.propertyClass ? `(Class: ${newMedia.propertyClass})` : ""
+        driveFileId ? `(Saved to Google Drive: ${driveFileId})` : ""
       }`,
     });
 
     setShowUploadModal(false);
+  };
+
+  // Provision or verify client's dedicated Google Drive folder
+  const handleProvisionDriveFolder = async () => {
+    try {
+      setIsProvisioningDrive(true);
+      const token = await resolveAccessToken();
+      if (!token) {
+        alert("Please authenticate with Google to access Google Drive.");
+        return;
+      }
+
+      const folderInfo = await getOrProvisionClientFolder(client, token);
+      if (clientEmail) {
+        await grantClientFolderAccess(folderInfo.folderId, clientEmail, token, "reader");
+      }
+
+      const updatedClient: Client = {
+        ...client,
+        driveFolderId: folderInfo.folderId,
+        driveFolderUrl: folderInfo.folderUrl,
+        updatedAt: new Date().toISOString(),
+      };
+
+      onUpdateClient(updatedClient);
+      onRecordLog({
+        clientId: client.id,
+        clientName: client.name,
+        type: "config_change",
+        status: "success",
+        details: `Verified dedicated Google Drive folder: ${folderInfo.folderName} (ID: ${folderInfo.folderId})`,
+      });
+
+      alert(`Dedicated Google Drive folder verified!\nFolder: ${folderInfo.folderName}\nID: ${folderInfo.folderId}`);
+    } catch (err: any) {
+      console.warn("[Provision Drive Folder Error]", err);
+      if (err.isServiceDisabled || err.message?.includes("Google Drive API") || err.message?.includes("SERVICE_DISABLED")) {
+        setDriveApiNotice({
+          isServiceDisabled: true,
+          activationUrl:
+            err.activationUrl ||
+            "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=sodium-icon-v8gvj",
+          projectId: err.projectId || "sodium-icon-v8gvj",
+        });
+      } else {
+        alert(`Could not configure Google Drive folder: ${err.message || err}`);
+      }
+    } finally {
+      setIsProvisioningDrive(false);
+    }
+  };
+
+  // Batch sync all media files that aren't yet in Google Drive
+  const handleSyncAllToDrive = async () => {
+    const unsyncedItems = mediaList.filter((m) => !m.driveFileId);
+    if (unsyncedItems.length === 0) {
+      alert("All registered media assets for this client are already saved in Google Drive!");
+      return;
+    }
+
+    try {
+      setBatchSyncingDrive(true);
+      const token = await resolveAccessToken();
+      if (!token) {
+        alert("Please connect your Google account to sync files to Google Drive.");
+        return;
+      }
+
+      setDriveStatusMessage("Locating dedicated client folder...");
+      const folderInfo = await getOrProvisionClientFolder(client, token);
+
+      let successCount = 0;
+      const updatedMediaList = [...mediaList];
+
+      for (let i = 0; i < unsyncedItems.length; i++) {
+        const item = unsyncedItems[i];
+        setDriveStatusMessage(`Uploading (${i + 1}/${unsyncedItems.length}): ${item.title}...`);
+
+        try {
+          const { blob, mimeType } = dataUrlToBlob(item.url);
+          const uploadRes = await uploadMediaToClientFolder({
+            blob,
+            dataUrl: item.url.startsWith("data:") ? item.url : undefined,
+            url: !item.url.startsWith("data:") ? item.url : undefined,
+            fileName: item.fileName || `${item.title.replace(/\s+/g, "_")}.jpg`,
+            mimeType,
+            folderId: folderInfo.folderId,
+            token,
+            description: `${item.title} (${item.category}) - Client: ${client.name}`,
+          });
+
+          const idx = updatedMediaList.findIndex((m) => m.id === item.id);
+          if (idx !== -1) {
+            updatedMediaList[idx] = {
+              ...updatedMediaList[idx],
+              driveFileId: uploadRes.fileId,
+              driveWebViewLink: uploadRes.webViewLink,
+              driveThumbnailLink: uploadRes.thumbnailLink,
+            };
+            successCount++;
+          }
+        } catch (itemErr: any) {
+          console.warn(`[Google Drive] Failed uploading item ${item.title}:`, itemErr);
+          if (itemErr.isServiceDisabled || itemErr.message?.includes("Google Drive API")) {
+            setDriveApiNotice({
+              isServiceDisabled: true,
+              activationUrl:
+                itemErr.activationUrl ||
+                "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=sodium-icon-v8gvj",
+              projectId: itemErr.projectId || "sodium-icon-v8gvj",
+            });
+            break;
+          }
+        }
+      }
+
+      const updatedClient: Client = {
+        ...client,
+        mediaResources: updatedMediaList,
+        driveFolderId: folderInfo.folderId,
+        driveFolderUrl: folderInfo.folderUrl,
+        updatedAt: new Date().toISOString(),
+      };
+
+      onUpdateClient(updatedClient);
+
+      onRecordLog({
+        clientId: client.id,
+        clientName: client.name,
+        type: "config_change",
+        status: "success",
+        details: `Saved ${successCount} media files to Google Drive folder: ${folderInfo.folderName}`,
+      });
+
+      if (successCount > 0) {
+        alert(`Successfully saved ${successCount} files to client's dedicated Google Drive folder!`);
+      }
+    } catch (err: any) {
+      console.warn("[Batch Sync Drive Error]", err);
+      if (err.isServiceDisabled || err.message?.includes("Google Drive API") || err.message?.includes("SERVICE_DISABLED")) {
+        setDriveApiNotice({
+          isServiceDisabled: true,
+          activationUrl:
+            err.activationUrl ||
+            "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=sodium-icon-v8gvj",
+          projectId: err.projectId || "sodium-icon-v8gvj",
+        });
+      } else {
+        alert(`Syncing to Google Drive failed: ${err.message || err}`);
+      }
+    } finally {
+      setBatchSyncingDrive(false);
+      setDriveStatusMessage(null);
+    }
+  };
+
+  // Upload an individual media item to Google Drive
+  const handleUploadSingleItemToDrive = async (item: MediaResource) => {
+    try {
+      setUploadingSingleDriveId(item.id);
+      const token = await resolveAccessToken();
+      if (!token) {
+        alert("Please connect your Google account to upload to Google Drive.");
+        return;
+      }
+
+      const folderInfo = await getOrProvisionClientFolder(client, token);
+      const { blob, mimeType } = dataUrlToBlob(item.url);
+      const uploadRes = await uploadMediaToClientFolder({
+        blob,
+        dataUrl: item.url.startsWith("data:") ? item.url : undefined,
+        url: !item.url.startsWith("data:") ? item.url : undefined,
+        fileName: item.fileName || `${item.title.replace(/\s+/g, "_")}.jpg`,
+        mimeType,
+        folderId: folderInfo.folderId,
+        token,
+        description: `${item.title} (${item.category}) - Client: ${client.name}`,
+      });
+
+      const updatedList = mediaList.map((m) =>
+        m.id === item.id
+          ? {
+              ...m,
+              driveFileId: uploadRes.fileId,
+              driveWebViewLink: uploadRes.webViewLink,
+              driveThumbnailLink: uploadRes.thumbnailLink,
+            }
+          : m
+      );
+
+      const updatedClient: Client = {
+        ...client,
+        mediaResources: updatedList,
+        driveFolderId: folderInfo.folderId,
+        driveFolderUrl: folderInfo.folderUrl,
+        updatedAt: new Date().toISOString(),
+      };
+
+      onUpdateClient(updatedClient);
+
+      if (inspectingMedia?.id === item.id) {
+        setInspectingMedia({
+          ...inspectingMedia,
+          driveFileId: uploadRes.fileId,
+          driveWebViewLink: uploadRes.webViewLink,
+          driveThumbnailLink: uploadRes.thumbnailLink,
+        });
+      }
+
+      onRecordLog({
+        clientId: client.id,
+        clientName: client.name,
+        type: "config_change",
+        status: "success",
+        details: `Saved media asset "${item.title}" to Google Drive folder: ${folderInfo.folderName}`,
+      });
+
+      alert(`"${item.title}" successfully saved to client's Google Drive folder!`);
+    } catch (err: any) {
+      console.warn("[Single Item Drive Upload Error]", err);
+      if (err.isServiceDisabled || err.message?.includes("Google Drive API") || err.message?.includes("SERVICE_DISABLED")) {
+        setDriveApiNotice({
+          isServiceDisabled: true,
+          activationUrl:
+            err.activationUrl ||
+            "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=sodium-icon-v8gvj",
+          projectId: err.projectId || "sodium-icon-v8gvj",
+        });
+      } else {
+        alert(`Upload to Google Drive notice: ${err.message || err}`);
+      }
+    } finally {
+      setUploadingSingleDriveId(null);
+    }
   };
 
   // Delete media resource
@@ -393,6 +749,177 @@ export default function MediaResourcesTab({
 
   return (
     <div className="animate-fadeIn text-left space-y-6" id="media-resources-tab-root">
+      {/* Dedicated Google Drive Media Storage Hub */}
+      <div className="bg-gradient-to-r from-emerald-950/40 via-slate-900/60 to-blue-950/40 border border-emerald-500/30 rounded-2xl p-5 shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 transform translate-x-8 -translate-y-8 w-44 h-44 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-1.5 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                <HardDrive className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-white flex items-center gap-2">
+                  <span>Google Drive Client Media Repository</span>
+                  <span className="px-2 py-0.5 rounded text-[9px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 font-bold">
+                    <ShieldCheck className="h-3 w-3" />
+                    Isolated Client Access
+                  </span>
+                </h3>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-300 max-w-3xl leading-relaxed">
+              Every client has a dedicated folder inside the shared root directory (
+              <a
+                href={DRIVE_ROOT_FOLDER_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-emerald-400 underline hover:text-emerald-300 font-mono text-[11px]"
+              >
+                13fE2R_-qxOMlT2U7tY1NtK36xpwahMkg
+              </a>
+              ). All media uploaded via this portal is stored in the client's dedicated folder, and clients only have access to their specific folder.
+            </p>
+
+            <div className="flex items-center gap-3 pt-1 text-[11px] font-mono flex-wrap">
+              <span className="text-gray-400 flex items-center gap-1.5">
+                <Folder className="h-3.5 w-3.5 text-emerald-400" />
+                Folder: <span className="text-white font-bold">{client.company || client.name} ({client.id})</span>
+              </span>
+              {client.driveFolderId ? (
+                <span className="text-emerald-300 flex items-center gap-1 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
+                  <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                  ID: {client.driveFolderId}
+                </span>
+              ) : (
+                <span className="text-amber-300 flex items-center gap-1 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-500/30">
+                  <AlertTriangle className="h-3 w-3 text-amber-400" />
+                  Folder ready to provision on upload
+                </span>
+              )}
+
+              <span className="text-gray-400">
+                Backed Up: <span className="text-emerald-400 font-bold">{driveSyncedCount}</span> / {mediaList.length} files
+              </span>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2 flex-wrap shrink-0">
+            {client.driveFolderUrl && (
+              <a
+                href={client.driveFolderUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/40 transition flex items-center gap-1.5"
+              >
+                <FolderCheck className="h-4 w-4" />
+                <span>Open Dedicated Folder ↗</span>
+              </a>
+            )}
+
+            {!client.driveFolderId && (
+              <button
+                type="button"
+                onClick={handleProvisionDriveFolder}
+                disabled={isProvisioningDrive}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isProvisioningDrive ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Folder className="h-4 w-4" />
+                )}
+                <span>{isProvisioningDrive ? "Connecting..." : "Provision Client Folder"}</span>
+              </button>
+            )}
+
+            {mediaList.length > driveSyncedCount && (
+              <button
+                type="button"
+                onClick={handleSyncAllToDrive}
+                disabled={batchSyncingDrive}
+                className="px-3 py-2 rounded-xl text-xs font-medium bg-black/60 hover:bg-black/80 border border-emerald-500/30 text-emerald-300 hover:text-white transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                title="Upload all remaining unsynced media assets to Google Drive"
+              >
+                {batchSyncingDrive ? (
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-emerald-400" />
+                ) : (
+                  <CloudUpload className="h-3.5 w-3.5 text-emerald-400" />
+                )}
+                <span>
+                  {batchSyncingDrive
+                    ? "Syncing Files..."
+                    : `Sync All to Drive (${mediaList.length - driveSyncedCount} left)`}
+                </span>
+              </button>
+            )}
+
+            <a
+              href={DRIVE_ROOT_FOLDER_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2.5 py-2 rounded-xl text-xs font-medium bg-black/40 hover:bg-black/60 border border-white/10 text-gray-300 hover:text-white transition flex items-center gap-1"
+              title="Open shared root repository"
+            >
+              <ExternalLink className="h-3.5 w-3.5 text-gray-400" />
+              <span>Root Repo</span>
+            </a>
+          </div>
+        </div>
+
+        {/* Sync Progress Notice */}
+        {driveStatusMessage && (
+          <div className="mt-3 p-2.5 bg-black/50 border border-emerald-500/30 rounded-xl flex items-center gap-2 text-xs text-emerald-200 animate-pulse">
+            <RefreshCw className="h-3.5 w-3.5 animate-spin text-emerald-400 shrink-0" />
+            <span>{driveStatusMessage}</span>
+          </div>
+        )}
+
+        {/* Google Drive API Service Disabled / Activation Banner */}
+        {driveApiNotice && (
+          <div className="mt-3 p-4 bg-amber-950/80 border-2 border-amber-500/60 rounded-xl text-amber-200 text-xs flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-amber-500/20 rounded-lg shrink-0 mt-0.5 border border-amber-500/30">
+                <AlertTriangle className="h-5 w-5 text-amber-400" />
+              </div>
+              <div className="space-y-1">
+                <div className="font-bold text-sm text-amber-100 flex items-center gap-2">
+                  <span>Google Drive API Activation Required in Google Cloud</span>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                    Project {driveApiNotice.projectId || "sodium-icon-v8gvj"}
+                  </span>
+                </div>
+                <div className="text-xs text-amber-200/90 leading-relaxed max-w-2xl">
+                  The Google Drive API is not yet enabled in the Google Cloud Console for project <code className="bg-black/40 px-1.5 py-0.5 rounded text-amber-300 font-mono">{driveApiNotice.projectId || "sodium-icon-v8gvj"}</code>.
+                  All uploaded media assets remain <strong className="text-white">100% safely registered in your client portal</strong>. Click below to enable the API with one click.
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+              <a
+                href={driveApiNotice.activationUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-lg text-xs flex items-center gap-1.5 transition shadow hover:shadow-amber-500/20"
+              >
+                <span>Enable Google Drive API ↗</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => setDriveApiNotice(null)}
+                className="px-2.5 py-2 text-xs text-amber-300/80 hover:text-white transition cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Top Banner & Summary Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Assets */}
@@ -841,12 +1368,41 @@ export default function MediaResourcesTab({
                     )}
                   </div>
 
-                  {/* Metadata footer */}
-                  <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[9px] text-gray-500 font-mono">
-                    <span>
+                  {/* Metadata footer & Google Drive Integration */}
+                  <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[9px] font-mono">
+                    <span className="text-gray-500">
                       {item.dimensions ? `${item.dimensions.width}×${item.dimensions.height}` : "HD"}
                     </span>
-                    <span>{new Date(item.uploadedAt).toLocaleDateString()}</span>
+                    <div className="flex items-center gap-1.5">
+                      {item.driveWebViewLink ? (
+                        <a
+                          href={item.driveWebViewLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 transition text-[8.5px] font-bold"
+                          title="Open file in client's dedicated Google Drive folder"
+                        >
+                          <Cloud className="h-2.5 w-2.5 text-emerald-400" />
+                          <span>Drive ↗</span>
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUploadSingleItemToDrive(item);
+                          }}
+                          disabled={uploadingSingleDriveId === item.id}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/25 text-blue-300 hover:bg-blue-500/20 transition text-[8.5px] cursor-pointer disabled:opacity-50"
+                          title="Save this asset to client's dedicated Google Drive folder"
+                        >
+                          <CloudUpload className="h-2.5 w-2.5 text-blue-400" />
+                          <span>{uploadingSingleDriveId === item.id ? "Saving..." : "To Drive"}</span>
+                        </button>
+                      )}
+                      <span className="text-gray-500">{new Date(item.uploadedAt).toLocaleDateString()}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -916,7 +1472,30 @@ export default function MediaResourcesTab({
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
+                {item.driveWebViewLink ? (
+                  <a
+                    href={item.driveWebViewLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 transition text-[10px] font-mono font-bold"
+                    title="Open file in client's dedicated Google Drive folder"
+                  >
+                    <Cloud className="h-3 w-3 text-emerald-400" />
+                    <span>Drive ↗</span>
+                  </a>
+                ) : (
+                  <button
+                    onClick={() => handleUploadSingleItemToDrive(item)}
+                    disabled={uploadingSingleDriveId === item.id}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded bg-blue-500/10 border border-blue-500/25 text-blue-300 hover:bg-blue-500/20 transition text-[10px] font-mono cursor-pointer disabled:opacity-50"
+                    title="Save to client's dedicated Google Drive folder"
+                  >
+                    <CloudUpload className="h-3 w-3 text-blue-400" />
+                    <span>{uploadingSingleDriveId === item.id ? "Saving..." : "Save to Drive"}</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => setInspectingMedia(item)}
                   className="p-1.5 rounded hover:bg-white/10 text-gray-400 hover:text-white transition cursor-pointer"
@@ -1295,6 +1874,61 @@ export default function MediaResourcesTab({
                 </div>
               </div>
 
+              {/* Google Drive Storage Option */}
+              <div className="p-3.5 bg-gradient-to-r from-emerald-950/30 to-blue-950/30 border border-emerald-500/25 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-xs font-bold text-white cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={saveToGoogleDrive}
+                      onChange={(e) => setSaveToGoogleDrive(e.target.checked)}
+                      className="w-4 h-4 rounded text-emerald-600 bg-black border-emerald-500/40 focus:ring-emerald-500"
+                    />
+                    <span className="flex items-center gap-1.5">
+                      <Cloud className="h-3.5 w-3.5 text-emerald-400" />
+                      Save to Dedicated Client Google Drive Folder
+                    </span>
+                  </label>
+                  <span className="px-2 py-0.5 rounded text-[8.5px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                    Isolated Storage
+                  </span>
+                </div>
+                {saveToGoogleDrive && (
+                  <div className="text-[10px] text-gray-300 space-y-1">
+                    <div className="flex items-center gap-1.5 text-emerald-400 font-medium">
+                      <Folder className="h-3 w-3" />
+                      <span>
+                        Destination Folder: <strong className="text-white font-mono">{client.company || client.name} ({client.id})</strong>
+                      </span>
+                    </div>
+                    <p className="text-gray-400 leading-relaxed text-[9.5px]">
+                      This file will be automatically saved into the dedicated folder inside the shared root repository (13fE2R_-qxOMlT2U7tY1NtK36xpwahMkg). Client access will remain strictly isolated to their own media folder.
+                    </p>
+                    {driveApiNotice && (
+                      <div className="p-2 bg-amber-950/70 border border-amber-500/40 rounded-lg text-amber-200 text-[10px] flex items-center justify-between gap-2">
+                        <span>Google Drive API needs activation in project {driveApiNotice.projectId || "sodium-icon-v8gvj"}. Asset will still be saved to the client portal.</span>
+                        <a
+                          href={driveApiNotice.activationUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline text-amber-300 hover:text-white font-bold shrink-0"
+                        >
+                          Enable API ↗
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Drive status message if uploading */}
+              {uploadProcessing && driveStatusMessage && (
+                <div className="p-3 bg-blue-500/15 border border-blue-500/30 rounded-xl flex items-center gap-2.5 text-xs text-blue-200 animate-pulse">
+                  <RefreshCw className="h-4 w-4 animate-spin text-blue-400 shrink-0" />
+                  <span>{driveStatusMessage}</span>
+                </div>
+              )}
+
               {/* Modal Action Buttons */}
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
                 <button
@@ -1306,15 +1940,24 @@ export default function MediaResourcesTab({
                 </button>
                 <button
                   type="submit"
-                  disabled={Boolean(resolutionError) || !formMediaUrl}
+                  disabled={Boolean(resolutionError) || !formMediaUrl || uploadProcessing}
                   className={`px-5 py-2 rounded-lg text-xs font-bold text-white transition flex items-center gap-1.5 cursor-pointer ${
-                    resolutionError || !formMediaUrl
+                    resolutionError || !formMediaUrl || uploadProcessing
                       ? "bg-gray-700 opacity-50 cursor-not-allowed"
                       : "bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/30"
                   }`}
                 >
-                  <Check className="h-4 w-4" />
-                  Save & Register Asset
+                  {uploadProcessing ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin text-white" />
+                      <span>Saving & Uploading to Drive...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-4 w-4" />
+                      <span>Save & Register Asset</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -1475,6 +2118,53 @@ export default function MediaResourcesTab({
                     </div>
                   </div>
                 )}
+
+                {/* Google Drive Status & Direct Access */}
+                <div className="pt-2 border-t border-white/10 space-y-2">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                    Google Drive Dedicated Storage
+                  </span>
+                  {inspectingMedia.driveWebViewLink ? (
+                    <div className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 space-y-2">
+                      <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-bold">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        <span>Stored in Client Folder</span>
+                      </div>
+                      <div className="text-[10px] font-mono text-gray-400 space-y-0.5">
+                        <div>File ID: <span className="text-gray-300 truncate">{inspectingMedia.driveFileId}</span></div>
+                        <div>Dedicated Folder: <span className="text-white">{client.company || client.name}</span></div>
+                      </div>
+                      <a
+                        href={inspectingMedia.driveWebViewLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-1.5 w-full py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        <span>Open in Google Drive ↗</span>
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="p-2.5 rounded-xl bg-blue-950/30 border border-blue-500/25 space-y-2">
+                      <p className="text-[10px] text-gray-300 leading-tight">
+                        This media is currently on portal. Save to client's dedicated Google Drive folder for cloud backup and isolation.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => handleUploadSingleItemToDrive(inspectingMedia)}
+                        disabled={uploadingSingleDriveId === inspectingMedia.id}
+                        className="inline-flex items-center justify-center gap-1.5 w-full py-1.5 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition cursor-pointer disabled:opacity-50"
+                      >
+                        {uploadingSingleDriveId === inspectingMedia.id ? (
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <CloudUpload className="h-3.5 w-3.5" />
+                        )}
+                        <span>{uploadingSingleDriveId === inspectingMedia.id ? "Uploading..." : "Save to Client's Drive Folder"}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 {/* UE5 Bridge JSON format */}
                 <div className="pt-2 border-t border-white/10">

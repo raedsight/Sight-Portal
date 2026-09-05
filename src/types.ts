@@ -42,6 +42,34 @@ export interface BugIssue {
   activities: BugActivity[];
 }
 
+export interface BugNotificationPayload {
+  action: "created" | "updated" | "commented";
+  client: {
+    id: string;
+    name: string;
+    company: string;
+  };
+  bug: BugIssue;
+  updateDetails?: {
+    user?: string;
+    message?: string;
+    previousStatus?: string;
+    newStatus?: string;
+  };
+  adminEmails?: string[];
+  appUrl?: string;
+}
+
+export interface BugNotificationResult {
+  success: boolean;
+  message: string;
+  recipient: string;
+  subject: string;
+  previewUrl?: string;
+  mode: "smtp" | "resend" | "ethereal" | "logged";
+  timestamp: string;
+}
+
 export type MediaCategory = "project" | "services" | "properties";
 
 export interface MediaResource {
@@ -62,6 +90,9 @@ export interface MediaResource {
   serviceName?: string;   // For 'services' category: service building name
   tags?: string[];
   uploadedAt: string;     // ISO timestamp
+  driveFileId?: string;   // Google Drive File ID
+  driveWebViewLink?: string; // Direct Google Drive View Link
+  driveThumbnailLink?: string; // Google Drive thumbnail
 }
 
 export interface Client {
@@ -77,6 +108,8 @@ export interface Client {
   sheetData?: SpreadsheetData; // Live property portfolio spreadsheet rows and columns saved in Firebase
   bugs?: BugIssue[];     // Optional list of tracked bug issues
   mediaResources?: MediaResource[]; // Categorized media resources (Project, Services, Properties)
+  driveFolderId?: string; // Dedicated Google Drive folder ID under shared root
+  driveFolderUrl?: string; // Direct link to client's dedicated Google Drive folder
 }
 
 export interface Log {

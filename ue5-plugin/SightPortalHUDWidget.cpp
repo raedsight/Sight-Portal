@@ -626,52 +626,19 @@ void USightPortalHUDWidget::OpenUnitSearch()
         TSubclassOf<UUserWidget> ClassToSpawn = UnitSearchWidgetClass ? UnitSearchWidgetClass : TSubclassOf<UUserWidget>(USightPortalUnitSearchWidget::StaticClass());
         if (ClassToSpawn)
         {
-            ActiveUnitSearchWidget = CreateWidget<UUserWidget>(GetOwningPlayer(), ClassToSpawn);
-            if (USightPortalUnitSearchWidget* SearchWidget = Cast<USightPortalUnitSearchWidget>(ActiveUnitSearchWidget))
+            CreatedWidget->SetVisibility(ESlateVisibility::Visible);
+            CreatedWidget->AddToViewport(20);
+
+            if (APlayerController* PC = GetOwningPlayer())
             {
-                SearchWidget->OnUnitSearchClosed.AddDynamic(this, &USightPortalHUDWidget::CloseUnitSearch);
+                PC->bShowMouseCursor = true;
+                PC->bEnableClickEvents = true;
+                PC->bEnableMouseOverEvents = true;
+                FInputModeGameAndUI InputMode;
+                InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+                InputMode.SetHideCursorDuringCapture(false);
+                PC->SetInputMode(InputMode);
             }
-        }
-    }
-
-    if (ActiveUnitSearchWidget)
-    {
-        if (!ActiveUnitSearchWidget->IsInViewport())
-        {
-            ActiveUnitSearchWidget->AddToViewport(20);
-        }
-        ActiveUnitSearchWidget->SetVisibility(ESlateVisibility::Visible);
-
-        if (USightPortalUnitSearchWidget* SearchWidget = Cast<USightPortalUnitSearchWidget>(ActiveUnitSearchWidget))
-        {
-            SearchWidget->InitializeData();
-        }
-
-        if (APlayerController* PC = GetOwningPlayer())
-        {
-            PC->bShowMouseCursor = true;
-            PC->bEnableClickEvents = true;
-            PC->bEnableMouseOverEvents = true;
-            FInputModeGameAndUI InputMode;
-            InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-            InputMode.SetHideCursorDuringCapture(false);
-            PC->SetInputMode(InputMode);
-        }
-    }
-}
-
-void USightPortalHUDWidget::CloseUnitSearch()
-{
-    if (ActiveUnitSearchWidget && IsValid(ActiveUnitSearchWidget))
-    {
-        if (USightPortalUnitSearchWidget* SearchWidget = Cast<USightPortalUnitSearchWidget>(ActiveUnitSearchWidget))
-        {
-            SearchWidget->ClearSceneIsolation();
-        }
-
-        if (ActiveUnitSearchWidget->IsInViewport())
-        {
-            ActiveUnitSearchWidget->RemoveFromParent();
         }
         ActiveUnitSearchWidget = nullptr;
     }
