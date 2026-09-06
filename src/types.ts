@@ -102,7 +102,7 @@ export interface Client {
   sheetId: string;       // Google Sheet ID or Full URL
   sheetTab: string;      // E.g., GridId/TabName "Sheet1"
   ue5Endpoint: string;   // E.g. "http://localhost:8008/remote/object/call"
-  webSocketEndpoint?: string; // E.g. "ws://127.0.0.1:8009"
+  webSocketEndpoint?: string; // Optional custom override. Blank/empty = dynamic cloud auto-generated WebSocket URL
   branding: BrandingTheme;
   updatedAt: string;     // ISO timestamp
   sheetData?: SpreadsheetData; // Live property portfolio spreadsheet rows and columns saved in Firebase

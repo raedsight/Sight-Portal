@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { WebSocketServer, WebSocket } from "ws";
 import { 
@@ -17,8 +18,35 @@ async function startServer() {
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
+  const CACHE_FILE_PATH = path.join(process.cwd(), "clients_datatable_cache.json");
+
+  // Helper to load persisted client spreadsheets from disk across Cloud Run cold starts
+  const loadPersistedClients = (): Record<string, { client_slug: string; target_class: string; attributes_matrix: any[]; }> => {
+    try {
+      if (fs.existsSync(CACHE_FILE_PATH)) {
+        const raw = fs.readFileSync(CACHE_FILE_PATH, "utf-8");
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          console.log(`[Server Cache] Loaded ${Object.keys(parsed).length} client datasets from disk cache.`);
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn("[Server Cache] Could not load persisted clients cache:", e);
+    }
+    return {};
+  };
+
+  const savePersistedClients = (data: Record<string, any>) => {
+    try {
+      fs.writeFileSync(CACHE_FILE_PATH, JSON.stringify(data, null, 2), "utf-8");
+    } catch (e) {
+      console.warn("[Server Cache] Could not save persisted clients cache:", e);
+    }
+  };
+
   // Shared server-side state repository holding compiled client-specific real-estate attributes
-  const clientsData: Record<string, {
+  const defaultClientsData: Record<string, {
     client_slug: string;
     target_class: string;
     attributes_matrix: any[];
@@ -32,7 +60,7 @@ async function startServer() {
           Zone: "Z1",
           Block: "Z1B1",
           "Door No": "1",
-          Price: "1250000",
+          Price: "450000000",
           Surface: "450.0",
           Availability: "Available",
           BuildingSurface: "350.0",
@@ -45,7 +73,7 @@ async function startServer() {
           Zone: "Z1",
           Block: "Z1B1",
           "Door No": "2",
-          Price: "2890000",
+          Price: "280000000",
           Surface: "280.0",
           Availability: "Available",
           BuildingSurface: "220.0",
@@ -58,7 +86,7 @@ async function startServer() {
           Zone: "Z1",
           Block: "Z1B2",
           "Door No": "1",
-          Price: "680000",
+          Price: "185000000",
           Surface: "185.0",
           Availability: "Under Offer",
           BuildingSurface: "150.0",
@@ -71,7 +99,7 @@ async function startServer() {
           Zone: "Z2",
           Block: "Z2B1",
           "Door No": "1",
-          Price: "450000",
+          Price: "120000000",
           Surface: "120.0",
           Availability: "Sold",
           BuildingSurface: "100.0",
@@ -81,6 +109,16 @@ async function startServer() {
         }
       ]
     }
+  };
+
+  // Initialize clientsData with persisted cache merged over defaults
+  const clientsData: Record<string, {
+    client_slug: string;
+    target_class: string;
+    attributes_matrix: any[];
+  }> = {
+    ...defaultClientsData,
+    ...loadPersistedClients()
   };
 
   // Helper function to broadcast updates to all active WebSocket clients connected to a specific client_slug
@@ -177,6 +215,9 @@ async function startServer() {
       
       console.log(`[Full-Stack API] State synchronized for client '${slug}' - ${attributes_matrix.length} rows updated.`);
       
+      // Persist to local disk so data survives container restarts/cold boots
+      savePersistedClients(clientsData);
+
       // Real-time Push to all active WebSockets/Connected Plugin threads directly
       broadcastSync("update", slug, updated_row);
 
@@ -215,6 +256,7 @@ async function startServer() {
     }
 
     console.log(`[Full-Stack API] Property '${targetName}' updated live for client '${slug}'. Broadcasting update to Unreal Engine...`);
+    savePersistedClients(clientsData);
     broadcastSync("update", slug, { property: targetName, data: property_data });
 
     res.json({

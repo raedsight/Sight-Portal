@@ -11,10 +11,10 @@ export const SPREADSHEET_TEMPLATES: Record<string, SpreadsheetData> = {
   "ArchViz Real-Estate Portfolio": {
     headers: ["Name", "Zone", "Block", "Class", "Door No", "Price", "Surface", "Availability", "BuildingSurface", "BedroomsCount", "BathroomsCount"],
     rows: [
-      { Name: "Z1B11", Zone: "Z1", Block: "Z1B1", Class: "Villa Type A", "Door No": "1", Price: "1250000", Surface: "450.0", Availability: "Available", BuildingSurface: "350.0", BedroomsCount: "5", BathroomsCount: "4" },
-      { Name: "Z1B12", Zone: "Z1", Block: "Z1B1", Class: "Penthouse Luxury", "Door No": "2", Price: "2890000", Surface: "280.0", Availability: "Available", BuildingSurface: "220.0", BedroomsCount: "3", BathroomsCount: "3" },
-      { Name: "Z1B21", Zone: "Z1", Block: "Z1B2", Class: "Townhouse Modern", "Door No": "1", Price: "680000", Surface: "185.0", Availability: "Under Offer", BuildingSurface: "150.0", BedroomsCount: "4", BathroomsCount: "2" },
-      { Name: "Z2B11", Zone: "Z2", Block: "Z2B1", Class: "Duplex Garden", "Door No": "1", Price: "450000", Surface: "120.0", Availability: "Sold", BuildingSurface: "100.0", BedroomsCount: "2", BathroomsCount: "2" },
+      { Name: "Z1B11", Zone: "Z1", Block: "Z1B1", Class: "Villa Type A", "Door No": "1", Price: "450000000", Surface: "450.0", Availability: "Available", BuildingSurface: "350.0", BedroomsCount: "5", BathroomsCount: "4" },
+      { Name: "Z1B12", Zone: "Z1", Block: "Z1B1", Class: "Penthouse Luxury", "Door No": "2", Price: "280000000", Surface: "280.0", Availability: "Available", BuildingSurface: "220.0", BedroomsCount: "3", BathroomsCount: "3" },
+      { Name: "Z1B21", Zone: "Z1", Block: "Z1B2", Class: "Townhouse Modern", "Door No": "1", Price: "185000000", Surface: "185.0", Availability: "Under Offer", BuildingSurface: "150.0", BedroomsCount: "4", BathroomsCount: "2" },
+      { Name: "Z2B11", Zone: "Z2", Block: "Z2B1", Class: "Duplex Garden", "Door No": "1", Price: "120000000", Surface: "120.0", Availability: "Sold", BuildingSurface: "100.0", BedroomsCount: "2", BathroomsCount: "2" },
     ],
   },
   "Virtual Camera & Rig Parameters": {
@@ -40,7 +40,7 @@ export const DEFAULT_CLIENTS: Client[] = [
     sheetId: "1tZp-u4cEunWqS8C8F3uW98vF8nK393J_i3d_8hH8q7g",
     sheetTab: "ArchVisProps",
     ue5Endpoint: "http://localhost:8012/api/ue5-stage",
-    webSocketEndpoint: "ws://127.0.0.1:8009/ws/hyperion-vis",
+    webSocketEndpoint: "",
     branding: {
       logoText: "HYPERION DIRECT",
       primaryColor: "#f59e0b", // Gorgeous Gold/Amber
@@ -192,7 +192,7 @@ export const DEFAULT_CLIENTS: Client[] = [
     sheetId: "1BxiMVs0XRA5nFMdKv1aM9ldm5i-YSgcbL1g6xGoS18A",
     sheetTab: "Sheet1",
     ue5Endpoint: "http://127.0.0.1:8008/remote/object/call",
-    webSocketEndpoint: "ws://127.0.0.1:8009/ws/neon-nebula",
+    webSocketEndpoint: "",
     branding: {
       logoText: "NEBULA V-STAGE",
       primaryColor: "#d946ef", // Vibrant Magenta
@@ -211,7 +211,7 @@ export const DEFAULT_CLIENTS: Client[] = [
     sheetId: "1_8jK6u9KjS_sQfF99G-q6hVv8l2pEq5L_g48q61zZ0g",
     sheetTab: "MainSpawns",
     ue5Endpoint: "http://localhost:8008/remote/object/call",
-    webSocketEndpoint: "ws://127.0.0.1:8009/ws/overlord-egames",
+    webSocketEndpoint: "",
     branding: {
       logoText: "OVERLORD ENGAGE",
       primaryColor: "#06b6d4", // Sharp Cyan

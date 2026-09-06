@@ -57,6 +57,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Currency")
     float ExchangeRate;
 
+    // Set currency display parameters directly
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Currency")
+    void SetCurrency(const FString& InSymbol, bool bInPrefix = false, int32 InDecimals = 2, float InRate = 1.0f);
+
     // Dynamic delegate fired when user closes or dismisses the detail modal
     UPROPERTY(BlueprintAssignable, Category = "SightPortal|2DWidget")
     FOnSightPortalDetailClosed OnDetailClosed;

@@ -9,6 +9,7 @@ USightPortal3DPropertyWidget::USightPortal3DPropertyWidget(const FObjectInitiali
     , CurrencySymbol(TEXT("د.ع"))
     , bSymbolPrefix(false)
     , DecimalPlaces(2)
+    , ExchangeRate(1.0f)
 {
 }
 
@@ -139,8 +140,10 @@ void USightPortal3DPropertyWidget::SetPropertyData(const FSightPortalProperty& I
 
     if (PriceText)
     {
+        const float Rate = ExchangeRate > 0.0f ? ExchangeRate : 1.0f;
+        const double ConvertedPrice = (double)InProperty.Price * (double)Rate;
         const FString Symbol = CurrencySymbol.IsEmpty() ? TEXT("د.ع") : CurrencySymbol;
-        const FString FormattedNumber = FString::Printf(TEXT("%.*f"), DecimalPlaces, InProperty.Price);
+        const FString FormattedNumber = FString::Printf(TEXT("%.*f"), DecimalPlaces, ConvertedPrice);
         const FString PriceString = bSymbolPrefix
             ? FString::Printf(TEXT("%s%s"), *Symbol, *FormattedNumber)
             : FString::Printf(TEXT("%s %s"), *FormattedNumber, *Symbol);
@@ -189,6 +192,23 @@ void USightPortal3DPropertyWidget::HideWidget()
 void USightPortal3DPropertyWidget::SetWidgetVisibility(bool bVisible)
 {
     SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+}
+
+void USightPortal3DPropertyWidget::SetCurrency(const FString& InSymbol, bool bInPrefix, int32 InDecimals, float InRate)
+{
+    CurrencySymbol = InSymbol.IsEmpty() ? TEXT("د.ع") : InSymbol;
+    bSymbolPrefix = bInPrefix;
+    DecimalPlaces = InDecimals;
+    ExchangeRate = InRate > 0.0f ? InRate : 1.0f;
+    if (PriceText)
+    {
+        const double ConvertedPrice = (double)CachedProperty.Price * (double)ExchangeRate;
+        const FString FormattedNumber = FString::Printf(TEXT("%.*f"), DecimalPlaces, ConvertedPrice);
+        const FString PriceString = bSymbolPrefix
+            ? FString::Printf(TEXT("%s%s"), *CurrencySymbol, *FormattedNumber)
+            : FString::Printf(TEXT("%s %s"), *FormattedNumber, *CurrencySymbol);
+        PriceText->SetText(FText::FromString(PriceString));
+    }
 }
 
 void USightPortal3DPropertyWidget::OnExploreClicked()

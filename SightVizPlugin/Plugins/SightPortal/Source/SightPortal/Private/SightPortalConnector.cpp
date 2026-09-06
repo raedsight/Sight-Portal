@@ -55,6 +55,15 @@ void USightPortalConnector::HandleHTTPResponse(FHttpRequestPtr Request, FHttpRes
     }
 
     FString ResponseString = Response->GetContentAsString();
+    const FString Trimmed = ResponseString.TrimStartAndEnd();
+
+    // Check if cloud proxy returned an HTML authentication challenge or cookie verification gate
+    if (Trimmed.StartsWith(TEXT("<")) || Trimmed.Contains(TEXT("Cookie check")) || Trimmed.Contains(TEXT("<!doctype html")))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SightPortal Bridge] HTTP response was an HTML proxy/cookie gate. Real-time data will be synchronized via persistent WebSocket."));
+        return;
+    }
+
     UE_LOG(LogTemp, Log, TEXT("[SightPortal Bridge] Data packet received via HTTP: %s"), *ResponseString);
 
     ParseAndSyncJsonPayload(ResponseString);
@@ -75,11 +84,8 @@ void USightPortalConnector::ConnectWebSocket()
         FModuleManager::Get().LoadModule("WebSockets");
     }
 
-    // Set standard WS protocols array to guide handshakes smoothly in Unreal Engine 5
-    TArray<FString> Protocols;
-    Protocols.Add(TEXT("ws"));
-
-    WebSocketClient = FWebSocketsModule::Get().CreateWebSocket(WebSocketURL, Protocols);
+    // Connect with standard WebSocket headers (no subprotocol requirement to prevent 'HS: ACCEPT missing' errors across proxies/CDNs)
+    WebSocketClient = FWebSocketsModule::Get().CreateWebSocket(WebSocketURL);
 
     WebSocketClient->OnConnected().AddUObject(this, &USightPortalConnector::OnWebsocketConnected);
     WebSocketClient->OnConnectionError().AddUObject(this, &USightPortalConnector::OnWebsocketConnectionError);
@@ -178,11 +184,18 @@ void USightPortalConnector::OnWebsocketMessage(const FString& MessageString)
 
 void USightPortalConnector::OnWebsocketClosed(int32 Status, const FString& Reason, bool bWasClean)
 {
-    UE_LOG(LogTemp, Warning, TEXT("[SightPortal Socket] Session closed by host. Code: %d, Reason: '%s'. Clean shutdown: %s"), Status, *Reason, bWasClean ? TEXT("Yes") : TEXT("No"));
+    if (Status == 1000)
+    {
+        UE_LOG(LogTemp, Log, TEXT("[SightPortal Socket] Session closed cleanly (Code 1000: '%s'). Ready for active connection."), *Reason);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SightPortal Socket] Session closed by host. Code: %d, Reason: '%s'. Clean shutdown: %s"), Status, *Reason, bWasClean ? TEXT("Yes") : TEXT("No"));
+    }
     WebSocketClient.Reset();
 
     // Auto Reconnect if closed abnormally (not by a clean manual disconnect call)
-    if (!bWasClean)
+    if (!bWasClean && Status != 1000)
     {
         AttemptReconnect();
     }
@@ -216,6 +229,149 @@ static FString GetFirstMatchingFieldAsString(TSharedPtr<FJsonObject> Obj, const 
     return TEXT("");
 }
 
+// Helper to extract a single FSightPortalProperty from a JSON object with exhaustive key synonym matching
+static FSightPortalProperty ParsePropertyFromJsonObject(TSharedPtr<FJsonObject> RowObj)
+{
+    FSightPortalProperty Property;
+    if (!RowObj.IsValid()) return Property;
+
+    // Define comprehensive key lists covering all preset templates, user naming conventions, and custom schemas
+    TArray<FString> NameKeys = { 
+        TEXT("Name"), TEXT("name"), TEXT("ActorName"), TEXT("actor_name"), TEXT("PropID"), TEXT("prop_id"), 
+        TEXT("ID"), TEXT("id"), TEXT("Title"), TEXT("title"), TEXT("Label"), TEXT("label"),
+        TEXT("PropertyName"), TEXT("property_name")
+    };
+    TArray<FString> ZoneKeys = { 
+        TEXT("Zone"), TEXT("zone"), TEXT("Region"), TEXT("region"), TEXT("Sector"), TEXT("sector"), 
+        TEXT("AreaName"), TEXT("area_name") 
+    };
+    TArray<FString> BlockKeys = { 
+        TEXT("Block"), TEXT("block"), TEXT("Building"), TEXT("building"), TEXT("Tower"), TEXT("tower"), 
+        TEXT("Phase"), TEXT("phase") 
+    };
+    TArray<FString> DoorNoKeys = { 
+        TEXT("Door No"), TEXT("door_no"), TEXT("DoorNo"), TEXT("doorno"), TEXT("Door Number"), TEXT("door_number"), 
+        TEXT("DoorNumber"), TEXT("Door"), TEXT("door"), TEXT("Unit"), TEXT("unit"), TEXT("Unit No"), TEXT("unit_no"), 
+        TEXT("UnitNo"), TEXT("UnitNumber"), TEXT("unit_number"), TEXT("Floor"), TEXT("floor"), 
+        TEXT("Room No"), TEXT("room_no"), TEXT("RoomNo"), TEXT("Room Number"), TEXT("room_number"), 
+        TEXT("Room"), TEXT("room") 
+    };
+    TArray<FString> PriceKeys = { 
+        TEXT("PriceIQD"), TEXT("Price_IQD"), TEXT("Price IQD"), TEXT("Price (IQD)"), TEXT("IQD"), TEXT("iqd"),
+        TEXT("Price"), TEXT("price"), TEXT("السعر"), TEXT("سعر"), TEXT("السعر (د.ع)"), TEXT("Price (د.ع)"),
+        TEXT("Cost"), TEXT("cost"), TEXT("Valuation"), TEXT("valuation"), 
+        TEXT("Amount"), TEXT("amount"), TEXT("Rate"), TEXT("rate"), TEXT("ListPrice"), TEXT("list_price"),
+        TEXT("PriceUSD"), TEXT("price_usd"), TEXT("Price EUR"), TEXT("price_eur"), TEXT("PriceGBP"), TEXT("price_gbp")
+    };
+    TArray<FString> SurfaceKeys = { 
+        TEXT("Surface"), TEXT("surface"), TEXT("AreaSqM"), TEXT("area_sqm"), TEXT("Area"), TEXT("area"), 
+        TEXT("Size"), TEXT("size"), TEXT("TotalSurface"), TEXT("total_surface"), TEXT("PlotArea"), TEXT("plot_area"), 
+        TEXT("LotSize"), TEXT("lot_size"), TEXT("SquareMeters"), TEXT("square_meters") 
+    };
+    TArray<FString> AvailabilityKeys = { 
+        TEXT("Availability"), TEXT("availability"), TEXT("Status"), TEXT("status"), TEXT("State"), TEXT("state"), 
+        TEXT("IsAvailable"), TEXT("is_available"), TEXT("Condition"), TEXT("condition") 
+    };
+    TArray<FString> BuildingSurfaceKeys = { 
+        TEXT("BuildingSurface"), TEXT("building_surface"), TEXT("BuildingArea"), TEXT("building_area"), 
+        TEXT("BuiltArea"), TEXT("built_area"), TEXT("IndoorSurface"), TEXT("indoor_surface"), 
+        TEXT("NetArea"), TEXT("net_area") 
+    };
+    TArray<FString> BedroomsCountKeys = { 
+        TEXT("BedroomsCount"), TEXT("bedrooms_count"), TEXT("bedroom_count"), TEXT("Bedrooms"), TEXT("bedrooms"), 
+        TEXT("Bedroom"), TEXT("bedroom"), TEXT("Rooms"), TEXT("rooms"), TEXT("RoomCount"), TEXT("room_count"), 
+        TEXT("Room Number"), TEXT("room_number"), TEXT("Beds"), TEXT("beds") 
+    };
+    TArray<FString> BathroomsCountKeys = { 
+        TEXT("BathroomsCount"), TEXT("bathrooms_count"), TEXT("bathroom_count"), TEXT("Bathrooms"), TEXT("bathrooms"), 
+        TEXT("Bathroom"), TEXT("bathroom"), TEXT("Baths"), TEXT("baths") 
+    };
+    TArray<FString> ClassKeys = { 
+        TEXT("Class"), TEXT("class"), TEXT("Type"), TEXT("type"), TEXT("Category"), TEXT("category"), 
+        TEXT("PropertyType"), TEXT("property_type"), TEXT("Usage"), TEXT("usage"), TEXT("Model"), TEXT("model") 
+    };
+
+    Property.Name = GetFirstMatchingFieldAsString(RowObj, NameKeys);
+    Property.Zone = GetFirstMatchingFieldAsString(RowObj, ZoneKeys);
+    Property.Block = GetFirstMatchingFieldAsString(RowObj, BlockKeys);
+    
+    FString DoorNoStr = GetFirstMatchingFieldAsString(RowObj, DoorNoKeys);
+    Property.DoorNo = FCString::Atoi(*DoorNoStr);
+
+    FString FoundPriceKey;
+    for (const FString& Key : PriceKeys)
+    {
+        if (RowObj->HasField(Key))
+        {
+            FoundPriceKey = Key;
+            break;
+        }
+    }
+
+    FString PriceStr = GetFirstMatchingFieldAsString(RowObj, PriceKeys);
+    // Sanitize price string: remove thousands commas, spaces, currency symbols, and text
+    FString SanitizedPrice = TEXT("");
+    bool bHasDecimal = false;
+    for (int32 CharIdx = 0; CharIdx < PriceStr.Len(); ++CharIdx)
+    {
+        TCHAR Ch = PriceStr[CharIdx];
+        if (FChar::IsDigit(Ch))
+        {
+            SanitizedPrice.AppendChar(Ch);
+        }
+        else if (Ch == TEXT('.') && !bHasDecimal)
+        {
+            SanitizedPrice.AppendChar(Ch);
+            bHasDecimal = true;
+        }
+    }
+
+    float ParsedPrice = SanitizedPrice.IsEmpty() ? 0.0f : FCString::Atof(*SanitizedPrice);
+
+    // Default prices are in Iraqi Dinars (IQD). If only a foreign currency column was specified in the sheet,
+    // convert it to base IQD using standard conversion rate (1 USD ≈ 1,310 IQD)
+    if (FoundPriceKey.Equals(TEXT("PriceUSD"), ESearchCase::IgnoreCase) || FoundPriceKey.Equals(TEXT("price_usd"), ESearchCase::IgnoreCase))
+    {
+        ParsedPrice = ParsedPrice * 1310.0f;
+    }
+    else if (FoundPriceKey.Equals(TEXT("Price EUR"), ESearchCase::IgnoreCase) || FoundPriceKey.Equals(TEXT("price_eur"), ESearchCase::IgnoreCase))
+    {
+        ParsedPrice = ParsedPrice * 1420.0f;
+    }
+    else if (FoundPriceKey.Equals(TEXT("PriceGBP"), ESearchCase::IgnoreCase) || FoundPriceKey.Equals(TEXT("price_gbp"), ESearchCase::IgnoreCase))
+    {
+        ParsedPrice = ParsedPrice * 1670.0f;
+    }
+
+    Property.Price = ParsedPrice;
+
+    FString SurfaceStr = GetFirstMatchingFieldAsString(RowObj, SurfaceKeys);
+    Property.Surface = FCString::Atof(*SurfaceStr);
+
+    Property.Availability = GetFirstMatchingFieldAsString(RowObj, AvailabilityKeys);
+
+    FString BldgSurfaceStr = GetFirstMatchingFieldAsString(RowObj, BuildingSurfaceKeys);
+    Property.BuildingSurface = FCString::Atof(*BldgSurfaceStr);
+
+    FString BedroomsStr = GetFirstMatchingFieldAsString(RowObj, BedroomsCountKeys);
+    Property.BedroomsCount = FCString::Atoi(*BedroomsStr);
+
+    FString BathroomsStr = GetFirstMatchingFieldAsString(RowObj, BathroomsCountKeys);
+    Property.BathroomsCount = FCString::Atoi(*BathroomsStr);
+
+    Property.Class = GetFirstMatchingFieldAsString(RowObj, ClassKeys);
+
+    // Collect all raw/custom fields into CustomAttributes map so no portal columns are lost
+    for (const auto& FieldPair : RowObj->Values)
+    {
+        const FString& Key = FieldPair.Key;
+        FString ValStr = GetFirstMatchingFieldAsString(RowObj, { Key });
+        Property.CustomAttributes.Add(Key, ValStr);
+    }
+
+    return Property;
+}
+
 void USightPortalConnector::ParseAndSyncJsonPayload(const FString& JsonContent)
 {
     TSharedPtr<FJsonObject> JsonObject;
@@ -225,83 +381,97 @@ void USightPortalConnector::ParseAndSyncJsonPayload(const FString& JsonContent)
     {
         TArray<FSightPortalProperty> PropertyPortfolio;
 
-        // Automatically resolve standard HTTP health response envelop OR raw WebSocket broadcast wrapper
+        // Resolve payload container: check for payload wrapper or root
         TSharedPtr<FJsonObject> PayloadObj = JsonObject;
-        if (JsonObject->HasField(TEXT("payload")))
+        if (JsonObject->HasField(TEXT("payload")) && JsonObject->GetObjectField(TEXT("payload")).IsValid())
         {
             PayloadObj = JsonObject->GetObjectField(TEXT("payload"));
         }
 
-        if (!PayloadObj.IsValid())
+        // Case 1: Multiple records in attributes_matrix or data array
+        const TArray<TSharedPtr<FJsonValue>>* RowsArray = nullptr;
+        if (PayloadObj->TryGetArrayField(TEXT("attributes_matrix"), RowsArray) ||
+            PayloadObj->TryGetArrayField(TEXT("data"), RowsArray) ||
+            JsonObject->TryGetArrayField(TEXT("attributes_matrix"), RowsArray))
         {
-            UE_LOG(LogTemp, Error, TEXT("[SightPortal Sync] Received malformed payload structure (missing body object)"));
-            return;
-        }
-
-        const TArray<TSharedPtr<FJsonValue>>* RowsArray;
-        if (PayloadObj->TryGetArrayField(TEXT("attributes_matrix"), RowsArray))
-        {
-            // Define fallback mapping key lists covering all preset templates and custom schemas
-            TArray<FString> NameKeys = { TEXT("Name"), TEXT("name"), TEXT("ActorName"), TEXT("actor_name"), TEXT("PropID"), TEXT("prop_id"), TEXT("ID"), TEXT("id"), TEXT("Title"), TEXT("title"), TEXT("Label"), TEXT("label") };
-            TArray<FString> ZoneKeys = { TEXT("Zone"), TEXT("zone"), TEXT("Region"), TEXT("region") };
-            TArray<FString> BlockKeys = { TEXT("Block"), TEXT("block"), TEXT("Building"), TEXT("building") };
-            TArray<FString> DoorNoKeys = { TEXT("Door No"), TEXT("door_no"), TEXT("DoorNo"), TEXT("doorno"), TEXT("Floor"), TEXT("floor") };
-            TArray<FString> PriceKeys = { TEXT("Price"), TEXT("price"), TEXT("PriceUSD"), TEXT("price_usd"), TEXT("Cost"), TEXT("cost"), TEXT("Valuation"), TEXT("valuation") };
-            TArray<FString> SurfaceKeys = { TEXT("Surface"), TEXT("surface"), TEXT("AreaSqM"), TEXT("area_sqm"), TEXT("Area"), TEXT("area"), TEXT("Size"), TEXT("size") };
-            TArray<FString> AvailabilityKeys = { TEXT("Availability"), TEXT("availability"), TEXT("Status"), TEXT("status") };
-            TArray<FString> BuildingSurfaceKeys = { TEXT("BuildingSurface"), TEXT("building_surface"), TEXT("BuildingArea"), TEXT("building_area") };
-            TArray<FString> BedroomsCountKeys = { TEXT("BedroomsCount"), TEXT("bedroom_count"), TEXT("Rooms"), TEXT("rooms"), TEXT("Bedrooms"), TEXT("bedrooms") };
-            TArray<FString> BathroomsCountKeys = { TEXT("BathroomsCount"), TEXT("bathroom_count"), TEXT("Bathrooms"), TEXT("bathrooms") };
-            TArray<FString> ClassKeys = { TEXT("Class"), TEXT("class"), TEXT("Type"), TEXT("type"), TEXT("Category"), TEXT("category") };
-
             for (const auto& RowVal : *RowsArray)
             {
                 TSharedPtr<FJsonObject> RowObj = RowVal->AsObject();
                 if (!RowObj.IsValid()) continue;
 
-                FSightPortalProperty Property;
-                Property.Name = GetFirstMatchingFieldAsString(RowObj, NameKeys);
-                Property.Zone = GetFirstMatchingFieldAsString(RowObj, ZoneKeys);
-                Property.Block = GetFirstMatchingFieldAsString(RowObj, BlockKeys);
-                
-                FString DoorNoStr = GetFirstMatchingFieldAsString(RowObj, DoorNoKeys);
-                Property.DoorNo = FCString::Atoi(*DoorNoStr);
-
-                FString PriceStr = GetFirstMatchingFieldAsString(RowObj, PriceKeys);
-                Property.Price = FCString::Atof(*PriceStr);
-
-                FString SurfaceStr = GetFirstMatchingFieldAsString(RowObj, SurfaceKeys);
-                Property.Surface = FCString::Atof(*SurfaceStr);
-
-                Property.Availability = GetFirstMatchingFieldAsString(RowObj, AvailabilityKeys);
-
-                FString BldgSurfaceStr = GetFirstMatchingFieldAsString(RowObj, BuildingSurfaceKeys);
-                Property.BuildingSurface = FCString::Atof(*BldgSurfaceStr);
-
-                FString BedroomsStr = GetFirstMatchingFieldAsString(RowObj, BedroomsCountKeys);
-                Property.BedroomsCount = FCString::Atoi(*BedroomsStr);
-
-                FString BathroomsStr = GetFirstMatchingFieldAsString(RowObj, BathroomsCountKeys);
-                Property.BathroomsCount = FCString::Atoi(*BathroomsStr);
-
-                FString ClassStr = GetFirstMatchingFieldAsString(RowObj, ClassKeys);
-                Property.Class = ClassStr;
-
+                FSightPortalProperty Property = ParsePropertyFromJsonObject(RowObj);
                 PropertyPortfolio.Add(Property);
 
                 // Fire singular event for localized asset updates
                 OnPropertyUpdated.Broadcast(Property.Name, Property);
             }
+
+            // Cache the full portfolio locally for instant access during new level load / play instantiations
+            CachedProperties = PropertyPortfolio;
+
+            // Fire global multicast delegate trigger
+            OnRealEstateDataReceived.Broadcast(PropertyPortfolio);
+
+            // Update real world interactive structures in scene
+            SyncWorldActorsWithPayload(PropertyPortfolio);
+            return;
         }
 
-        // Cache the portfolio locally for instant access during new level load / play instantiations
-        CachedProperties = PropertyPortfolio;
+        // Case 2: Single property update payload (e.g. FORCE_ROW_UPDATE, CELL_UPDATE, or updated_row)
+        TSharedPtr<FJsonObject> SinglePropertyObj = nullptr;
+        if (PayloadObj->HasField(TEXT("data")) && PayloadObj->GetObjectField(TEXT("data")).IsValid())
+        {
+            SinglePropertyObj = PayloadObj->GetObjectField(TEXT("data"));
+        }
+        else if (PayloadObj->HasField(TEXT("updated_row")) && PayloadObj->GetObjectField(TEXT("updated_row")).IsValid())
+        {
+            SinglePropertyObj = PayloadObj->GetObjectField(TEXT("updated_row"));
+        }
+        else if (JsonObject->HasField(TEXT("data")) && JsonObject->GetObjectField(TEXT("data")).IsValid())
+        {
+            SinglePropertyObj = JsonObject->GetObjectField(TEXT("data"));
+        }
 
-        // Fire global multicast delegate trigger
-        OnRealEstateDataReceived.Broadcast(PropertyPortfolio);
+        if (SinglePropertyObj.IsValid())
+        {
+            FSightPortalProperty SingleProp = ParsePropertyFromJsonObject(SinglePropertyObj);
+            if (SingleProp.Name.IsEmpty() && JsonObject->HasField(TEXT("property")))
+            {
+                SingleProp.Name = JsonObject->GetStringField(TEXT("property"));
+            }
 
-        // Update real world interactive structures in scene
-        SyncWorldActorsWithPayload(PropertyPortfolio);
+            UE_LOG(LogTemp, Log, TEXT("[SightPortal Bridge] Single property live update received: '%s' (Price: %0.2f, Status: %s)"),
+                *SingleProp.Name, SingleProp.Price, *SingleProp.Availability);
+
+            // Update or append inside CachedProperties
+            bool bFoundInCache = false;
+            for (int32 i = 0; i < CachedProperties.Num(); ++i)
+            {
+                if (CachedProperties[i].Name.Equals(SingleProp.Name, ESearchCase::IgnoreCase) ||
+                    (!SingleProp.Zone.IsEmpty() && CachedProperties[i].Zone.Equals(SingleProp.Zone, ESearchCase::IgnoreCase) &&
+                     CachedProperties[i].Block.Equals(SingleProp.Block, ESearchCase::IgnoreCase) &&
+                     CachedProperties[i].DoorNo == SingleProp.DoorNo))
+                {
+                    CachedProperties[i] = SingleProp;
+                    bFoundInCache = true;
+                    break;
+                }
+            }
+
+            if (!bFoundInCache && !SingleProp.Name.IsEmpty())
+            {
+                CachedProperties.Add(SingleProp);
+            }
+
+            // Broadcast single property update delegate
+            OnPropertyUpdated.Broadcast(SingleProp.Name, SingleProp);
+
+            // Broadcast full portfolio update delegate
+            OnRealEstateDataReceived.Broadcast(CachedProperties);
+
+            // Sync visualizers in the world
+            SyncWorldActorsWithPayload(CachedProperties);
+        }
     }
 }
 

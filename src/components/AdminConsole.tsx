@@ -106,7 +106,7 @@ export default function AdminConsole({
   const [sheetId, setSheetId] = useState("");
   const [sheetTab, setSheetTab] = useState("Sheet1");
   const [ue5Endpoint, setUe5Endpoint] = useState("http://127.0.0.1:8008/remote/object/call");
-  const [webSocketEndpoint, setWebSocketEndpoint] = useState("ws://127.0.0.1:8009");
+  const [webSocketEndpoint, setWebSocketEndpoint] = useState("");
   
   // Theme options
   const [logoText, setLogoText] = useState("");
@@ -152,7 +152,7 @@ export default function AdminConsole({
       sheetId: sheetId || "1BxiMVs0XRA5nFMdKv1aM9ldm5i-YSgcbL1g6xGoS18A", // fallback template
       sheetTab: sheetTab || "Sheet1",
       ue5Endpoint: ue5Endpoint || "http://127.0.0.1:8008/remote/object/call",
-      webSocketEndpoint: webSocketEndpoint || `ws://127.0.0.1:8009/ws/${newId}`,
+      webSocketEndpoint: webSocketEndpoint ? webSocketEndpoint.trim() : "",
       branding: {
         logoText: logoText || name.toUpperCase() + " STAGE",
         primaryColor,
@@ -177,7 +177,12 @@ export default function AdminConsole({
     setSheetId(client.sheetId);
     setSheetTab(client.sheetTab);
     setUe5Endpoint(client.ue5Endpoint);
-    setWebSocketEndpoint(client.webSocketEndpoint || "");
+    
+    // Check if webSocketEndpoint is set, but ignore legacy localhost 8009 values so it doesn't get stuck in the field!
+    const rawWs = client.webSocketEndpoint ? client.webSocketEndpoint.trim() : "";
+    const isLegacyLocal = rawWs.startsWith("ws://127.0.0.1:8009") || rawWs.startsWith("ws://localhost:8009");
+    setWebSocketEndpoint(isLegacyLocal ? "" : rawWs);
+    
     setLogoText(client.branding.logoText);
     setPrimaryColor(client.branding.primaryColor);
     setAccentColor(client.branding.accentColor);
@@ -196,7 +201,7 @@ export default function AdminConsole({
       sheetId,
       sheetTab,
       ue5Endpoint,
-      webSocketEndpoint,
+      webSocketEndpoint: webSocketEndpoint ? webSocketEndpoint.trim() : "",
       branding: {
         logoText: logoText || name.toUpperCase() + " STAGE",
         primaryColor,
@@ -218,7 +223,7 @@ export default function AdminConsole({
     setSheetId("");
     setSheetTab("Sheet1");
     setUe5Endpoint("http://127.0.0.1:8008/remote/object/call");
-    setWebSocketEndpoint("ws://127.0.0.1:8009");
+    setWebSocketEndpoint("");
     setLogoText("");
     setPrimaryColor("#0070FF");
     setAccentColor("#f59e0b");
@@ -497,17 +502,69 @@ export default function AdminConsole({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-400 mb-1">Custom Live WebSocket Connection Endpoint URL (Optional)</label>
-                <input
-                  type="text"
-                  value={webSocketEndpoint}
-                  onChange={(e) => setWebSocketEndpoint(e.target.value)}
-                  placeholder="Leave empty for dynamic cloud default (wss://.../ws/:id)"
-                  className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-mono"
-                />
-                <span className="text-[10px] text-gray-500 mt-1 block">
-                  Optional override. When left blank, your portal will automatically stream from your live cloud gateway.
-                </span>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-gray-400">Custom Live WebSocket Connection Endpoint URL (Optional)</label>
+                  {webSocketEndpoint && (
+                    <button
+                      type="button"
+                      onClick={() => setWebSocketEndpoint("")}
+                      className="text-[10px] text-amber-400 hover:text-amber-300 font-mono underline cursor-pointer"
+                    >
+                      Clear override (use cloud auto-generation)
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={webSocketEndpoint}
+                    onChange={(e) => setWebSocketEndpoint(e.target.value)}
+                    placeholder={
+                      typeof window !== "undefined"
+                        ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws/${
+                            editingClient?.id || (name ? name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") : "client-id")
+                          }`
+                        : "wss://.../ws/:id"
+                    }
+                    className="w-full px-3 py-2 text-sm bg-black/60 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition-colors font-mono pr-16"
+                  />
+                  {webSocketEndpoint && (
+                    <button
+                      type="button"
+                      onClick={() => setWebSocketEndpoint("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white text-[11px] bg-white/10 hover:bg-white/20 rounded px-2 py-0.5 transition-colors cursor-pointer"
+                      title="Clear custom override"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div className="mt-1.5 space-y-1">
+                  <div className="text-[10px]">
+                    {webSocketEndpoint.trim() ? (
+                      <span className="text-amber-400 flex items-center gap-1.5 font-mono">
+                        <span>⚠️ Custom override active:</span>
+                        <code className="text-white bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded">
+                          {webSocketEndpoint.trim()}
+                        </code>
+                      </span>
+                    ) : (
+                      <span className="text-emerald-400 flex items-center gap-1.5 font-mono">
+                        <span>✓ Dynamic Cloud Auto-Generation Active:</span>
+                        <code className="text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">
+                          {typeof window !== "undefined"
+                            ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws/${
+                                editingClient?.id || (name ? name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") : "client-id")
+                              }`
+                            : "wss://.../ws/:id"}
+                        </code>
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-gray-500 block">
+                    Optional override. When left blank, your portal and Unreal Engine plugin automatically stream from your live cloud gateway.
+                  </span>
+                </div>
               </div>
             </div>
 

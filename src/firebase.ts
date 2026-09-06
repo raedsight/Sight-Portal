@@ -397,6 +397,19 @@ export async function deleteUserProfile(uid: string): Promise<void> {
 
 function normalizeClientDoc(id: string, rawData: any): Client {
   const data = rawData || {};
+  
+  // Custom WebSocket endpoint override:
+  // If undefined, blank, or the legacy local default ("ws://127.0.0.1:8009/..."),
+  // treat as empty string ("") so the client portal dynamically auto-generates
+  // the live cloud WebSocket endpoint from window.location or cloud host!
+  let wsEndpoint = "";
+  if (typeof data.webSocketEndpoint === "string") {
+    const trimmed = data.webSocketEndpoint.trim();
+    if (trimmed && !trimmed.startsWith("ws://127.0.0.1:8009") && !trimmed.startsWith("ws://localhost:8009")) {
+      wsEndpoint = trimmed;
+    }
+  }
+
   return {
     id: id,
     name: data.name || id.replace(/[-_]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
@@ -404,7 +417,7 @@ function normalizeClientDoc(id: string, rawData: any): Client {
     sheetId: data.sheetId || "1BxiMVs0XRA5nFMdKv1aM9ldm5i-YSgcbL1g6xGoS18A",
     sheetTab: data.sheetTab || "MainSpawns",
     ue5Endpoint: data.ue5Endpoint || "http://localhost:8008/remote/object/call",
-    webSocketEndpoint: data.webSocketEndpoint || `ws://127.0.0.1:8009/ws/${id}`,
+    webSocketEndpoint: wsEndpoint,
     branding: {
       primaryColor: data.branding?.primaryColor || "#d97706",
       accentColor: data.branding?.accentColor || "#f59e0b",
@@ -532,7 +545,7 @@ export async function syncSingleClient(clientId: string, onUpdate: (client: Clie
   }
   try {
     return onSnapshot(doc(db, "clients", clientId), (snap) => {
-      onUpdate(snap.exists() ? (snap.data() as Client) : null);
+      onUpdate(snap.exists() ? normalizeClientDoc(snap.id, snap.data()) : null);
     }, (err) => {
       handleFirestoreError(err, OperationType.GET, `clients/${clientId}`);
       const cached = getCachedClients().find(c => c.id === clientId) || null;

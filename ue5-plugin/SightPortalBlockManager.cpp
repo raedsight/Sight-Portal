@@ -441,7 +441,7 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
                     AssignedProperty.Zone = ZoneName;
                     AssignedProperty.Block = BlockName;
                     AssignedProperty.DoorNo = VisualizerBlockIndex + 1;
-                    AssignedProperty.Price = 250000.0f + (VisualizerBlockIndex * 15000.0f);
+                    AssignedProperty.Price = 250000000.0f + (VisualizerBlockIndex * 15000000.0f);
                     AssignedProperty.Surface = 120.0f + (VisualizerBlockIndex * 10.0f);
                     AssignedProperty.Availability = TEXT("Available");
                 }

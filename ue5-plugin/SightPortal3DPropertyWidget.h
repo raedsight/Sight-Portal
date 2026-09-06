@@ -58,6 +58,14 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Currency")
     int32 DecimalPlaces;
 
+    // Exchange rate relative to base price (Portal prices are in Iraqi Dinars, so IQD = 1.0)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Currency")
+    float ExchangeRate;
+
+    // Set currency display parameters directly
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Currency")
+    void SetCurrency(const FString& InSymbol, bool bInPrefix = false, int32 InDecimals = 2, float InRate = 1.0f);
+
     // Event delegate fired when "Explore" button is pressed
     UPROPERTY(BlueprintAssignable, Category = "SightPortal|3DWidget")
     FOnSightPortalExploreRequested OnExploreRequested;

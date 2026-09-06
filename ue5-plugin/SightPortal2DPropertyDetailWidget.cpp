@@ -171,6 +171,23 @@ void USightPortal2DPropertyDetailWidget::DismissWidget()
     OnDetailClosed.Broadcast();
 }
 
+void USightPortal2DPropertyDetailWidget::SetCurrency(const FString& InSymbol, bool bInPrefix, int32 InDecimals, float InRate)
+{
+    CurrencySymbol = InSymbol.IsEmpty() ? TEXT("د.ع") : InSymbol;
+    bSymbolPrefix = bInPrefix;
+    DecimalPlaces = InDecimals;
+    ExchangeRate = InRate > 0.0f ? InRate : 1.0f;
+    if (PriceText)
+    {
+        const double ConvertedPrice = (double)ActiveProperty.Price * (double)ExchangeRate;
+        const FString FormattedNumber = FString::Printf(TEXT("%.*f"), DecimalPlaces, ConvertedPrice);
+        const FString FormattedPrice = bSymbolPrefix
+            ? FString::Printf(TEXT("%s%s"), *CurrencySymbol, *FormattedNumber)
+            : FString::Printf(TEXT("%s %s"), *FormattedNumber, *CurrencySymbol);
+        PriceText->SetText(FText::FromString(FormattedPrice));
+    }
+}
+
 void USightPortal2DPropertyDetailWidget::OnCloseButtonClicked()
 {
     DismissWidget();

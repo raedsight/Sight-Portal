@@ -4,6 +4,9 @@
 #include "GameFramework/Actor.h"
 #include "SightPortalZoneManager.generated.h"
 
+class ASightPortalBlockManager;
+class APropertyVisualizer;
+
 /**
  * ASightPortalZoneManager
  * A dedicated class to handle each Zone in a construction site (residential city).
@@ -49,6 +52,20 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|State")
     bool bHasBeenManuallyMoved = false;
 
+    // --- Custom Block Spawn Parameters (Editor Exposed) ---
+
+    // Optional custom name when spawning a custom block from editor
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Operations|Custom Block")
+    FString NewBlockCustomName = TEXT("");
+
+    // Optional custom world position/offset when spawning a custom block from editor
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Operations|Custom Block")
+    FVector NewBlockCustomLocation = FVector::ZeroVector;
+
+    // If true, uses NewBlockCustomLocation; otherwise calculates automatic forward-vector offset based on BlockSpacing
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Operations|Custom Block")
+    bool bUseCustomLocationForNewBlock = false;
+
 #if WITH_EDITOR
     virtual void PostEditMove(bool bFinished) override;
 #endif
@@ -56,11 +73,23 @@ public:
     // --- Operations ---
 
     // Spawns and arranges Block Managers dynamically
-    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations", meta = (CallInEditor = "true", DisplayName = "Spawn Block Managers"))
     void SpawnBlockManagers();
 
+    // Adds a single new Block Manager without respawning or altering existing blocks
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations", meta = (CallInEditor = "true", DisplayName = "Add New Block"))
+    ASightPortalBlockManager* AddNewBlock();
+
+    // Adds a new Block using the configured NewBlockCustomName and NewBlockCustomLocation parameters without respawning existing blocks
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations", meta = (CallInEditor = "true", DisplayName = "Add Configured Block"))
+    void AddConfiguredBlock();
+
+    // Adds a new Block Manager with a custom name and world location without respawning existing blocks
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations", meta = (DisplayName = "Add Block With Parameters"))
+    ASightPortalBlockManager* AddBlockWithParameters(const FString& CustomBlockName = TEXT(""), const FVector& CustomLocation = FVector::ZeroVector);
+
     // Cleans up all spawned Block Managers
-    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations", meta = (CallInEditor = "true", DisplayName = "Clear Block Managers"))
     void ClearBlockManagers();
 
     // Spawns/updates Property Visualizers for all child blocks (which in turn spawn for rows)
@@ -70,6 +99,30 @@ public:
     // Clears Property Visualizers for all child blocks (which in turn clear for rows)
     UFUNCTION(BlueprintCallable, CallInEditor, Category = "SightPortal|Operations")
     void ClearPropertyVisualizers();
+
+    // Replaces a single specific Property Visualizer class for a given property name dynamically
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    APropertyVisualizer* ChangeVisualizerClassForProperty(const FString& PropertyName, TSubclassOf<APropertyVisualizer> InNewClass);
+
+    // Replaces a single specific Property Visualizer class in a named block at given row and index dynamically
+    UFUNCTION(BlueprintCallable, Category = "SightPortal|Operations")
+    APropertyVisualizer* ChangeVisualizerClassInBlock(const FString& InBlockName, int32 RowIndex, int32 VisualizerIndex, TSubclassOf<APropertyVisualizer> InNewClass);
+
+    // Callback when full portfolio data is received from connector
+    UFUNCTION()
+    void HandleDataReceived(const TArray<FSightPortalProperty>& PropertyPortfolio);
+
+    // Callback when a single property update is received from connector
+    UFUNCTION()
+    void HandleSinglePropertyUpdated(const FString& PropertyName, const FSightPortalProperty& PropertyData);
+
+    // Dynamic Blueprint Implementable Event triggered when live real-estate data is pushed from the Portal
+    UFUNCTION(BlueprintImplementableEvent, Category = "SightPortal|Events")
+    void OnPortalDataReceived(const TArray<FSightPortalProperty>& PropertyPortfolio);
+
+    // Dynamic Blueprint Implementable Event triggered when a property in this zone is updated from the Portal
+    UFUNCTION(BlueprintImplementableEvent, Category = "SightPortal|Events")
+    void OnPortalPropertyUpdated(const FString& PropertyName, const FSightPortalProperty& PropertyData);
 
 private:
     bool bIsSpawning = false;

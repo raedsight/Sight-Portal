@@ -405,6 +405,37 @@ export default function ClientDashboard({
   const [testWsStatus, setTestWsStatus] = useState<"idle" | "connecting" | "connected" | "success" | "error">("idle");
   const [copiedUrlType, setCopiedUrlType] = useState<"http" | "ws" | null>(null);
   const testWsRef = useRef<WebSocket | null>(null);
+  const [pushStatus, setPushStatus] = useState<"idle" | "pushing" | "success" | "error">("idle");
+  const [pushMessage, setPushMessage] = useState<string>("");
+
+  const handlePushFullDatatable = async () => {
+    if (!sheetData || !sheetData.rows || sheetData.rows.length === 0) return;
+    setPushStatus("pushing");
+    try {
+      const res = await fetch("/api/sheet-data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_slug: client.id,
+          target_class: currentPresetName,
+          attributes_matrix: sheetData.rows
+        })
+      });
+      if (res.ok) {
+        setPushStatus("success");
+        setPushMessage(`Pushed all ${sheetData.rows.length} properties to Unreal Engine WebSocket!`);
+        setTimeout(() => setPushStatus("idle"), 4000);
+      } else {
+        setPushStatus("error");
+        setPushMessage("Server error pushing datatable.");
+        setTimeout(() => setPushStatus("idle"), 4000);
+      }
+    } catch (err: any) {
+      setPushStatus("error");
+      setPushMessage(err.message || "Failed to push to server");
+      setTimeout(() => setPushStatus("idle"), 4000);
+    }
+  };
   
 
 
@@ -421,7 +452,8 @@ export default function ClientDashboard({
 
     try {
       const isHttps = window.location.protocol === "https:";
-      const wsUrl = client.webSocketEndpoint || `${isHttps ? "wss" : "ws"}://${window.location.host}/ws/${client.id}`;
+      const directWsUrl = `${isHttps ? "wss" : "ws"}://${window.location.host}/ws/${client.id}`;
+      const wsUrl = client.webSocketEndpoint?.trim() || directWsUrl;
       
       setTestWsLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔗 Targeting URL: ${wsUrl}`]);
       
@@ -2304,7 +2336,7 @@ export default function ClientDashboard({
                         {/* 5. Price Filter */}
                         <div className="space-y-1">
                           <label className="text-[9px] uppercase tracking-wider text-gray-400 block font-bold">
-                            Price ($)
+                            Price (IQD / د.ع)
                           </label>
                           <div className="flex gap-1">
                             <input
@@ -2630,9 +2662,10 @@ export default function ClientDashboard({
                         </span>
                       </div>
                       {(() => {
-                        const wsUrl = client.webSocketEndpoint || (typeof window !== "undefined"
+                        const directWsUrl = typeof window !== "undefined"
                           ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws/${client.id}`
-                          : `wss://sightportal.ai.studio/ws/${client.id}`);
+                          : `wss://sightportal.ai.studio/ws/${client.id}`;
+                        const wsUrl = client.webSocketEndpoint?.trim() || directWsUrl;
                         return (
                           <div className="bg-black/60 font-mono text-[10.5px] text-emerald-300 p-2 border border-white/5 rounded-lg flex items-center justify-between gap-1">
                             <code className="truncate select-all mr-2">{wsUrl}</code>
@@ -2692,6 +2725,30 @@ export default function ClientDashboard({
                       <Activity className={`h-3.5 w-3.5 ${testWsStatus === "connecting" ? "animate-spin" : ""}`} />
                       {testWsStatus === "connecting" ? "Testing Handshake Routing..." : "Trigger Socket Connection Test"}
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={handlePushFullDatatable}
+                      disabled={pushStatus === "pushing" || !sheetData?.rows?.length}
+                      className={`w-full py-2 px-4 rounded-lg font-mono text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer select-none border border-cyan-500/30 text-white ${
+                        pushStatus === "pushing"
+                          ? "bg-cyan-500/20 text-cyan-300 cursor-not-allowed"
+                          : "bg-cyan-950/70 hover:bg-cyan-900/80 border-cyan-500/50 shadow-md shadow-cyan-950/30"
+                      }`}
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 text-cyan-400 ${pushStatus === "pushing" ? "animate-spin" : ""}`} />
+                      {pushStatus === "pushing" 
+                        ? "Broadcasting Datatable to Unreal..." 
+                        : `Force Push Full Datatable to Unreal (${sheetData?.rows?.length || 0} Records)`}
+                    </button>
+
+                    {pushMessage && (
+                      <div className={`p-2 rounded text-[10px] font-mono text-center ${
+                        pushStatus === "success" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"
+                      }`}>
+                        {pushMessage}
+                      </div>
+                    )}
 
                     {testWsLogs.length > 0 && (
                       <div className="bg-black/85 rounded-lg border border-white/5 p-3 font-mono text-[10px] space-y-1.5 max-h-[160px] overflow-y-auto leading-normal">
@@ -2786,13 +2843,17 @@ export default function ClientDashboard({
                             const address = row.Address || (hasNewFields ? `${row.Zone || 'Zone'}, Block ${row.Block || 'A'}, Door ${row["Door No"] || 'N/A'}` : "");
                             const availability = row.Availability || "";
                             
-                            // Format price for rendering
-                            const rawPrice = parseFloat(row.Price || row.PriceUSD || "0");
+                            // Format price for rendering in Iraqi Dinars (IQD / د.ع)
+                            const rawPrice = parseFloat(row.Price || row.PriceIQD || row.PriceUSD || "0");
                             const formattedPrice = isNaN(rawPrice) || rawPrice === 0 
                               ? "" 
-                              : rawPrice >= 1000000 
-                                ? `$${(rawPrice / 1000000).toFixed(2)}M`
-                                : `$${(rawPrice / 1000).toFixed(0)}K`;
+                              : rawPrice >= 1000000000 
+                                ? `${(rawPrice / 1000000000).toFixed(2)}B د.ع`
+                                : rawPrice >= 1000000 
+                                  ? `${(rawPrice / 1000000).toFixed(2)}M د.ع`
+                                  : rawPrice >= 1000 
+                                    ? `${(rawPrice / 1000).toFixed(0)}K د.ع`
+                                    : `${rawPrice.toLocaleString()} د.ع`;
 
                             return (
                               <div 

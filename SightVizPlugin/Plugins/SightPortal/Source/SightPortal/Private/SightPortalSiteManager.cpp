@@ -10,8 +10,8 @@ ASightPortalSiteManager::ASightPortalSiteManager()
     PrimaryActorTick.bCanEverTick = false;
     ZoneCount = 1;
     ZoneSpacing = 1500.0f;
-    WebSocketURL = TEXT("wss://ais-pre-4wjcvfkjzt7ohntjrl7gk5-405891248157.europe-west3.run.app/ws/hyperion-vis");
-    RemoteEndpointURL = TEXT("https://sight-portal-1127775803.europe-west2.run.app/api/health");
+    WebSocketURL = TEXT("wss://sightportal.ai.studio/ws");
+    RemoteEndpointURL = TEXT("https://sightportal.ai.studio/api/health");
 
     USceneComponent* SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
     RootComponent = SceneRoot;
@@ -57,6 +57,11 @@ void ASightPortalSiteManager::BeginPlay()
         {
             Connector->OnRealEstateDataReceived.AddDynamic(this, &ASightPortalSiteManager::HandleDataReceived);
         }
+
+        if (!Connector->OnPropertyUpdated.IsAlreadyBound(this, &ASightPortalSiteManager::HandleSinglePropertyUpdated))
+        {
+            Connector->OnPropertyUpdated.AddDynamic(this, &ASightPortalSiteManager::HandleSinglePropertyUpdated);
+        }
         
         Connector->DisconnectWebSocket();
         Connector->ConnectWebSocket();
@@ -72,6 +77,7 @@ void ASightPortalSiteManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
     if (Connector)
     {
         Connector->OnRealEstateDataReceived.RemoveDynamic(this, &ASightPortalSiteManager::HandleDataReceived);
+        Connector->OnPropertyUpdated.RemoveDynamic(this, &ASightPortalSiteManager::HandleSinglePropertyUpdated);
     }
 
     Super::EndPlay(EndPlayReason);
@@ -83,6 +89,7 @@ void ASightPortalSiteManager::Destroyed()
     if (Connector)
     {
         Connector->OnRealEstateDataReceived.RemoveDynamic(this, &ASightPortalSiteManager::HandleDataReceived);
+        Connector->OnPropertyUpdated.RemoveDynamic(this, &ASightPortalSiteManager::HandleSinglePropertyUpdated);
     }
 
     Super::Destroyed();
@@ -217,6 +224,148 @@ void ASightPortalSiteManager::SpawnZoneManagers()
     bIsSpawning = false;
 }
 
+ASightPortalZoneManager* ASightPortalSiteManager::AddNewZone()
+{
+    // Clean up any stale pointers in ActiveZoneManagers
+    ActiveZoneManagers.RemoveAll([](AActor* Actor) { return !IsValid(Actor); });
+
+    // Also scan attached children to make sure we don't miss any valid Zone Managers
+    TArray<AActor*> AttachedActors;
+    GetAttachedActors(AttachedActors);
+    for (AActor* Attached : AttachedActors)
+    {
+        if (IsValid(Attached) && Attached->IsA(ASightPortalZoneManager::StaticClass()))
+        {
+            ActiveZoneManagers.AddUnique(Attached);
+        }
+    }
+
+    int32 NewIndex = ActiveZoneManagers.Num();
+    FVector SpawnLocation = GetActorLocation();
+
+    if (NewIndex > 0)
+    {
+        AActor* LastActor = ActiveZoneManagers.Last();
+        if (IsValid(LastActor))
+        {
+            SpawnLocation = LastActor->GetActorLocation() + (GetActorRightVector() * ZoneSpacing);
+        }
+        else
+        {
+            SpawnLocation = GetActorLocation() + (GetActorRightVector() * (NewIndex * ZoneSpacing));
+        }
+    }
+    else
+    {
+        SpawnLocation = GetActorLocation();
+    }
+
+    FString GeneratedZoneName = FString::Printf(TEXT("Z%d"), NewIndex + 1);
+    return AddZoneWithParameters(GeneratedZoneName, SpawnLocation);
+}
+
+void ASightPortalSiteManager::AddConfiguredZone()
+{
+    FVector TargetLocation = GetActorLocation();
+
+    if (bUseCustomLocationForNewZone && !NewZoneCustomLocation.IsZero())
+    {
+        TargetLocation = NewZoneCustomLocation;
+    }
+    else
+    {
+        // Clean up any stale pointers in ActiveZoneManagers
+        ActiveZoneManagers.RemoveAll([](AActor* Actor) { return !IsValid(Actor); });
+        
+        int32 NewIndex = ActiveZoneManagers.Num();
+        if (NewIndex > 0)
+        {
+            AActor* LastActor = ActiveZoneManagers.Last();
+            if (IsValid(LastActor))
+            {
+                TargetLocation = LastActor->GetActorLocation() + (GetActorRightVector() * ZoneSpacing);
+            }
+            else
+            {
+                TargetLocation = GetActorLocation() + (GetActorRightVector() * (NewIndex * ZoneSpacing));
+            }
+        }
+    }
+
+    FString TargetZoneName = NewZoneCustomName;
+    if (TargetZoneName.IsEmpty())
+    {
+        int32 NewIndex = ActiveZoneManagers.Num();
+        TargetZoneName = FString::Printf(TEXT("Z%d"), NewIndex + 1);
+    }
+
+    AddZoneWithParameters(TargetZoneName, TargetLocation);
+}
+
+ASightPortalZoneManager* ASightPortalSiteManager::AddZoneWithParameters(const FString& CustomZoneName, const FVector& CustomLocation)
+{
+    // Validate ZoneManagerClass or fallback to default
+    TSubclassOf<AActor> ClassToSpawn = ZoneManagerClass;
+    if (!ClassToSpawn)
+    {
+        ClassToSpawn = ASightPortalZoneManager::StaticClass();
+        UE_LOG(LogTemp, Warning, TEXT("[SightPortal SiteManager] ZoneManagerClass not assigned in Site Manager. Defaulting to ASightPortalZoneManager::StaticClass()."));
+    }
+
+    if (ClassToSpawn->IsChildOf(ASightPortalSiteManager::StaticClass()))
+    {
+        UE_LOG(LogTemp, Error, TEXT("[SightPortal SiteManager] ERROR: ZoneManagerClass is set to ASightPortalSiteManager! Recursive spawning aborted."));
+        return nullptr;
+    }
+
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return nullptr;
+    }
+
+    // Clean up any stale pointers in ActiveZoneManagers
+    ActiveZoneManagers.RemoveAll([](AActor* Actor) { return !IsValid(Actor); });
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Owner = this;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    FRotator ManagerRotation = GetActorRotation();
+    ASightPortalZoneManager* NewZone = World->SpawnActor<ASightPortalZoneManager>(
+        ClassToSpawn,
+        CustomLocation,
+        ManagerRotation,
+        SpawnParams
+    );
+
+    if (!NewZone)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[SightPortal SiteManager] Failed to spawn new Zone Manager actor at %s."), *CustomLocation.ToString());
+        return nullptr;
+    }
+
+    // Attach SightPortalZoneManager to SightPortalSiteManager preserving its world transform
+    NewZone->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+
+    // Assign Zone identifier name
+    int32 ZoneIndex = ActiveZoneManagers.Num() + 1;
+    NewZone->ZoneName = !CustomZoneName.IsEmpty() ? CustomZoneName : FString::Printf(TEXT("Z%d"), ZoneIndex);
+
+#if WITH_EDITOR
+    NewZone->SetActorLabel(NewZone->ZoneName);
+#endif
+
+    // Track in ActiveZoneManagers
+    ActiveZoneManagers.Add(NewZone);
+    ZoneCount = FMath::Max(ZoneCount, ActiveZoneManagers.Num());
+
+    UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Successfully added new Zone '%s' at %s without respawning existing zones. Total active zones: %d"),
+        *NewZone->ZoneName, *CustomLocation.ToString(), ActiveZoneManagers.Num());
+
+    return NewZone;
+}
+
 void ASightPortalSiteManager::SpawnPropertyVisualizers()
 {
     UE_LOG(LogTemp, Log, TEXT("[SightPortal SiteManager] Site-wide Spawning/Syncing of Property Visualizers initiated."));
@@ -242,6 +391,54 @@ void ASightPortalSiteManager::ClearPropertyVisualizers()
         }
     }
     RegisteredPropertyVisualizers.Empty();
+}
+
+APropertyVisualizer* ASightPortalSiteManager::ChangeVisualizerClassForProperty(const FString& PropertyName, TSubclassOf<APropertyVisualizer> InNewClass)
+{
+    if (!InNewClass || PropertyName.IsEmpty())
+    {
+        return nullptr;
+    }
+
+    for (AActor* ZoneActor : ActiveZoneManagers)
+    {
+        ASightPortalZoneManager* Zone = Cast<ASightPortalZoneManager>(ZoneActor);
+        if (IsValid(Zone))
+        {
+            APropertyVisualizer* ReplacedVis = Zone->ChangeVisualizerClassForProperty(PropertyName, InNewClass);
+            if (ReplacedVis)
+            {
+                RegisterPropertyVisualizer(PropertyName, ReplacedVis);
+                return ReplacedVis;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+APropertyVisualizer* ASightPortalSiteManager::ChangeVisualizerClassAtSite(const FString& ZoneName, const FString& BlockName, int32 RowIndex, int32 VisualizerIndex, TSubclassOf<APropertyVisualizer> InNewClass)
+{
+    if (!InNewClass || ZoneName.IsEmpty() || BlockName.IsEmpty())
+    {
+        return nullptr;
+    }
+
+    for (AActor* ZoneActor : ActiveZoneManagers)
+    {
+        ASightPortalZoneManager* Zone = Cast<ASightPortalZoneManager>(ZoneActor);
+        if (IsValid(Zone) && Zone->ZoneName.Equals(ZoneName, ESearchCase::IgnoreCase))
+        {
+            APropertyVisualizer* ReplacedVis = Zone->ChangeVisualizerClassInBlock(BlockName, RowIndex, VisualizerIndex, InNewClass);
+            if (ReplacedVis && !ReplacedVis->PropertyDetails.Name.IsEmpty())
+            {
+                RegisterPropertyVisualizer(ReplacedVis->PropertyDetails.Name, ReplacedVis);
+            }
+            return ReplacedVis;
+        }
+    }
+
+    return nullptr;
 }
 
 void ASightPortalSiteManager::RegisterPropertyVisualizer(const FString& PropertyName, AActor* VisualizerActor)
@@ -384,4 +581,48 @@ void ASightPortalSiteManager::HandleDataReceived(const TArray<FSightPortalProper
 
     // Broadcast the callback to Blueprint listeners so they can handle the data elsewhere
     OnDataReceived.Broadcast(PropertyPortfolio);
+
+    // Trigger Blueprint Implementable Event for full portfolio sync
+    OnPortalDataReceived(PropertyPortfolio);
+}
+
+void ASightPortalSiteManager::HandleSinglePropertyUpdated(const FString& PropertyName, const FSightPortalProperty& PropertyData)
+{
+    // Find matching visualizer in registered properties
+    APropertyVisualizer* TargetVis = Cast<APropertyVisualizer>(GetRegisteredPropertyVisualizer(PropertyName));
+
+    if (!TargetVis)
+    {
+        for (auto& Elem : RegisteredPropertyVisualizers)
+        {
+            AActor* Actor = Elem.Value;
+            if (IsValid(Actor))
+            {
+                APropertyVisualizer* PropVis = Cast<APropertyVisualizer>(Actor);
+                if (PropVis)
+                {
+                    const bool bNameMatches = PropVis->PropertyDetails.Name.Equals(PropertyName, ESearchCase::IgnoreCase) ||
+                                              PropVis->PropertyDetails.Name.Equals(PropertyData.Name, ESearchCase::IgnoreCase);
+                    const bool bLocationMatches = !PropertyData.Zone.IsEmpty() &&
+                                                  PropVis->PropertyDetails.Zone.Equals(PropertyData.Zone, ESearchCase::IgnoreCase) &&
+                                                  PropVis->PropertyDetails.Block.Equals(PropertyData.Block, ESearchCase::IgnoreCase) &&
+                                                  PropVis->PropertyDetails.DoorNo == PropertyData.DoorNo;
+
+                    if (bNameMatches || bLocationMatches)
+                    {
+                        TargetVis = PropVis;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (TargetVis)
+    {
+        TargetVis->SetPropertyDetails(PropertyData);
+    }
+
+    // Trigger Blueprint Implementable Event for single property updates
+    OnPortalPropertyUpdated(PropertyName, PropertyData);
 }

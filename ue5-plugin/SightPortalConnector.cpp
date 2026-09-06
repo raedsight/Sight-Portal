@@ -55,6 +55,15 @@ void USightPortalConnector::HandleHTTPResponse(FHttpRequestPtr Request, FHttpRes
     }
 
     FString ResponseString = Response->GetContentAsString();
+    const FString Trimmed = ResponseString.TrimStartAndEnd();
+
+    // Check if cloud proxy returned an HTML authentication challenge or cookie verification gate
+    if (Trimmed.StartsWith(TEXT("<")) || Trimmed.Contains(TEXT("Cookie check")) || Trimmed.Contains(TEXT("<!doctype html")))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SightPortal Bridge] HTTP response was an HTML proxy/cookie gate. Real-time data will be synchronized via persistent WebSocket."));
+        return;
+    }
+
     UE_LOG(LogTemp, Log, TEXT("[SightPortal Bridge] Data packet received via HTTP: %s"), *ResponseString);
 
     ParseAndSyncJsonPayload(ResponseString);
@@ -175,11 +184,18 @@ void USightPortalConnector::OnWebsocketMessage(const FString& MessageString)
 
 void USightPortalConnector::OnWebsocketClosed(int32 Status, const FString& Reason, bool bWasClean)
 {
-    UE_LOG(LogTemp, Warning, TEXT("[SightPortal Socket] Session closed by host. Code: %d, Reason: '%s'. Clean shutdown: %s"), Status, *Reason, bWasClean ? TEXT("Yes") : TEXT("No"));
+    if (Status == 1000)
+    {
+        UE_LOG(LogTemp, Log, TEXT("[SightPortal Socket] Session closed cleanly (Code 1000: '%s'). Ready for active connection."), *Reason);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SightPortal Socket] Session closed by host. Code: %d, Reason: '%s'. Clean shutdown: %s"), Status, *Reason, bWasClean ? TEXT("Yes") : TEXT("No"));
+    }
     WebSocketClient.Reset();
 
     // Auto Reconnect if closed abnormally (not by a clean manual disconnect call)
-    if (!bWasClean)
+    if (!bWasClean && Status != 1000)
     {
         AttemptReconnect();
     }
@@ -241,9 +257,11 @@ static FSightPortalProperty ParsePropertyFromJsonObject(TSharedPtr<FJsonObject> 
         TEXT("Room"), TEXT("room") 
     };
     TArray<FString> PriceKeys = { 
-        TEXT("Price"), TEXT("price"), TEXT("PriceUSD"), TEXT("price_usd"), TEXT("Price EUR"), TEXT("price_eur"), 
-        TEXT("PriceGBP"), TEXT("price_gbp"), TEXT("Cost"), TEXT("cost"), TEXT("Valuation"), TEXT("valuation"), 
-        TEXT("Amount"), TEXT("amount"), TEXT("Rate"), TEXT("rate"), TEXT("ListPrice"), TEXT("list_price") 
+        TEXT("PriceIQD"), TEXT("Price_IQD"), TEXT("Price IQD"), TEXT("Price (IQD)"), TEXT("IQD"), TEXT("iqd"),
+        TEXT("Price"), TEXT("price"), TEXT("السعر"), TEXT("سعر"), TEXT("السعر (د.ع)"), TEXT("Price (د.ع)"),
+        TEXT("Cost"), TEXT("cost"), TEXT("Valuation"), TEXT("valuation"), 
+        TEXT("Amount"), TEXT("amount"), TEXT("Rate"), TEXT("rate"), TEXT("ListPrice"), TEXT("list_price"),
+        TEXT("PriceUSD"), TEXT("price_usd"), TEXT("Price EUR"), TEXT("price_eur"), TEXT("PriceGBP"), TEXT("price_gbp")
     };
     TArray<FString> SurfaceKeys = { 
         TEXT("Surface"), TEXT("surface"), TEXT("AreaSqM"), TEXT("area_sqm"), TEXT("Area"), TEXT("area"), 
@@ -280,8 +298,52 @@ static FSightPortalProperty ParsePropertyFromJsonObject(TSharedPtr<FJsonObject> 
     FString DoorNoStr = GetFirstMatchingFieldAsString(RowObj, DoorNoKeys);
     Property.DoorNo = FCString::Atoi(*DoorNoStr);
 
+    FString FoundPriceKey;
+    for (const FString& Key : PriceKeys)
+    {
+        if (RowObj->HasField(Key))
+        {
+            FoundPriceKey = Key;
+            break;
+        }
+    }
+
     FString PriceStr = GetFirstMatchingFieldAsString(RowObj, PriceKeys);
-    Property.Price = FCString::Atof(*PriceStr);
+    // Sanitize price string: remove thousands commas, spaces, currency symbols, and text
+    FString SanitizedPrice = TEXT("");
+    bool bHasDecimal = false;
+    for (int32 CharIdx = 0; CharIdx < PriceStr.Len(); ++CharIdx)
+    {
+        TCHAR Ch = PriceStr[CharIdx];
+        if (FChar::IsDigit(Ch))
+        {
+            SanitizedPrice.AppendChar(Ch);
+        }
+        else if (Ch == TEXT('.') && !bHasDecimal)
+        {
+            SanitizedPrice.AppendChar(Ch);
+            bHasDecimal = true;
+        }
+    }
+
+    float ParsedPrice = SanitizedPrice.IsEmpty() ? 0.0f : FCString::Atof(*SanitizedPrice);
+
+    // Default prices are in Iraqi Dinars (IQD). If only a foreign currency column was specified in the sheet,
+    // convert it to base IQD using standard conversion rate (1 USD ≈ 1,310 IQD)
+    if (FoundPriceKey.Equals(TEXT("PriceUSD"), ESearchCase::IgnoreCase) || FoundPriceKey.Equals(TEXT("price_usd"), ESearchCase::IgnoreCase))
+    {
+        ParsedPrice = ParsedPrice * 1310.0f;
+    }
+    else if (FoundPriceKey.Equals(TEXT("Price EUR"), ESearchCase::IgnoreCase) || FoundPriceKey.Equals(TEXT("price_eur"), ESearchCase::IgnoreCase))
+    {
+        ParsedPrice = ParsedPrice * 1420.0f;
+    }
+    else if (FoundPriceKey.Equals(TEXT("PriceGBP"), ESearchCase::IgnoreCase) || FoundPriceKey.Equals(TEXT("price_gbp"), ESearchCase::IgnoreCase))
+    {
+        ParsedPrice = ParsedPrice * 1670.0f;
+    }
+
+    Property.Price = ParsedPrice;
 
     FString SurfaceStr = GetFirstMatchingFieldAsString(RowObj, SurfaceKeys);
     Property.Surface = FCString::Atof(*SurfaceStr);

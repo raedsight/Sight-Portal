@@ -48,6 +48,17 @@ struct FSightPortalProperty
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|RealEstate")
     FString Class;
+
+    // Any additional custom or dynamically defined column attributes from the portal/spreadsheet
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|RealEstate")
+    TMap<FString, FString> CustomAttributes;
+
+    // Helper to retrieve any custom attribute value
+    FString GetCustomAttribute(const FString& Key, const FString& DefaultValue = TEXT("")) const
+    {
+        const FString* Found = CustomAttributes.Find(Key);
+        return Found ? *Found : DefaultValue;
+    }
 };
 
 // Blueprint multicast delegates to notify levels when property records are pulled
@@ -88,11 +99,11 @@ public:
 
     // Target endpoint URL to fetch spreadsheet datasets (Configure to your live production cloud URL)
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Bridge")
-    FString RemoteEndpointURL = TEXT("https://ais-pre-4wjcvfkjzt7ohntjrl7gk5-405891248157.europe-west3.run.app/api/health");
+    FString RemoteEndpointURL = TEXT("https://sightportal.ai.studio/api/health");
 
     // Live Streaming WebSocket URL for direct, persistent update delivery bypassing localhost entirely
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SightPortal|Bridge")
-    FString WebSocketURL = TEXT("wss://ais-pre-4wjcvfkjzt7ohntjrl7gk5-405891248157.europe-west3.run.app/ws");
+    FString WebSocketURL = TEXT("wss://sightportal.ai.studio/ws");
 
     // Establish persistent, bi-directional live socket connection to the cloud server directly
     UFUNCTION(BlueprintCallable, Category = "SightPortal|Bridge")

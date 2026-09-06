@@ -41,13 +41,42 @@ void ASightPortalBlockManager::OnConstruction(const FTransform& Transform)
 void ASightPortalBlockManager::BeginPlay()
 {
     Super::BeginPlay();
+
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    if (Connector)
+    {
+        Connector->OnRealEstateDataReceived.AddUniqueDynamic(this, &ASightPortalBlockManager::HandleDataReceived);
+        Connector->OnPropertyUpdated.AddUniqueDynamic(this, &ASightPortalBlockManager::HandleSinglePropertyUpdated);
+    }
 }
 
 void ASightPortalBlockManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     ClearActiveSpawnedActors();
 
+    USightPortalConnector* Connector = GEngine ? GEngine->GetEngineSubsystem<USightPortalConnector>() : nullptr;
+    if (Connector)
+    {
+        Connector->OnRealEstateDataReceived.RemoveDynamic(this, &ASightPortalBlockManager::HandleDataReceived);
+        Connector->OnPropertyUpdated.RemoveDynamic(this, &ASightPortalBlockManager::HandleSinglePropertyUpdated);
+    }
+
     Super::EndPlay(EndPlayReason);
+}
+
+void ASightPortalBlockManager::HandleDataReceived(const TArray<FSightPortalProperty>& PropertyPortfolio)
+{
+    OnPortalDataReceived(PropertyPortfolio);
+}
+
+void ASightPortalBlockManager::HandleSinglePropertyUpdated(const FString& PropertyName, const FSightPortalProperty& PropertyData)
+{
+    // Check if the property belongs to this block
+    if (PropertyData.Block.Equals(BlockName, ESearchCase::IgnoreCase) ||
+        PropertyName.StartsWith(BlockName, ESearchCase::IgnoreCase))
+    {
+        OnPortalPropertyUpdated(PropertyName, PropertyData);
+    }
 }
 
 void ASightPortalBlockManager::ClearActiveSpawnedActors()
@@ -412,28 +441,50 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
                     AssignedProperty.Zone = ZoneName;
                     AssignedProperty.Block = BlockName;
                     AssignedProperty.DoorNo = VisualizerBlockIndex + 1;
-                    AssignedProperty.Price = 250000.0f + (VisualizerBlockIndex * 15000.0f);
+                    AssignedProperty.Price = 250000000.0f + (VisualizerBlockIndex * 15000000.0f);
                     AssignedProperty.Surface = 120.0f + (VisualizerBlockIndex * 10.0f);
                     AssignedProperty.Availability = TEXT("Available");
                 }
 
-                APropertyVisualizer* PropertyVis = Cast<APropertyVisualizer>(Row.SpawnedVisualizers[i]);
-                if (!IsValid(PropertyVis))
+                // Determine the target class to use (check per-index override first, then row default)
+                TSubclassOf<APropertyVisualizer> VisualizerClass = Row.PropertyVisualizer;
+                if (Row.PropertyVisualizerOverrides.Contains(i) && Row.PropertyVisualizerOverrides[i])
                 {
+                    VisualizerClass = Row.PropertyVisualizerOverrides[i];
+                }
+                if (!VisualizerClass)
+                {
+                    VisualizerClass = APropertyVisualizer::StaticClass();
+                }
+
+                APropertyVisualizer* PropertyVis = Cast<APropertyVisualizer>(Row.SpawnedVisualizers[i]);
+                
+                // If actor is invalid OR if actor's class does not match the desired VisualizerClass, respawn it
+                if (!IsValid(PropertyVis) || PropertyVis->GetClass() != VisualizerClass)
+                {
+                    bool bHadManualMove = false;
+                    FTransform PrevManualTransform = FTransform::Identity;
+                    if (IsValid(PropertyVis))
+                    {
+                        bHadManualMove = PropertyVis->bHasBeenManuallyMoved;
+                        PrevManualTransform = PropertyVis->ManualRelativeTransform;
+                        if (SiteManager)
+                        {
+                            SiteManager->UnregisterPropertyVisualizer(PropertyVis->PropertyDetails.Name);
+                        }
+                        PropertyVis->Destroy();
+                    }
+
                     FActorSpawnParameters SpawnParams;
                     SpawnParams.Owner = this;
                     SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-                    TSubclassOf<APropertyVisualizer> VisualizerClass = Row.PropertyVisualizer;
-                    if (!VisualizerClass)
-                    {
-                        VisualizerClass = APropertyVisualizer::StaticClass();
-                    }
 
                     PropertyVis = World->SpawnActor<APropertyVisualizer>(VisualizerClass, SpawnLoc, SpawnRot, SpawnParams);
                     if (PropertyVis)
                     {
                         PropertyVis->AttachToActor(RowSpline, FAttachmentTransformRules::KeepWorldTransform);
+                        PropertyVis->bHasBeenManuallyMoved = bHadManualMove;
+                        PropertyVis->ManualRelativeTransform = PrevManualTransform;
                         Row.SpawnedVisualizers[i] = PropertyVis;
                     }
                 }
@@ -466,11 +517,197 @@ void ASightPortalBlockManager::SpawnPropertyVisualizers()
             }
         }
 
+        // Configure RowSpline parameters
+        RowSpline->PropertyCount = Row.PropertyCount;
+        RowSpline->PropertyVisualizerClass = Row.PropertyVisualizer;
+        RowSpline->PropertyVisualizerOverrides = Row.PropertyVisualizerOverrides;
+        RowSpline->BlockName = BlockName;
+        RowSpline->ZoneName = ZoneName;
+        RowSpline->StartingDoorNumber = CumulativeIndex + 1;
+        RowSpline->SpawnedVisualizers = Row.SpawnedVisualizers;
+
         // Re-trigger construction of the spline to finalize child visualizer alignment
         RowSpline->OnConstruction(RowSpline->GetActorTransform());
     }
 
     bIsSpawning = false;
+}
+
+void ASightPortalBlockManager::ApplyVisualizerClassOverride()
+{
+    if (!NewVisualizerClass)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SightPortal BlockManager] Cannot apply visualizer override: NewVisualizerClass is null."));
+        return;
+    }
+
+    ChangeVisualizerClassAtIndex(TargetRowIndex, TargetVisualizerIndex, NewVisualizerClass);
+}
+
+APropertyVisualizer* ASightPortalBlockManager::ChangeVisualizerClassAtIndex(int32 RowIndex, int32 VisualizerIndex, TSubclassOf<APropertyVisualizer> InNewClass)
+{
+    if (!InNewClass)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SightPortal BlockManager] ChangeVisualizerClassAtIndex failed: InNewClass is null."));
+        return nullptr;
+    }
+
+    if (!PropertyRowDetails.IsValidIndex(RowIndex))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SightPortal BlockManager] ChangeVisualizerClassAtIndex: Invalid RowIndex %d (Max: %d)"), RowIndex, PropertyRowDetails.Num() - 1);
+        return nullptr;
+    }
+
+    FPropertyBlockRowDetails& Row = PropertyRowDetails[RowIndex];
+    if (VisualizerIndex < 0 || VisualizerIndex >= Row.PropertyCount)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SightPortal BlockManager] ChangeVisualizerClassAtIndex: Invalid VisualizerIndex %d for Row %d (PropertyCount: %d)"), VisualizerIndex, RowIndex, Row.PropertyCount);
+        return nullptr;
+    }
+
+    // Save override in row configuration map
+    Row.PropertyVisualizerOverrides.Add(VisualizerIndex, InNewClass);
+
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return nullptr;
+    }
+
+    // Locate SiteManager if present
+    ASightPortalSiteManager* SiteManager = nullptr;
+    AActor* CurrentParent = GetAttachParentActor();
+    while (CurrentParent)
+    {
+        if (CurrentParent->IsA(ASightPortalSiteManager::StaticClass()))
+        {
+            SiteManager = Cast<ASightPortalSiteManager>(CurrentParent);
+            break;
+        }
+        CurrentParent = CurrentParent->GetAttachParentActor();
+    }
+
+    // Find parent RowSpline
+    TArray<AActor*> AttachedActors;
+    GetAttachedActors(AttachedActors);
+    TArray<ABlockSpline*> FoundSplines;
+    for (AActor* Attached : AttachedActors)
+    {
+        if (IsValid(Attached) && Attached->IsA(ABlockSpline::StaticClass()))
+        {
+            FoundSplines.Add(Cast<ABlockSpline>(Attached));
+        }
+    }
+
+    ABlockSpline* RowSpline = FoundSplines.IsValidIndex(RowIndex) ? FoundSplines[RowIndex] : nullptr;
+
+    APropertyVisualizer* OldVis = nullptr;
+    if (Row.SpawnedVisualizers.IsValidIndex(VisualizerIndex) && IsValid(Row.SpawnedVisualizers[VisualizerIndex]))
+    {
+        OldVis = Cast<APropertyVisualizer>(Row.SpawnedVisualizers[VisualizerIndex]);
+    }
+
+    FSightPortalProperty OldPropertyData;
+    FTransform OldTransform = GetActorTransform();
+    bool bWasManuallyMoved = false;
+    FTransform OldManualRelTransform = FTransform::Identity;
+    FString OldLabel = TEXT("");
+
+    if (OldVis)
+    {
+        OldPropertyData = OldVis->PropertyDetails;
+        OldTransform = OldVis->GetActorTransform();
+        bWasManuallyMoved = OldVis->bHasBeenManuallyMoved;
+        OldManualRelTransform = OldVis->ManualRelativeTransform;
+#if WITH_EDITOR
+        OldLabel = OldVis->GetActorLabel();
+#endif
+        if (SiteManager)
+        {
+            SiteManager->UnregisterPropertyVisualizer(OldVis->PropertyDetails.Name);
+        }
+        OldVis->Destroy();
+    }
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Owner = this;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    APropertyVisualizer* NewVis = World->SpawnActor<APropertyVisualizer>(InNewClass, OldTransform, SpawnParams);
+    if (NewVis)
+    {
+        if (RowSpline)
+        {
+            NewVis->AttachToActor(RowSpline, FAttachmentTransformRules::KeepWorldTransform);
+        }
+        else
+        {
+            NewVis->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+        }
+
+        NewVis->bHasBeenManuallyMoved = bWasManuallyMoved;
+        NewVis->ManualRelativeTransform = OldManualRelTransform;
+        NewVis->SetActorTransform(OldTransform);
+        NewVis->SetPropertyDetails(OldPropertyData);
+
+#if WITH_EDITOR
+        if (!OldLabel.IsEmpty())
+        {
+            NewVis->SetActorLabel(OldLabel);
+        }
+#endif
+
+        if (Row.SpawnedVisualizers.IsValidIndex(VisualizerIndex))
+        {
+            Row.SpawnedVisualizers[VisualizerIndex] = NewVis;
+        }
+        else
+        {
+            Row.SpawnedVisualizers.SetNum(Row.PropertyCount);
+            Row.SpawnedVisualizers[VisualizerIndex] = NewVis;
+        }
+
+        if (RowSpline)
+        {
+            RowSpline->PropertyVisualizerOverrides = Row.PropertyVisualizerOverrides;
+            if (RowSpline->SpawnedVisualizers.IsValidIndex(VisualizerIndex))
+            {
+                RowSpline->SpawnedVisualizers[VisualizerIndex] = NewVis;
+            }
+        }
+
+        if (SiteManager && !OldPropertyData.Name.IsEmpty())
+        {
+            SiteManager->RegisterPropertyVisualizer(OldPropertyData.Name, NewVis);
+        }
+
+        UE_LOG(LogTemp, Log, TEXT("[SightPortal BlockManager] Successfully replaced visualizer at Row %d Index %d with class %s"), RowIndex, VisualizerIndex, *InNewClass->GetName());
+    }
+
+    return NewVis;
+}
+
+APropertyVisualizer* ASightPortalBlockManager::ChangeVisualizerClassForProperty(const FString& PropertyName, TSubclassOf<APropertyVisualizer> InNewClass)
+{
+    if (!InNewClass || PropertyName.IsEmpty())
+    {
+        return nullptr;
+    }
+
+    for (int32 RowIdx = 0; RowIdx < PropertyRowDetails.Num(); ++RowIdx)
+    {
+        FPropertyBlockRowDetails& Row = PropertyRowDetails[RowIdx];
+        for (int32 VisIdx = 0; VisIdx < Row.SpawnedVisualizers.Num(); ++VisIdx)
+        {
+            APropertyVisualizer* Vis = Cast<APropertyVisualizer>(Row.SpawnedVisualizers[VisIdx]);
+            if (IsValid(Vis) && Vis->PropertyDetails.Name.Equals(PropertyName, ESearchCase::IgnoreCase))
+            {
+                return ChangeVisualizerClassAtIndex(RowIdx, VisIdx, InNewClass);
+            }
+        }
+    }
+
+    return nullptr;
 }
 
 #if WITH_EDITOR
