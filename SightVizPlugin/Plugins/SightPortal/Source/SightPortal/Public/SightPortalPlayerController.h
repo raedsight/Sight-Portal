@@ -12,8 +12,6 @@ class USightPortalHUDWidget;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSightPortalPropertySelected, APropertyVisualizer*, SelectedVisualizer);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSightPortalPropertyDeselected);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSightPortalGodModeToggled, bool, bActive);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSightPortalUnitSearchOpened);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSightPortalUnitSearchClosed);
 
 /**
  * ASightPortalPlayerController

@@ -39,8 +39,8 @@ USightPortalHUDWidget::USightPortalHUDWidget(const FObjectInitializer& ObjectIni
     , bTriggerGodModeOnServicesClick(true)
     , UnitSearchWidgetClass(USightPortalUnitSearchWidget::StaticClass())
     , ActiveUnitSearchWidget(nullptr)
-    , bIsSettingTimeSlider(false)
     , bIsHomeLocationInitialized(false)
+    , bIsSettingTimeSlider(false)
     , bIsTransitioningToHome(false)
     , HomeTransitionAlpha(0.0f)
 {

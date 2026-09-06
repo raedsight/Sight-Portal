@@ -64,6 +64,8 @@ struct FSightPortalProperty
 // Blueprint multicast delegates to notify levels when property records are pulled
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSightPortalDataReceived, const TArray<FSightPortalProperty>&, PropertyPortfolio);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSightPortalPropertyUpdated, const FString&, PropertyName, const FSightPortalProperty&, PropertyDetails);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSightPortalUnitSearchOpened);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSightPortalUnitSearchClosed);
 
 /**
  * Bespoke C++ Subsystem that boots up with the SightPortal simulation session.

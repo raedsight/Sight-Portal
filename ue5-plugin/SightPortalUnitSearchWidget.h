@@ -157,8 +157,6 @@ struct FSightPortalUnitFilterCriteria
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSightPortalUnitSelected, const FSightPortalProperty&, SelectedProperty, APropertyVisualizer*, VisualizerActor);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSightPortalUnitExploreClicked, const FSightPortalProperty&, SelectedProperty, APropertyVisualizer*, VisualizerActor);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSightPortalUnitSearchOpened);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSightPortalUnitSearchClosed);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSightPortalFilterCriteriaChanged, const FSightPortalUnitFilterCriteria&, NewCriteria);
 
 /**

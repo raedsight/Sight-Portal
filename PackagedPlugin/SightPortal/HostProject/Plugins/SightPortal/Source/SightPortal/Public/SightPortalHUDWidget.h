@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "SightPortalConnector.h"
 #include "SightPortalHUDWidget.generated.h"
 
 class UTextBlock;
@@ -15,8 +16,6 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSightPortalHomeTriggered, FVecto
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSightPortalGalleryClicked);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSightPortalServicesClicked);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSightPortalUnitSearchClicked);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSightPortalUnitSearchOpened);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSightPortalUnitSearchClosed);
 
 /**
  * USightPortalHUDWidget
