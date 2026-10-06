@@ -418,7 +418,7 @@ async function startServer() {
         parsed?.error?.details?.some((d: any) => d.reason === "SERVICE_DISABLED" || d.metadata?.reason === "SERVICE_DISABLED"));
 
     // Extract project ID from error message or activation link if available
-    let detectedProject = "sodium-icon-v8gvj";
+    let detectedProject = "gen-lang-client-0364468998";
     const projectMatch = rawMsg.match(/project[=\s/]+([0-9a-zA-Z\-_]+)/i);
     if (projectMatch && projectMatch[1]) {
       detectedProject = projectMatch[1];
@@ -546,8 +546,8 @@ async function startServer() {
         }
       }
 
-      // 3. Create dedicated folder inside root directory
-      const createRes = await fetch("https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink", {
+      // 3. Create dedicated folder inside root directory (with fallback to user root Drive)
+      let createRes = await fetch("https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -560,6 +560,22 @@ async function startServer() {
           description: `Dedicated media repository for client ${client.name} (${client.company})`,
         }),
       });
+
+      if (!createRes.ok && (createRes.status === 404 || createRes.status === 403)) {
+        console.info("[Drive Proxy] Root shared folder not accessible, fallback to user's Drive root...");
+        createRes = await fetch("https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: targetFolderName,
+            mimeType: "application/vnd.google-apps.folder",
+            description: `SightPortal dedicated media repository for client ${client.name} (${client.company})`,
+          }),
+        });
+      }
 
       if (!createRes.ok) {
         const errText = await createRes.text();

@@ -35,6 +35,10 @@ import {
   RefreshCw,
   Lock,
   ShieldCheck,
+  ArrowDownToLine,
+  ArrowUpToLine,
+  Download,
+  FileText,
 } from "lucide-react";
 import { Client, MediaResource, MediaCategory, SpreadsheetData, Log } from "../types";
 import {
@@ -44,7 +48,10 @@ import {
   uploadMediaToClientFolder,
   dataUrlToBlob,
   grantClientFolderAccess,
+  syncClientMediaWithDrive,
+  fetchClientFolderFiles,
   DriveFolderInfo,
+  DriveFileItem,
   GoogleDriveApiError,
 } from "../services/googleDrive";
 import { getAccessToken } from "../firebaseAuth";
@@ -86,6 +93,18 @@ export default function MediaResourcesTab({
   const [driveStatusMessage, setDriveStatusMessage] = useState<string | null>(null);
   const [batchSyncingDrive, setBatchSyncingDrive] = useState(false);
   const [uploadingSingleDriveId, setUploadingSingleDriveId] = useState<string | null>(null);
+  const [showDriveSyncModal, setShowDriveSyncModal] = useState(false);
+  const [showDriveExplorerModal, setShowDriveExplorerModal] = useState(false);
+  const [driveFolderFiles, setDriveFolderFiles] = useState<DriveFileItem[]>([]);
+  const [loadingDriveFiles, setLoadingDriveFiles] = useState(false);
+  const [importingDriveFileId, setImportingDriveFileId] = useState<string | null>(null);
+  const [driveSyncSummary, setDriveSyncSummary] = useState<{
+    uploaded: number;
+    imported: number;
+    total: number;
+    message: string;
+    timestamp: string;
+  } | null>(null);
   const [driveApiNotice, setDriveApiNotice] = useState<{
     isServiceDisabled: boolean;
     activationUrl: string;
@@ -342,8 +361,8 @@ export default function MediaResourcesTab({
             isServiceDisabled: true,
             activationUrl:
               driveErr.activationUrl ||
-              "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=sodium-icon-v8gvj",
-            projectId: driveErr.projectId || "sodium-icon-v8gvj",
+              "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=gen-lang-client-0364468998",
+            projectId: driveErr.projectId || "gen-lang-client-0364468998",
           });
         } else {
           alert(`Google Drive notice: ${driveErr.message || driveErr}\n\nThe media resource was still saved in the client portal.`);
@@ -443,8 +462,8 @@ export default function MediaResourcesTab({
           isServiceDisabled: true,
           activationUrl:
             err.activationUrl ||
-            "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=sodium-icon-v8gvj",
-          projectId: err.projectId || "sodium-icon-v8gvj",
+            "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=gen-lang-client-0364468998",
+          projectId: err.projectId || "gen-lang-client-0364468998",
         });
       } else {
         alert(`Could not configure Google Drive folder: ${err.message || err}`);
@@ -510,8 +529,8 @@ export default function MediaResourcesTab({
               isServiceDisabled: true,
               activationUrl:
                 itemErr.activationUrl ||
-                "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=sodium-icon-v8gvj",
-              projectId: itemErr.projectId || "sodium-icon-v8gvj",
+                "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=gen-lang-client-0364468998",
+              projectId: itemErr.projectId || "gen-lang-client-0364468998",
             });
             break;
           }
@@ -546,8 +565,8 @@ export default function MediaResourcesTab({
           isServiceDisabled: true,
           activationUrl:
             err.activationUrl ||
-            "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=sodium-icon-v8gvj",
-          projectId: err.projectId || "sodium-icon-v8gvj",
+            "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=gen-lang-client-0364468998",
+          projectId: err.projectId || "gen-lang-client-0364468998",
         });
       } else {
         alert(`Syncing to Google Drive failed: ${err.message || err}`);
@@ -555,6 +574,175 @@ export default function MediaResourcesTab({
     } finally {
       setBatchSyncingDrive(false);
       setDriveStatusMessage(null);
+    }
+  };
+
+  // Comprehensive Two-Way Media Synchronization between Portal and Google Drive
+  const handlePerformDriveSync = async (mode: "two-way" | "push" | "pull" = "two-way") => {
+    try {
+      setBatchSyncingDrive(true);
+      setDriveStatusMessage("Connecting to client Google Drive repository...");
+      const token = await resolveAccessToken();
+      if (!token) {
+        alert("Please connect your Google account to synchronize media with Google Drive.");
+        return;
+      }
+
+      const syncResult = await syncClientMediaWithDrive({
+        client,
+        token,
+        mode,
+        onProgress: (prog) => {
+          setDriveStatusMessage(prog.message);
+        },
+      });
+
+      const updatedClient: Client = {
+        ...client,
+        mediaResources: syncResult.syncedMediaList,
+        driveFolderId: syncResult.folderInfo.folderId,
+        driveFolderUrl: syncResult.folderInfo.folderUrl,
+        updatedAt: new Date().toISOString(),
+      };
+
+      onUpdateClient(updatedClient);
+
+      setDriveSyncSummary({
+        uploaded: syncResult.uploadedCount,
+        imported: syncResult.importedCount,
+        total: syncResult.totalDriveFiles,
+        message: syncResult.message,
+        timestamp: new Date().toLocaleTimeString(),
+      });
+
+      onRecordLog({
+        clientId: client.id,
+        clientName: client.name,
+        type: "config_change",
+        status: "success",
+        details: `Google Drive Media Sync (${mode}): ${syncResult.uploadedCount} uploaded to Drive, ${syncResult.importedCount} imported to Portal. Dedicated Folder: ${syncResult.folderInfo.folderName}`,
+      });
+
+      setShowDriveSyncModal(false);
+    } catch (err: any) {
+      console.warn("[Two-Way Drive Sync Error]", err);
+      if (err.isServiceDisabled || err.message?.includes("Google Drive API") || err.message?.includes("SERVICE_DISABLED")) {
+        setDriveApiNotice({
+          isServiceDisabled: true,
+          activationUrl:
+            err.activationUrl ||
+            "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=gen-lang-client-0364468998",
+          projectId: err.projectId || "gen-lang-client-0364468998",
+        });
+      } else {
+        alert(`Google Drive synchronization notice: ${err.message || String(err)}`);
+      }
+    } finally {
+      setBatchSyncingDrive(false);
+      setDriveStatusMessage(null);
+    }
+  };
+
+  // Open Drive Explorer modal to browse files inside client's dedicated Google Drive folder
+  const handleBrowseDriveFolder = async () => {
+    try {
+      setLoadingDriveFiles(true);
+      setShowDriveExplorerModal(true);
+      const token = await resolveAccessToken();
+      if (!token) {
+        alert("Please connect your Google account to browse Google Drive files.");
+        setShowDriveExplorerModal(false);
+        return;
+      }
+
+      const folderInfo = await getOrProvisionClientFolder(client, token);
+      const files = await fetchClientFolderFiles(folderInfo.folderId, token);
+      setDriveFolderFiles(files);
+    } catch (err: any) {
+      console.warn("[Browse Drive Folder Error]", err);
+      if (err.isServiceDisabled || err.message?.includes("Google Drive API")) {
+        setDriveApiNotice({
+          isServiceDisabled: true,
+          activationUrl:
+            err.activationUrl ||
+            "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=gen-lang-client-0364468998",
+          projectId: err.projectId || "gen-lang-client-0364468998",
+        });
+      } else {
+        alert(`Could not load files from Google Drive: ${err.message || String(err)}`);
+      }
+    } finally {
+      setLoadingDriveFiles(false);
+    }
+  };
+
+  // Import a single selected file from Drive into the portal
+  const handleImportDriveFile = (file: DriveFileItem) => {
+    const existing = mediaList.find(
+      (m) => m.driveFileId === file.id || (m.fileName && m.fileName.toLowerCase() === file.name.toLowerCase())
+    );
+    if (existing) {
+      alert(`"${file.name}" is already registered in this client's portal!`);
+      return;
+    }
+
+    setImportingDriveFileId(file.id);
+    try {
+      const lower = file.name.toLowerCase();
+      let category: MediaCategory = "project";
+      if (
+        lower.includes("service") ||
+        lower.includes("amenity") ||
+        lower.includes("spa") ||
+        lower.includes("gym") ||
+        lower.includes("pool")
+      ) {
+        category = "services";
+      } else if (
+        lower.includes("unit") ||
+        lower.includes("apt") ||
+        lower.includes("floor") ||
+        lower.includes("plan") ||
+        lower.includes("villa") ||
+        lower.includes("penthouse")
+      ) {
+        category = "properties";
+      }
+
+      const cleanTitle = file.name.replace(/\.[^/.]+$/, "").replace(/[_-]+/g, " ");
+
+      const newItem: MediaResource = {
+        id: `drive_${file.id.substring(0, 8)}_${Date.now()}`,
+        category,
+        title: cleanTitle,
+        description: `Imported from client Google Drive repository (${file.name})`,
+        fileName: file.name,
+        fileSize: file.size ? parseInt(file.size, 10) : undefined,
+        url: file.thumbnailLink || file.webViewLink || "",
+        driveFileId: file.id,
+        driveWebViewLink: file.webViewLink,
+        driveThumbnailLink: file.thumbnailLink,
+        uploadedAt: file.createdTime || new Date().toISOString(),
+        tags: ["Google Drive", "Imported"],
+      };
+
+      const updatedList = [newItem, ...mediaList];
+      const updatedClient: Client = {
+        ...client,
+        mediaResources: updatedList,
+        updatedAt: new Date().toISOString(),
+      };
+
+      onUpdateClient(updatedClient);
+      onRecordLog({
+        clientId: client.id,
+        clientName: client.name,
+        type: "config_change",
+        status: "success",
+        details: `Imported media file "${file.name}" from Google Drive into client portal`,
+      });
+    } finally {
+      setImportingDriveFileId(null);
     }
   };
 
@@ -627,8 +815,8 @@ export default function MediaResourcesTab({
           isServiceDisabled: true,
           activationUrl:
             err.activationUrl ||
-            "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=sodium-icon-v8gvj",
-          projectId: err.projectId || "sodium-icon-v8gvj",
+            "https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=gen-lang-client-0364468998",
+          projectId: err.projectId || "gen-lang-client-0364468998",
         });
       } else {
         alert(`Upload to Google Drive notice: ${err.message || err}`);
@@ -808,15 +996,48 @@ export default function MediaResourcesTab({
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2 flex-wrap shrink-0">
+            {/* Primary Google Drive Two-Way Sync Button */}
+            <button
+              type="button"
+              onClick={() => setShowDriveSyncModal(true)}
+              disabled={batchSyncingDrive}
+              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-black shadow-lg shadow-amber-950/40 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              title="Perform two-way synchronization of media assets between this portal and client's Google Drive folder"
+            >
+              {batchSyncingDrive ? (
+                <RefreshCw className="h-4 w-4 animate-spin text-black" />
+              ) : (
+                <Cloud className="h-4 w-4 text-black" />
+              )}
+              <span>Sync with Google Drive</span>
+            </button>
+
+            {/* Browse Client Drive Repository Button */}
+            <button
+              type="button"
+              onClick={handleBrowseDriveFolder}
+              disabled={loadingDriveFiles}
+              className="px-3 py-2 rounded-xl text-xs font-medium bg-black/60 hover:bg-black/80 border border-white/10 text-gray-200 hover:text-white transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              title="Browse and select media files directly from client's Google Drive folder to import into portal"
+            >
+              {loadingDriveFiles ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin text-gray-400" />
+              ) : (
+                <HardDrive className="h-3.5 w-3.5 text-amber-400" />
+              )}
+              <span>Browse Drive</span>
+            </button>
+
             {client.driveFolderUrl && (
               <a
                 href={client.driveFolderUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/40 transition flex items-center gap-1.5"
+                className="px-3 py-2 rounded-xl text-xs font-medium bg-emerald-600/25 hover:bg-emerald-600/40 border border-emerald-500/40 text-emerald-200 hover:text-white transition flex items-center gap-1.5"
+                title="Open client's dedicated Google Drive folder in a new tab"
               >
-                <FolderCheck className="h-4 w-4" />
-                <span>Open Dedicated Folder ↗</span>
+                <FolderCheck className="h-4 w-4 text-emerald-400" />
+                <span>Drive Folder ↗</span>
               </a>
             )}
 
@@ -826,6 +1047,7 @@ export default function MediaResourcesTab({
                 onClick={handleProvisionDriveFolder}
                 disabled={isProvisioningDrive}
                 className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                title="Verify and provision client's dedicated Google Drive folder"
               >
                 {isProvisioningDrive ? (
                   <RefreshCw className="h-4 w-4 animate-spin" />
@@ -852,7 +1074,7 @@ export default function MediaResourcesTab({
                 <span>
                   {batchSyncingDrive
                     ? "Syncing Files..."
-                    : `Sync All to Drive (${mediaList.length - driveSyncedCount} left)`}
+                    : `Push ${mediaList.length - driveSyncedCount} to Drive`}
                 </span>
               </button>
             )}
@@ -862,13 +1084,33 @@ export default function MediaResourcesTab({
               target="_blank"
               rel="noopener noreferrer"
               className="px-2.5 py-2 rounded-xl text-xs font-medium bg-black/40 hover:bg-black/60 border border-white/10 text-gray-300 hover:text-white transition flex items-center gap-1"
-              title="Open shared root repository"
+              title="Open shared root Google Drive repository in a new tab"
             >
               <ExternalLink className="h-3.5 w-3.5 text-gray-400" />
               <span>Root Repo</span>
             </a>
           </div>
         </div>
+
+        {/* Sync Summary Banner if available */}
+        {driveSyncSummary && (
+          <div className="mt-3 p-3 bg-emerald-950/70 border border-emerald-500/40 rounded-xl flex items-center justify-between gap-3 text-xs text-emerald-200 animate-fadeIn">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span>
+                <strong>Google Drive Sync Succeeded:</strong> {driveSyncSummary.message} ({driveSyncSummary.timestamp})
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDriveSyncSummary(null)}
+              className="text-emerald-400 hover:text-white p-1 rounded transition cursor-pointer"
+              title="Dismiss sync summary"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Sync Progress Notice */}
         {driveStatusMessage && (
@@ -889,11 +1131,11 @@ export default function MediaResourcesTab({
                 <div className="font-bold text-sm text-amber-100 flex items-center gap-2">
                   <span>Google Drive API Activation Required in Google Cloud</span>
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-400/20 text-amber-300 border border-amber-400/30">
-                    Project {driveApiNotice.projectId || "sodium-icon-v8gvj"}
+                    Project {driveApiNotice.projectId || "gen-lang-client-0364468998"}
                   </span>
                 </div>
                 <div className="text-xs text-amber-200/90 leading-relaxed max-w-2xl">
-                  The Google Drive API is not yet enabled in the Google Cloud Console for project <code className="bg-black/40 px-1.5 py-0.5 rounded text-amber-300 font-mono">{driveApiNotice.projectId || "sodium-icon-v8gvj"}</code>.
+                  The Google Drive API is not yet enabled in the Google Cloud Console for project <code className="bg-black/40 px-1.5 py-0.5 rounded text-amber-300 font-mono">{driveApiNotice.projectId || "gen-lang-client-0364468998"}</code>.
                   All uploaded media assets remain <strong className="text-white">100% safely registered in your client portal</strong>. Click below to enable the API with one click.
                 </div>
               </div>
@@ -911,6 +1153,7 @@ export default function MediaResourcesTab({
               <button
                 type="button"
                 onClick={() => setDriveApiNotice(null)}
+                title="Dismiss Google Drive API notice"
                 className="px-2.5 py-2 text-xs text-amber-300/80 hover:text-white transition cursor-pointer"
               >
                 Dismiss
@@ -1024,10 +1267,12 @@ export default function MediaResourcesTab({
           {/* Category Tabs Switcher */}
           <div className="flex flex-wrap items-center gap-1.5 bg-black/60 p-1 rounded-lg border border-white/10">
             <button
+              type="button"
               onClick={() => {
                 setSelectedCategory("all");
                 setSelectedClassFilter("all");
               }}
+              title="Show all registered media assets across all categories"
               className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                 selectedCategory === "all" ? "bg-white/15 text-white shadow-sm" : "text-gray-400 hover:text-white"
               }`}
@@ -1037,10 +1282,12 @@ export default function MediaResourcesTab({
             </button>
 
             <button
+              type="button"
               onClick={() => {
                 setSelectedCategory("project");
                 setSelectedClassFilter("all");
               }}
+              title="Filter by masterplan and general project images (4K Max)"
               className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                 selectedCategory === "project"
                   ? "bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow-sm"
@@ -1052,10 +1299,12 @@ export default function MediaResourcesTab({
             </button>
 
             <button
+              type="button"
               onClick={() => {
                 setSelectedCategory("services");
                 setSelectedClassFilter("all");
               }}
+              title="Filter by communal service buildings, clubhouses and spas"
               className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                 selectedCategory === "services"
                   ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm"
@@ -1067,9 +1316,11 @@ export default function MediaResourcesTab({
             </button>
 
             <button
+              type="button"
               onClick={() => {
                 setSelectedCategory("properties");
               }}
+              title="Filter by individual real-estate properties and class categories"
               className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                 selectedCategory === "properties"
                   ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-sm"
@@ -1084,6 +1335,7 @@ export default function MediaResourcesTab({
           {/* Action Buttons: Upload & Sync to UE5 */}
           <div className="flex items-center gap-2.5">
             <button
+              type="button"
               onClick={handlePushMediaToUE5}
               disabled={pushingToUE5 || mediaList.length === 0}
               className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 border border-white/10 cursor-pointer ${
@@ -1096,7 +1348,9 @@ export default function MediaResourcesTab({
             </button>
 
             <button
+              type="button"
               onClick={() => handleOpenUploadModal(selectedCategory === "all" ? "project" : selectedCategory)}
+              title="Upload and register new media assets into portal repository"
               className="px-4 py-1.5 rounded-lg text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 shadow-md shadow-blue-900/30 transition flex items-center gap-1.5 cursor-pointer"
             >
               <Plus className="h-4 w-4" />
@@ -1119,8 +1373,10 @@ export default function MediaResourcesTab({
             />
             {searchQuery && (
               <button
+                type="button"
                 onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-xs"
+                title="Clear search filter"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-xs cursor-pointer"
               >
                 ✕
               </button>
@@ -1235,7 +1491,9 @@ export default function MediaResourcesTab({
             </p>
           </div>
           <button
+            type="button"
             onClick={() => handleOpenUploadModal(selectedCategory === "all" ? "project" : selectedCategory)}
+            title="Upload and register your first media asset"
             className="px-4 py-2 rounded-lg text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 shadow-md inline-flex items-center gap-1.5 cursor-pointer"
           >
             <Plus className="h-4 w-4" />
@@ -1541,7 +1799,9 @@ export default function MediaResourcesTab({
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setShowUploadModal(false)}
+                title="Close upload modal"
                 className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 cursor-pointer"
               >
                 <X className="h-4 w-4" />
@@ -1568,6 +1828,7 @@ export default function MediaResourcesTab({
                         setResolutionError(null);
                       }
                     }}
+                    title="General project renders and masterplan views (Maximum 4K resolution)"
                     className={`py-2.5 px-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
                       formCategory === "project"
                         ? "bg-amber-500/15 border-amber-500/50 text-amber-300 shadow-sm"
@@ -1587,6 +1848,7 @@ export default function MediaResourcesTab({
                       setFormCategory("services");
                       setResolutionError(null);
                     }}
+                    title="Communal service buildings, amenities, clubhouses, and spas"
                     className={`py-2.5 px-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
                       formCategory === "services"
                         ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-300 shadow-sm"
@@ -1606,6 +1868,7 @@ export default function MediaResourcesTab({
                       setFormCategory("properties");
                       setResolutionError(null);
                     }}
+                    title="Individual property class units, villas, and apartments"
                     className={`py-2.5 px-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
                       formCategory === "properties"
                         ? "bg-cyan-500/15 border-cyan-500/50 text-cyan-300 shadow-sm"
@@ -1770,6 +2033,7 @@ export default function MediaResourcesTab({
                             setFormDimensions(null);
                             setResolutionError(null);
                           }}
+                          title="Clear selected image and choose another file"
                           className="text-[9px] text-red-400 hover:text-red-300 underline font-bold ml-2 cursor-pointer"
                         >
                           Change
@@ -1906,7 +2170,7 @@ export default function MediaResourcesTab({
                     </p>
                     {driveApiNotice && (
                       <div className="p-2 bg-amber-950/70 border border-amber-500/40 rounded-lg text-amber-200 text-[10px] flex items-center justify-between gap-2">
-                        <span>Google Drive API needs activation in project {driveApiNotice.projectId || "sodium-icon-v8gvj"}. Asset will still be saved to the client portal.</span>
+                        <span>Google Drive API needs activation in project {driveApiNotice.projectId || "gen-lang-client-0364468998"}. Asset will still be saved to the client portal.</span>
                         <a
                           href={driveApiNotice.activationUrl}
                           target="_blank"
@@ -2185,6 +2449,364 @@ export default function MediaResourcesTab({
                     )}
                   </pre>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* GOOGLE DRIVE TWO-WAY SYNCHRONIZATION MODAL */}
+      {/* ========================================================================= */}
+      {showDriveSyncModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-slate-950 border border-white/15 rounded-2xl max-w-xl w-full shadow-2xl p-6 space-y-5">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <Cloud className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-white">Google Drive Media Synchronization</h3>
+                  <span className="text-[10px] text-gray-400">Bidirectional media sync between Client Portal & Google Drive</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDriveSyncModal(false)}
+                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 cursor-pointer"
+                title="Close synchronization modal"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Folder & Status Details */}
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="bg-black/50 p-3 rounded-xl border border-white/5 space-y-1">
+                <span className="text-[10px] font-bold uppercase text-gray-500 tracking-wider block">Client Dedicated Folder</span>
+                <span className="text-white font-mono text-[11px] block truncate font-bold">
+                  {client.company || client.name} ({client.id})
+                </span>
+                {client.driveFolderUrl && (
+                  <a
+                    href={client.driveFolderUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-400 hover:underline text-[10px] flex items-center gap-1 mt-1 font-mono"
+                    title="Open client's dedicated folder in Google Drive"
+                  >
+                    <span>View in Google Drive ↗</span>
+                  </a>
+                )}
+              </div>
+
+              <div className="bg-black/50 p-3 rounded-xl border border-white/5 space-y-1">
+                <span className="text-[10px] font-bold uppercase text-gray-500 tracking-wider block">Current Media Status</span>
+                <div className="flex items-center justify-between text-[11px] font-mono">
+                  <span className="text-gray-400">Total in Portal:</span>
+                  <span className="text-white font-bold">{mediaList.length}</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] font-mono">
+                  <span className="text-gray-400">Synced to Drive:</span>
+                  <span className="text-emerald-400 font-bold">{driveSyncedCount}</span>
+                </div>
+                {mediaList.length > driveSyncedCount && (
+                  <div className="flex items-center justify-between text-[11px] font-mono">
+                    <span className="text-amber-400">Unsynced:</span>
+                    <span className="text-amber-400 font-bold">{mediaList.length - driveSyncedCount} files</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Sync Progress Indicator if active */}
+            {batchSyncingDrive && (
+              <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-2 text-xs text-amber-200">
+                <div className="flex items-center gap-2 font-bold text-amber-300">
+                  <RefreshCw className="h-4 w-4 animate-spin text-amber-400" />
+                  <span>{driveStatusMessage || "Synchronizing with Google Drive..."}</span>
+                </div>
+                <div className="w-full bg-black/60 rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-amber-400 h-1.5 rounded-full animate-pulse w-3/4"></div>
+                </div>
+              </div>
+            )}
+
+            {/* Sync Mode Options */}
+            {!batchSyncingDrive && (
+              <div className="space-y-2.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">Choose Synchronization Mode</span>
+
+                {/* Option 1: Two-Way Sync (Recommended) */}
+                <div
+                  onClick={() => handlePerformDriveSync("two-way")}
+                  className="p-3.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-black/40 to-black/60 border border-amber-500/40 hover:border-amber-400 cursor-pointer transition space-y-1 group"
+                  title="Execute bidirectional synchronization between portal and Google Drive"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="h-4 w-4 text-amber-400 group-hover:rotate-180 transition-transform duration-500" />
+                      <strong className="text-xs text-white group-hover:text-amber-300 transition-colors">
+                        Two-Way Full Sync (Recommended)
+                      </strong>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[9px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+                      Bidirectional
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    Uploads all {mediaList.length - driveSyncedCount > 0 ? `${mediaList.length - driveSyncedCount} unsynced` : "portal"} visual assets to Google Drive AND imports any new photos/renders added directly into the client's Drive folder into this portal.
+                  </p>
+                </div>
+
+                {/* Option 2: Push Portal -> Drive */}
+                <div
+                  onClick={() => handlePerformDriveSync("push")}
+                  className="p-3 rounded-xl bg-black/40 hover:bg-black/60 border border-white/10 hover:border-blue-500/40 cursor-pointer transition space-y-1 group"
+                  title="Upload all remaining unsynced media assets to Google Drive"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ArrowUpToLine className="h-4 w-4 text-blue-400" />
+                      <strong className="text-xs text-white group-hover:text-blue-300 transition-colors">
+                        Upload to Google Drive (Portal &rarr; Drive)
+                      </strong>
+                    </div>
+                    <span className="text-[10px] text-gray-500 font-mono">
+                      {mediaList.length - driveSyncedCount} pending
+                    </span>
+                  </div>
+                  <p className="text-[10.5px] text-gray-400">
+                    Uploads any local or unsynced portal images, renders, or floorplans into the client's dedicated Drive folder.
+                  </p>
+                </div>
+
+                {/* Option 3: Pull Drive -> Portal */}
+                <div
+                  onClick={() => handlePerformDriveSync("pull")}
+                  className="p-3 rounded-xl bg-black/40 hover:bg-black/60 border border-white/10 hover:border-emerald-500/40 cursor-pointer transition space-y-1 group"
+                  title="Scan client's Google Drive folder and import media assets into portal"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ArrowDownToLine className="h-4 w-4 text-emerald-400" />
+                      <strong className="text-xs text-white group-hover:text-emerald-300 transition-colors">
+                        Import from Google Drive (Drive &rarr; Portal)
+                      </strong>
+                    </div>
+                    <span className="text-[10px] text-emerald-400 font-mono">Import New Files</span>
+                  </div>
+                  <p className="text-[10.5px] text-gray-400">
+                    Scans the client's Google Drive folder and imports any architectural visuals, renders, and media files directly into this portal.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between pt-3 border-t border-white/10">
+              <button
+                type="button"
+                onClick={handleBrowseDriveFolder}
+                className="px-3.5 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white rounded-lg text-xs font-mono transition flex items-center gap-1.5 cursor-pointer"
+                title="Open interactive file explorer to browse and selectively import files"
+              >
+                <HardDrive className="h-3.5 w-3.5 text-amber-400" />
+                <span>Browse Drive Files Individually</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowDriveSyncModal(false)}
+                disabled={batchSyncingDrive}
+                className="px-4 py-1.5 bg-black/40 hover:bg-black/60 border border-white/10 text-gray-300 hover:text-white rounded-lg text-xs font-medium cursor-pointer"
+                title="Close modal"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* GOOGLE DRIVE FILE EXPLORER MODAL */}
+      {/* ========================================================================= */}
+      {showDriveExplorerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-slate-950 border border-white/15 rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl p-6 space-y-4">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <HardDrive className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-white">Google Drive File Explorer</h3>
+                  <span className="text-[10px] text-gray-400">
+                    Files inside dedicated folder: <strong className="text-gray-200">{client.company || client.name} ({client.id})</strong>
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDriveExplorerModal(false)}
+                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 cursor-pointer"
+                title="Close Google Drive explorer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[240px]">
+              {loadingDriveFiles ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
+                  <RefreshCw className="h-8 w-8 text-amber-400 animate-spin" />
+                  <span className="text-xs text-gray-400 font-mono">Querying client's Google Drive folder...</span>
+                </div>
+              ) : driveFolderFiles.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center space-y-2 bg-black/30 rounded-xl border border-white/5">
+                  <Folder className="h-10 w-10 text-gray-600 mb-1" />
+                  <span className="text-xs text-gray-300 font-bold">No files found in this client's Drive folder yet.</span>
+                  <span className="text-[11px] text-gray-500 max-w-sm">
+                    Upload media from the portal or drop files directly into Google Drive, then click Refresh.
+                  </span>
+                  {client.driveFolderUrl && (
+                    <a
+                      href={client.driveFolderUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-3 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow"
+                      title="Open Google Drive folder in a new tab"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      <span>Open Folder in Google Drive ↗</span>
+                    </a>
+                  )}
+                </div>
+              ) : (
+                <div className="divide-y divide-white/5 bg-black/40 rounded-xl border border-white/10 overflow-hidden">
+                  {driveFolderFiles.map((file) => {
+                    const alreadyInPortal = mediaList.some(
+                      (m) => m.driveFileId === file.id || (m.fileName && m.fileName.toLowerCase() === file.name.toLowerCase())
+                    );
+                    const isImporting = importingDriveFileId === file.id;
+
+                    return (
+                      <div
+                        key={file.id}
+                        className="p-3 hover:bg-white/5 transition flex items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          {file.thumbnailLink ? (
+                            <img
+                              src={file.thumbnailLink}
+                              alt={file.name}
+                              className="w-10 h-10 object-cover rounded-lg border border-white/10 shrink-0"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 bg-white/5 rounded-lg border border-white/10 flex items-center justify-center text-gray-400 shrink-0">
+                              <FileText className="h-5 w-5" />
+                            </div>
+                          )}
+
+                          <div className="min-w-0 space-y-0.5">
+                            <span className="text-white font-semibold block truncate" title={file.name}>
+                              {file.name}
+                            </span>
+                            <div className="flex items-center gap-2 text-[10px] text-gray-500 font-mono">
+                              <span>{file.size ? `${Math.round(parseInt(file.size, 10) / 1024)} KB` : "File"}</span>
+                              {file.createdTime && (
+                                <>
+                                  <span>•</span>
+                                  <span>{new Date(file.createdTime).toLocaleDateString()}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {file.webViewLink && (
+                            <a
+                              href={file.webViewLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1.5 rounded hover:bg-white/10 text-gray-400 hover:text-white transition"
+                              title="Open in Google Drive in new tab"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          )}
+
+                          {alreadyInPortal ? (
+                            <span className="px-2.5 py-1 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-[10px] flex items-center gap-1 font-bold">
+                              <CheckCircle2 className="h-3 w-3" />
+                              In Portal
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleImportDriveFile(file)}
+                              disabled={isImporting}
+                              className="px-3 py-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-bold rounded text-[11px] font-mono transition flex items-center gap-1 cursor-pointer"
+                              title={`Import "${file.name}" into client portal`}
+                            >
+                              {isImporting ? (
+                                <RefreshCw className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Download className="h-3 w-3" />
+                              )}
+                              <span>{isImporting ? "Importing..." : "Import"}</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between pt-3 border-t border-white/10">
+              <button
+                type="button"
+                onClick={handleBrowseDriveFolder}
+                disabled={loadingDriveFiles}
+                className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white rounded-lg text-xs font-mono transition flex items-center gap-1.5 cursor-pointer"
+                title="Refresh list of files from client's Google Drive folder"
+              >
+                <RefreshCw className={`h-3 w-3 ${loadingDriveFiles ? "animate-spin text-amber-400" : ""}`} />
+                <span>Refresh Folder</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDriveExplorerModal(false);
+                    handlePerformDriveSync("two-way");
+                  }}
+                  className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-lg text-xs transition flex items-center gap-1.5 cursor-pointer shadow"
+                  title="Run two-way synchronization to import all new files from Drive and upload unsynced files"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  <span>Sync All Files</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowDriveExplorerModal(false)}
+                  className="px-3.5 py-1.5 bg-black/40 hover:bg-black/60 border border-white/10 text-gray-300 hover:text-white rounded-lg text-xs cursor-pointer"
+                  title="Close modal"
+                >
+                  Close
+                </button>
               </div>
             </div>
           </div>

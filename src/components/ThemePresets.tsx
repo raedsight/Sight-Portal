@@ -77,7 +77,12 @@ export default function ThemePresets({ presets }: { presets: ThemePreset[] }) {
               <option value="mono">Mono</option>
             </select>
           </div>
-          <button onClick={handleSave} className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 rounded-lg text-black text-sm font-bold transition-all cursor-pointer">
+          <button
+            type="button"
+            onClick={handleSave}
+            title="Save new branding preset to Firestore database"
+            className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 rounded-lg text-black text-sm font-bold transition-all cursor-pointer"
+          >
             <Save className="h-4 w-4" /> Save Preset
           </button>
         </div>
@@ -89,7 +94,12 @@ export default function ThemePresets({ presets }: { presets: ThemePreset[] }) {
             presets.map((p) => (
               <div key={p.id} className="flex items-center justify-between p-3 bg-black/40 rounded-lg border border-white/10">
                 <span className="text-white text-sm font-sans">{p.name}</span>
-                <button onClick={() => deleteThemePreset(p.id)} className="text-red-400 hover:text-red-300">
+                <button
+                  type="button"
+                  onClick={() => deleteThemePreset(p.id)}
+                  title={`Delete preset "${p.name}"`}
+                  className="text-red-400 hover:text-red-300 p-1.5 rounded transition cursor-pointer"
+                >
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>

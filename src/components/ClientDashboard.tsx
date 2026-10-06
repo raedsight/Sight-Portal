@@ -48,7 +48,8 @@ import {
   FileText,
   Table,
   ChevronDown,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Cloud
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Client, SpreadsheetData, SheetRow, Log, BugIssue, BugActivity, ThemePreset } from "../types";
@@ -57,6 +58,7 @@ import { initAuth, googleSignIn, logout, getAccessToken } from "../firebaseAuth"
 import { saveClientSheetData } from "../firebase";
 import MediaResourcesTab from "./MediaResourcesTab";
 import { notifyAdminBugEvent } from "../services/bugNotificationService";
+import { syncClientMediaWithDrive } from "../services/googleDrive";
 
 interface ClientDashboardProps {
   client: Client;
@@ -85,6 +87,70 @@ export default function ClientDashboard({
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(null);
   const [pushingSheet, setPushingSheet] = useState(false);
+  const [quickSyncingDrive, setQuickSyncingDrive] = useState(false);
+  const [quickDriveSyncMsg, setQuickDriveSyncMsg] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const handleQuickDriveSync = async () => {
+    try {
+      setQuickSyncingDrive(true);
+      setQuickDriveSyncMsg(null);
+
+      let token = googleAccessToken;
+      if (!token) {
+        token = await getAccessToken();
+      }
+      if (!token) {
+        const signinRes = await googleSignIn();
+        token = signinRes?.accessToken || null;
+        if (token) setGoogleAccessToken(token);
+      }
+
+      if (!token) {
+        alert("Please connect your Google account to synchronize media with Google Drive.");
+        return;
+      }
+
+      const syncResult = await syncClientMediaWithDrive({
+        client,
+        token,
+        mode: "two-way",
+      });
+
+      const updatedClient: Client = {
+        ...client,
+        mediaResources: syncResult.syncedMediaList,
+        driveFolderId: syncResult.folderInfo.folderId,
+        driveFolderUrl: syncResult.folderInfo.folderUrl,
+        updatedAt: new Date().toISOString(),
+      };
+
+      onUpdateClient(updatedClient);
+
+      setQuickDriveSyncMsg({
+        message: `Synced with Google Drive: ${syncResult.uploadedCount} uploaded, ${syncResult.importedCount} imported (${syncResult.folderInfo.folderName})!`,
+        type: "success",
+      });
+
+      onRecordLog({
+        clientId: client.id,
+        clientName: client.name,
+        type: "config_change",
+        status: "success",
+        details: `Google Drive quick sync: ${syncResult.uploadedCount} uploaded, ${syncResult.importedCount} imported into portal. Folder: ${syncResult.folderInfo.folderName}`,
+      });
+
+      setTimeout(() => setQuickDriveSyncMsg(null), 7000);
+    } catch (err: any) {
+      console.warn("[Quick Drive Sync Notice]", err);
+      setQuickDriveSyncMsg({
+        message: `Google Drive sync notice: ${err.message || String(err)}`,
+        type: "error",
+      });
+      setTimeout(() => setQuickDriveSyncMsg(null), 8000);
+    } finally {
+      setQuickSyncingDrive(false);
+    }
+  };
   
   // Tab indicator
   const [activeTab, setActiveTab ] = useState<"workspace" | "media" | "bugs">("workspace");
@@ -1777,6 +1843,7 @@ export default function ClientDashboard({
                 <button
                   id="back-to-admin-btn"
                   onClick={onBackToAdmin}
+                  title="Return to Administration Console"
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
                 >
                   <ArrowLeft className="h-3.5 w-3.5 text-blue-400" />
@@ -1855,18 +1922,36 @@ export default function ClientDashboard({
               <button
                 onClick={handleGoogleLogin}
                 className="px-3 py-2 text-xs font-mono rounded-lg transition-colors border border-white/10 bg-black/40 text-gray-400 hover:text-white hover:bg-black/60 flex items-center gap-1.5 cursor-pointer"
-                title="Connect Google Account for Sheets authorization"
+                title="Connect Google Account for Sheets and Drive authorization"
               >
                 <User className="h-3.5 w-3.5 text-blue-400" />
                 Connect Google Account
               </button>
             )}
 
+            {/* Quick Google Drive Media Sync Button */}
+            <button
+              id="sync-drive-header-btn"
+              onClick={handleQuickDriveSync}
+              disabled={quickSyncingDrive}
+              title="Synchronize media assets directly with client's dedicated Google Drive folder"
+              className="px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer bg-black/60 border border-emerald-500/30 hover:border-emerald-500/60 text-emerald-300 hover:text-white flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <Cloud className={`h-3.5 w-3.5 text-emerald-400 ${quickSyncingDrive ? "animate-spin" : ""}`} />
+              <span>{quickSyncingDrive ? "Syncing Drive..." : "Sync Drive Media"}</span>
+              {(client.mediaResources?.length ?? 0) > 0 && (
+                <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-mono">
+                  {client.mediaResources?.filter(m => m.driveFileId).length || 0}/{client.mediaResources?.length}
+                </span>
+              )}
+            </button>
+
             <button
               id="fetch-sheet-btn"
               onClick={handleFetchGoogleSheet}
               disabled={loading}
-              className="px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer bg-black/60 border border-white/10 hover:border-blue-500/30 text-white flex items-center gap-1.5"
+              title="Read latest table rows and headers from Google Sheet"
+              className="px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer bg-black/60 border border-white/10 hover:border-blue-500/30 text-white flex items-center gap-1.5 disabled:opacity-50"
             >
               <FileSpreadsheet className={`h-3.5 w-3.5 text-blue-400 ${loading ? "animate-spin" : ""}`} />
               {loading ? "Reading Sheet..." : "Sync From Google Sheet"}
@@ -1876,6 +1961,7 @@ export default function ClientDashboard({
               id="transmit-ue5-btn"
               onClick={handleTransmitPayloadToUE5}
               disabled={transmitting || !sheetData}
+              title="Broadcast full state matrix to Unreal Engine 5 receiver"
               className="px-5 py-2 text-xs font-bold text-white rounded-lg transition-all select-none cursor-pointer flex items-center gap-2 hover:opacity-90 animate-pulse hover:animate-none"
               style={{ 
                 backgroundColor: client.branding.primaryColor,
@@ -1888,10 +1974,35 @@ export default function ClientDashboard({
           </div>
         </div>
 
+        {/* Quick Drive Sync Alert Notification */}
+        {quickDriveSyncMsg && (
+          <div
+            className={`mb-6 p-3 rounded-xl border text-xs font-sans flex items-center justify-between gap-3 animate-fadeIn ${
+              quickDriveSyncMsg.type === "success"
+                ? "bg-emerald-950/80 border-emerald-500/40 text-emerald-200"
+                : "bg-rose-950/80 border-rose-500/40 text-rose-200"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Cloud className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span>{quickDriveSyncMsg.message}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setQuickDriveSyncMsg(null)}
+              title="Dismiss notification"
+              className="text-gray-400 hover:text-white p-1 rounded transition cursor-pointer"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Navigation Tabs bar */}
         <div className="flex border-b border-white/10 mb-6 gap-2" id="client-portal-tabs">
           <button
             onClick={() => setActiveTab("workspace")}
+            title="Open Spreadsheet sync & Viewport control workspace"
             className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 ${
               activeTab === "workspace"
                 ? "border-blue-500 text-white"
@@ -1904,6 +2015,7 @@ export default function ClientDashboard({
 
           <button
             onClick={() => setActiveTab("media")}
+            title="Open Media assets and Google Drive synchronization gallery"
             className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 ${
               activeTab === "media"
                 ? "border-amber-500 text-amber-400 bg-amber-500/5"
@@ -1927,6 +2039,7 @@ export default function ClientDashboard({
                 setSelectedBugId(clientBugs[0].id);
               }
             }}
+            title="Open QA checklist and bug tracker"
             className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 ${
               activeTab === "bugs"
                 ? "border-rose-500 text-rose-400"
@@ -2099,7 +2212,9 @@ export default function ClientDashboard({
                             <div className="py-1 space-y-1">
                               {/* 1. CSV Export */}
                               <button
+                                type="button"
                                 onClick={() => handleExportCSV(false)}
+                                title="Download entire dataset as CSV spreadsheet"
                                 className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-gray-200 hover:text-white flex items-center gap-2.5 transition cursor-pointer"
                               >
                                 <FileText className="h-3.5 w-3.5 text-blue-400 shrink-0" />
@@ -2114,7 +2229,9 @@ export default function ClientDashboard({
 
                               {/* 2. Excel Export */}
                               <button
+                                type="button"
                                 onClick={() => handleExportExcel(false)}
+                                title="Download full dataset as Excel workbook (.xlsx)"
                                 className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-gray-200 hover:text-white flex items-center gap-2.5 transition cursor-pointer"
                               >
                                 <Table className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
@@ -2131,14 +2248,18 @@ export default function ClientDashboard({
                               {isFilterActive && (
                                 <div className="pt-1 border-t border-white/5 space-y-1">
                                   <button
+                                    type="button"
                                     onClick={() => handleExportCSV(true)}
+                                    title="Download only currently filtered rows as CSV"
                                     className="w-full text-left px-2.5 py-1 rounded-lg hover:bg-amber-500/10 text-amber-300 hover:text-amber-200 flex items-center gap-2 text-[10px] transition cursor-pointer"
                                   >
                                     <Download className="h-3 w-3 shrink-0" />
                                     <span>Export Filtered Rows Only ({filteredSheetRows.length} CSV)</span>
                                   </button>
                                   <button
+                                    type="button"
                                     onClick={() => handleExportExcel(true)}
+                                    title="Download only currently filtered rows as Excel (.xlsx)"
                                     className="w-full text-left px-2.5 py-1 rounded-lg hover:bg-amber-500/10 text-amber-300 hover:text-amber-200 flex items-center gap-2 text-[10px] transition cursor-pointer"
                                   >
                                     <Download className="h-3 w-3 shrink-0" />
@@ -2154,7 +2275,9 @@ export default function ClientDashboard({
                                 </div>
 
                                 <button
+                                  type="button"
                                   onClick={() => handleExportGoogleSheet("copy_tsv", false)}
+                                  title="Copy tab-separated table rows to clipboard for 1-click paste into Google Sheets"
                                   className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-gray-200 hover:text-white flex items-center gap-2.5 transition cursor-pointer"
                                 >
                                   <Copy className="h-3.5 w-3.5 text-amber-400 shrink-0" />
@@ -2165,7 +2288,9 @@ export default function ClientDashboard({
                                 </button>
 
                                 <button
+                                  type="button"
                                   onClick={() => handleExportGoogleSheet("open_linked")}
+                                  title="Open client's linked Google Sheet in a new tab"
                                   className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-gray-200 hover:text-white flex items-center gap-2.5 transition cursor-pointer"
                                 >
                                   <ExternalLink className="h-3.5 w-3.5 text-blue-400 shrink-0" />
@@ -2176,7 +2301,9 @@ export default function ClientDashboard({
                                 </button>
 
                                 <button
+                                  type="button"
                                   onClick={() => handleExportGoogleSheet("open_new")}
+                                  title="Create a new blank Google Sheet at sheets.new"
                                   className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-gray-200 hover:text-white flex items-center gap-2.5 transition cursor-pointer"
                                 >
                                   <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
@@ -2215,7 +2342,9 @@ export default function ClientDashboard({
                         <span className="font-mono text-[11px]">{exportNotification.message}</span>
                       </div>
                       <button 
+                        type="button"
                         onClick={() => setExportNotification(null)}
+                        title="Dismiss notification"
                         className="text-gray-400 hover:text-white text-xs cursor-pointer px-1"
                       >
                         ✕
@@ -2238,7 +2367,9 @@ export default function ClientDashboard({
                         </div>
                         {isFilterActive && (
                           <button
+                            type="button"
                             onClick={clearAllFilters}
+                            title="Clear all active table filters"
                             className="text-[10px] text-gray-400 hover:text-white flex items-center gap-1 px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer transition"
                           >
                             <X className="h-3 w-3" />
@@ -2442,8 +2573,10 @@ export default function ClientDashboard({
                       <Database className="h-10 w-10 text-gray-700 mx-auto mb-3 status-pulse" />
                       <span className="text-sm block">No spreadsheet data model loaded yet.</span>
                       <button 
+                        type="button"
                         onClick={handleFetchGoogleSheet}
-                        className="mt-4 px-4 py-2 text-xs bg-blue-600 rounded text-white cursor-pointer"
+                        title="Query linked Google Sheet to populate database records"
+                        className="mt-4 px-4 py-2 text-xs bg-blue-600 hover:bg-blue-500 rounded text-white cursor-pointer transition shadow"
                       >
                         Fetch Initial Setup
                       </button>
@@ -2624,9 +2757,9 @@ export default function ClientDashboard({
                         </span>
                       </div>
                       {(() => {
-                        const httpUrl = typeof window !== "undefined"
+                        const httpUrl = typeof window !== "undefined" && window.location?.origin
                           ? `${window.location.origin}/api/health`
-                          : "https://sightportal.ai.studio/api/health";
+                          : "https://your-app-domain.run.app/api/health";
                         return (
                           <div className="bg-black/60 font-mono text-[10.5px] text-amber-300 p-2 border border-white/5 rounded-lg flex items-center justify-between gap-1">
                             <code className="truncate select-all mr-2">{httpUrl}</code>
@@ -2662,9 +2795,9 @@ export default function ClientDashboard({
                         </span>
                       </div>
                       {(() => {
-                        const directWsUrl = typeof window !== "undefined"
+                        const directWsUrl = typeof window !== "undefined" && window.location?.host
                           ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws/${client.id}`
-                          : `wss://sightportal.ai.studio/ws/${client.id}`;
+                          : `wss://your-app-domain.run.app/ws/${client.id}`;
                         const wsUrl = client.webSocketEndpoint?.trim() || directWsUrl;
                         return (
                           <div className="bg-black/60 font-mono text-[10.5px] text-emerald-300 p-2 border border-white/5 rounded-lg flex items-center justify-between gap-1">
@@ -2714,8 +2847,10 @@ export default function ClientDashboard({
                     </p>
 
                     <button
+                      type="button"
                       onClick={runWebSocketTest}
                       disabled={testWsStatus === "connecting"}
+                      title="Validate cloud WebSocket handshake and verify real-time event pipeline"
                       className={`w-full py-2 px-4 rounded-lg font-mono text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer select-none border border-emerald-500/20 text-black ${
                         testWsStatus === "connecting" 
                           ? "bg-emerald-500/20 text-emerald-400 cursor-not-allowed" 
@@ -2730,6 +2865,7 @@ export default function ClientDashboard({
                       type="button"
                       onClick={handlePushFullDatatable}
                       disabled={pushStatus === "pushing" || !sheetData?.rows?.length}
+                      title="Broadcast all spreadsheet rows to Unreal Engine 5 via REST"
                       className={`w-full py-2 px-4 rounded-lg font-mono text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer select-none border border-cyan-500/30 text-white ${
                         pushStatus === "pushing"
                           ? "bg-cyan-500/20 text-cyan-300 cursor-not-allowed"
@@ -2773,6 +2909,7 @@ export default function ClientDashboard({
                     <button
                       type="button"
                       onClick={() => setShowJsonPreview(!showJsonPreview)}
+                      title="Inspect raw JSON payload formatted for Unreal Engine REST ingestion"
                       className="flex items-center gap-1.5 text-xs font-mono font-medium text-gray-400 hover:text-white cursor-pointer"
                     >
                       <Code className="h-3.5 w-3.5 text-blue-400" />
@@ -3046,8 +3183,10 @@ export default function ClientDashboard({
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setShowAddBugForm(!showAddBugForm)}
-                className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-white transition-all cursor-pointer bg-blue-600 hover:bg-blue-500 flex items-center gap-1.5"
+                title={showAddBugForm ? "Cancel filing new QA issue" : "Report a new bug or QA defect"}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-white transition-all cursor-pointer bg-blue-600 hover:bg-blue-500 flex items-center gap-1.5 shadow"
               >
                 {showAddBugForm ? "Cancel New Ticket" : "Report Bug / File Issue"}
                 <Plus className="h-3.5 w-3.5" />
@@ -3117,6 +3256,7 @@ export default function ClientDashboard({
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
+                      title="Select an image or video file from your computer"
                       className="px-3 py-1.5 rounded bg-black/80 hover:bg-black text-[10px] text-blue-400 border border-white/10 flex items-center gap-1.5 transition-colors cursor-pointer"
                     >
                       <Upload className="h-3 w-3" />
@@ -3156,6 +3296,7 @@ export default function ClientDashboard({
                             setNewBugMediaUrl("");
                             setNewBugMediaName("");
                           }}
+                          title="Remove attached file"
                           className="px-1.5 py-0.5 ml-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-[8.5px] cursor-pointer"
                         >
                           Clear
@@ -3174,12 +3315,14 @@ export default function ClientDashboard({
                   <button
                     type="button"
                     onClick={() => setShowAddBugForm(false)}
+                    title="Cancel ticket creation"
                     className="px-4 py-2 rounded-lg text-xs bg-black/40 border border-white/10 text-gray-300 hover:text-white hover:bg-black/60 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
+                    title="Dispatch bug ticket and trigger email alert to developers"
                     className="px-5 py-2 rounded-lg text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 cursor-pointer shadow-md"
                   >
                     Dispatch Ticket (Initiate SMTP relays)
@@ -3204,7 +3347,9 @@ export default function ClientDashboard({
                       <Bug className="h-8 w-8 text-gray-700 mx-auto mb-2 opacity-40" />
                       <span className="text-xs block">No diagnostic issues reported for this client yet.</span>
                       <button
+                        type="button"
                         onClick={() => setShowAddBugForm(true)}
+                        title="File a new diagnostic issue ticket"
                         className="mt-3 text-xs text-blue-400 hover:underline cursor-pointer"
                       >
                         File the first ticket
@@ -3296,7 +3441,9 @@ export default function ClientDashboard({
                         </div>
 
                         <button
+                          type="button"
                           onClick={() => handleDeleteBug(bug.id)}
+                          title="Permanently delete this QA bug ticket"
                           className="px-2.5 py-1 rounded bg-red-900/10 hover:bg-red-500/20 text-red-400 text-[10px] font-mono border border-red-500/20 transition-colors cursor-pointer"
                         >
                           Delete Ticket
@@ -3425,8 +3572,10 @@ export default function ClientDashboard({
                                 className="flex-1 bg-black/60 border border-white/10 rounded px-2.5 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-amber-500 font-sans"
                               />
                               <button
+                                type="button"
                                 onClick={() => handleAddBugComment(bug.id)}
                                 disabled={!newBugComment.trim()}
+                                title="Post comment note and dispatch email alert to admin"
                                 className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:hover:bg-amber-500 text-black text-xs font-bold rounded flex items-center gap-1.5 cursor-pointer transition shrink-0"
                               >
                                 <Send className="h-3 w-3" />

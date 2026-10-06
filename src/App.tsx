@@ -40,6 +40,7 @@ import { Client, Log } from "./types";
 import { DEFAULT_CLIENTS, DEFAULT_LOGS, extractSpreadsheetId } from "./data";
 import AdminConsole from "./components/AdminConsole";
 import ClientDashboard from "./components/ClientDashboard";
+import GlobalTooltip from "./components/GlobalTooltip";
 import { 
   Building2, 
   Sparkles, 
@@ -713,6 +714,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => setAuthLoading(false)}
+            title="Dismiss loading gate and proceed to sign-in"
             className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-xs rounded-xl transition cursor-pointer flex items-center gap-2"
           >
             <span>Continue to Sign In</span>
@@ -772,6 +774,7 @@ export default function App() {
                       type="button"
                       onClick={handleGoogleLogin}
                       disabled={formLoading}
+                      title="Authenticate with your verified Google account"
                       className="w-full py-2.5 px-3 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-black font-bold text-xs rounded-lg transition flex items-center justify-center gap-2 cursor-pointer shadow-lg font-sans"
                     >
                       <span>Sign In with Google Account</span>
@@ -787,6 +790,7 @@ export default function App() {
                   type="button"
                   onClick={handleGoogleLogin}
                   disabled={formLoading}
+                  title="Sign in with your Google account (enables Google Sheets and Google Drive sync)"
                   className="w-full py-3 px-4 bg-white hover:bg-gray-100 text-gray-900 font-bold text-xs rounded-xl shadow-lg transition flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50 border border-white/20 active:scale-[0.99]"
                 >
                   {formLoading ? (
@@ -858,6 +862,7 @@ export default function App() {
                     setAuthError(null);
                     setSuggestGoogleAuth(false);
                   }}
+                  title="Switch to email sign in form"
                   className={`py-2 rounded-lg text-xs font-mono font-bold uppercase transition ${
                     authMode === "signin"
                       ? "bg-amber-500 text-black shadow"
@@ -873,6 +878,7 @@ export default function App() {
                     setAuthError(null);
                     setSuggestGoogleAuth(false);
                   }}
+                  title="Switch to account registration form"
                   className={`py-2 rounded-lg text-xs font-mono font-bold uppercase transition ${
                     authMode === "signup"
                       ? "bg-amber-500 text-black shadow"
@@ -916,6 +922,7 @@ export default function App() {
                 <button
                   type="submit"
                   disabled={formLoading}
+                  title={authMode === "signin" ? "Sign into your SightPortal account" : "Register new SightPortal account"}
                   className="w-full py-3 px-4 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 hover:text-amber-200 border border-amber-500/30 active:scale-[0.98] transition-all rounded-xl font-bold text-xs font-mono uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   {formLoading ? (
@@ -960,6 +967,7 @@ export default function App() {
             <div className="pt-4 flex justify-center gap-3">
               <button
                 onClick={handleLogout}
+                title="Sign out of restricted session"
                 className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-xs font-mono text-gray-400 hover:text-white transition cursor-pointer"
               >
                 Sign Out
@@ -971,6 +979,7 @@ export default function App() {
                     setDeepLinkPortal(null);
                     window.location.search = "";
                   }}
+                  title="Return to the default stage hub"
                   className="px-4 py-2 bg-amber-500 hover:bg-amber-600 rounded-lg text-xs font-mono text-black font-bold transition cursor-pointer"
                 >
                   Return Home
@@ -987,6 +996,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#050505] text-[#e5e5e5] flex flex-col font-sans selection:bg-amber-500 selection:text-black" id="app-wrapper">
+      <GlobalTooltip />
       
       {/* Universal Sticky Glass Top Bar */}
       <header className="bg-[var(--surface)] border-b border-[var(--ink-faint)] sticky top-0 z-55 flex-none" id="app-nav-bar">
@@ -1009,6 +1019,7 @@ export default function App() {
               <button
                 id="admin-view-toggle"
                 onClick={() => setActiveView("admin")}
+                title="Switch to Administration Console overview"
                 className={`btn-ghost ${activeView === "admin" ? "border-[var(--accent)] text-[var(--ink)]" : ""}`}
               >
                 Admin Console
@@ -1129,6 +1140,7 @@ export default function App() {
             isSyncing={isSyncingDb}
             syncStatus={syncDbStatus}
             databaseId={configuredDatabaseId}
+            onRecordLog={handleRecordLog}
           />
         ) : selectedClient ? (
           <ClientDashboard
