@@ -864,10 +864,12 @@ export default function MediaResourcesTab({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Push Media Catalog directly to Unreal Engine 5 endpoint
+  // Push Media Catalog to Unreal Engine 5.
+  // The portal server stores the catalog and forwards it over the WebSocket that every Unreal session
+  // (game, PIE and editor) keeps open. A browser page cannot call Unreal's local Remote Control port
+  // (http://127.0.0.1:8008) from the hosted https portal, so the server is the only delivery path.
   const handlePushMediaToUE5 = async () => {
     setPushingToUE5(true);
-    const endpoint = client.ue5Endpoint || "http://127.0.0.1:8008/remote/object/call";
 
     const payload = {
       event: "SYNC_MEDIA_RESOURCES",
@@ -882,24 +884,8 @@ export default function MediaResourcesTab({
       },
     };
 
-    onRecordLog({
-      clientId: client.id,
-      clientName: client.name,
-      type: "ue5_push",
-      status: "warning",
-      details: `Broadcasting ${mediaList.length} media resources to Unreal Engine 5 endpoint: ${endpoint}`,
-    });
-
     try {
-      await fetch(endpoint, {
-        method: "POST",
-        mode: "no-cors",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      // Also notify backend server
-      await fetch("/api/sheet-data", {
+      const res = await fetch("/api/sheet-data", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -907,29 +893,51 @@ export default function MediaResourcesTab({
           target_class: "MediaResourcesCatalog",
           media_catalog: payload,
         }),
-      }).catch((e) => console.warn("Backend media sync fallback:", e));
+      });
+
+      let result: any = null;
+      try {
+        result = await res.json();
+      } catch {
+        result = null;
+      }
+
+      if (!res.ok) {
+        const reason =
+          res.status === 413
+            ? "The media catalog is too large for one request (embedded images exceed the 50 MB limit). Save large images to Google Drive or reduce their size."
+            : result?.error || `Server responded with HTTP ${res.status}`;
+        throw new Error(reason);
+      }
+
+      const stored = result?.total_items ?? mediaList.length;
+      const sessions = typeof result?.unreal_sessions === "number" ? result.unreal_sessions : null;
+      const deliveryNote =
+        sessions === null
+          ? ""
+          : sessions > 0
+            ? ` Delivered live to ${sessions} connected Unreal session(s).`
+            : " No Unreal session is connected right now: the images will load the next time Unreal starts playing (or run SightPortal.ImportGallery in the editor).";
 
       onRecordLog({
         clientId: client.id,
         clientName: client.name,
         type: "ue5_push",
-        status: "success",
-        details: `Successfully synchronized ${mediaList.length} categorized media assets to Unreal Engine 5 runtime!`,
-        payload: JSON.stringify(payload),
+        status: sessions === 0 ? "warning" : "success",
+        details: `Media catalog (${stored} assets) stored on the portal server for client '${client.id}'.${deliveryNote}`,
       });
 
-      alert(`Media Catalog (${mediaList.length} assets) successfully broadcasted to Unreal Engine 5!`);
+      alert(`Media Catalog (${stored} assets) pushed to Unreal Engine 5.${deliveryNote}`);
     } catch (err: any) {
-      console.warn("UE5 Media Broadcast fallback:", err);
+      console.warn("UE5 media push failed:", err);
       onRecordLog({
         clientId: client.id,
         clientName: client.name,
-        type: "ue5_push",
-        status: "success",
-        details: `Dispatched media resources catalog to Unreal Engine endpoint: ${endpoint}`,
-        payload: JSON.stringify(payload),
+        type: "error",
+        status: "error",
+        details: `Media push to Unreal Engine failed: ${err?.message || err}`,
       });
-      alert(`Media Catalog dispatched to Unreal Engine 5 endpoint: ${endpoint}`);
+      alert(`Media push to Unreal Engine failed: ${err?.message || err}`);
     } finally {
       setPushingToUE5(false);
     }

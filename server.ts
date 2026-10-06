@@ -275,7 +275,7 @@ async function startServer() {
     };
   };
 
-  const broadcastMedia = (slug: string) => {
+  const broadcastMedia = (slug: string): number => {
     // reason "push" = the portal's "Push to UE5" button (the Unreal editor imports these as assets)
     const message = JSON.stringify({ event: "media", reason: "push", timestamp: new Date().toISOString(), payload: buildMediaPayload(slug) });
     let count = 0;
@@ -288,9 +288,10 @@ async function startServer() {
       }
     });
     console.log(`[WebSocket Broadcast] Sent media catalog (${clientsMedia[slug]?.items.length || 0} items) to ${count} Unreal Engine sockets for client '${slug}'`);
+    return count;
   };
 
-  const storeMediaCatalog = (slug: string, catalog: any) => {
+  const storeMediaCatalog = (slug: string, catalog: any): number => {
     clientsMedia[slug] = { updatedAt: new Date().toISOString(), items: flattenMediaCatalog(catalog) };
     try {
       fs.writeFileSync(MEDIA_CACHE_FILE_PATH, JSON.stringify(clientsMedia), "utf-8");
@@ -298,7 +299,7 @@ async function startServer() {
       console.warn("[Media Cache] Could not save media cache:", e);
     }
     console.log(`[Media API] Stored ${clientsMedia[slug].items.length} media resources for client '${slug}'.`);
-    broadcastMedia(slug);
+    return broadcastMedia(slug);
   };
 
   // Google Drive thumbnail links end in "=s220"; ask for a gallery-sized version instead
@@ -354,10 +355,12 @@ async function startServer() {
     const mediaCatalog = req.body.media_catalog || req.body.media;
     if (mediaCatalog) {
       const mediaSlug = client_slug || "hyperion-vis";
-      storeMediaCatalog(mediaSlug, mediaCatalog);
+      const unrealSessions = storeMediaCatalog(mediaSlug, mediaCatalog);
       if (!(attributes_matrix && Array.isArray(attributes_matrix))) {
         return res.json({
           success: true,
+          total_items: clientsMedia[mediaSlug].items.length,
+          unreal_sessions: unrealSessions,
           message: `Media catalog (${clientsMedia[mediaSlug].items.length} items) cached and pushed to Unreal Engine for client '${mediaSlug}'`,
         });
       }
@@ -389,8 +392,8 @@ async function startServer() {
   app.post("/api/media", (req, res) => {
     const slug = req.body.client_slug || "hyperion-vis";
     const catalog = req.body.media_catalog || req.body.media || req.body;
-    storeMediaCatalog(slug, catalog);
-    res.json({ success: true, total_items: clientsMedia[slug].items.length });
+    const unrealSessions = storeMediaCatalog(slug, catalog);
+    res.json({ success: true, total_items: clientsMedia[slug].items.length, unreal_sessions: unrealSessions });
   });
 
   // Media API 2: List media for Unreal (optional ?client_slug=...&category=project|services|properties)
