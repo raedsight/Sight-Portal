@@ -160,6 +160,150 @@ async function startServer() {
     console.log(`[WebSocket Broadcast] Sent live '${event}' data to ${clientsCount} connected Unreal Engine sockets for client '${client_slug}'`);
   };
 
+  // -------------------------------------------------------------
+  // MEDIA RESOURCES CATALOG (Gallery images for the Unreal Engine Gallery widget)
+  // The portal's "Push to UE5" button posts the client's media catalog here; Unreal reads it
+  // on Begin Play via GET /api/media and downloads each image from /api/media/:slug/:id/image.
+  // -------------------------------------------------------------
+  const MEDIA_CACHE_FILE_PATH = path.join(process.cwd(), "clients_media_cache.json");
+
+  type StoredMediaItem = {
+    id: string;
+    category: string;
+    title: string;
+    description?: string;
+    url: string; // data: URI or http(s) URL as stored by the portal
+    fileName?: string;
+    dimensions?: { width: number; height: number };
+    propertyClass?: string;
+    propertyName?: string;
+    serviceName?: string;
+    tags?: string[];
+    uploadedAt?: string;
+    driveFileId?: string;
+  };
+
+  const loadPersistedMedia = (): Record<string, { updatedAt: string; items: StoredMediaItem[] }> => {
+    try {
+      if (fs.existsSync(MEDIA_CACHE_FILE_PATH)) {
+        const parsed = JSON.parse(fs.readFileSync(MEDIA_CACHE_FILE_PATH, "utf-8"));
+        if (parsed && typeof parsed === "object") {
+          console.log(`[Media Cache] Loaded media catalogs for ${Object.keys(parsed).length} clients from disk cache.`);
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn("[Media Cache] Could not load persisted media cache:", e);
+    }
+    return {};
+  };
+
+  const clientsMedia = loadPersistedMedia();
+
+  // Accepts the portal push payload ({ categories: { project, services, properties } }), { media: [...] } or a plain array
+  const flattenMediaCatalog = (catalog: any): StoredMediaItem[] => {
+    let rawItems: any[] = [];
+    if (Array.isArray(catalog)) {
+      rawItems = catalog;
+    } else if (catalog && Array.isArray(catalog.media)) {
+      rawItems = catalog.media;
+    } else if (catalog && catalog.categories && typeof catalog.categories === "object") {
+      for (const [category, list] of Object.entries(catalog.categories)) {
+        if (Array.isArray(list)) {
+          rawItems.push(...list.map((m: any) => ({ category, ...m })));
+        }
+      }
+    }
+
+    return rawItems
+      .filter((m) => m && typeof m.url === "string" && m.url.length > 0)
+      .map((m, index) => ({
+        id: String(m.id || m.driveFileId || `media-${index}`),
+        category: String(m.category || "project").toLowerCase(),
+        title: m.title || m.fileName || `Image ${index + 1}`,
+        description: m.description,
+        url: m.url,
+        fileName: m.fileName,
+        dimensions: m.dimensions,
+        propertyClass: m.propertyClass,
+        propertyName: m.propertyName,
+        serviceName: m.serviceName,
+        tags: m.tags,
+        uploadedAt: m.uploadedAt,
+        driveFileId: m.driveFileId,
+      }));
+  };
+
+  // Unknown or default slugs fall back to the most recently pushed media catalog
+  const resolveMediaSlug = (requested?: string): string => {
+    if (requested && clientsMedia[requested]?.items?.length) return requested;
+    if (!requested || requested === "hyperion-vis") {
+      let latest = "";
+      let latestTime = "";
+      for (const [slug, entry] of Object.entries(clientsMedia)) {
+        if (entry.items?.length && (entry.updatedAt || "") >= latestTime) {
+          latest = slug;
+          latestTime = entry.updatedAt || "";
+        }
+      }
+      if (latest) return latest;
+    }
+    return requested || "hyperion-vis";
+  };
+
+  // Unreal-friendly view: no inline base64, each image is served by its own URL
+  const buildMediaPayload = (slug: string, category?: string) => {
+    const items = (clientsMedia[slug]?.items || []).filter((m) => !category || m.category === category);
+    return {
+      client_slug: slug,
+      updated_at: clientsMedia[slug]?.updatedAt,
+      total_items: items.length,
+      media: items.map((m) => ({
+        id: m.id,
+        category: m.category,
+        title: m.title,
+        description: m.description || "",
+        image_url: `/api/media/${encodeURIComponent(slug)}/${encodeURIComponent(m.id)}/image`,
+        source_url: /^https?:\/\//i.test(m.url) ? m.url : undefined,
+        width: m.dimensions?.width,
+        height: m.dimensions?.height,
+        propertyClass: m.propertyClass,
+        propertyName: m.propertyName,
+        serviceName: m.serviceName,
+        tags: m.tags || [],
+      })),
+    };
+  };
+
+  const broadcastMedia = (slug: string) => {
+    const message = JSON.stringify({ event: "media", timestamp: new Date().toISOString(), payload: buildMediaPayload(slug) });
+    let count = 0;
+    wss.clients.forEach((client: any) => {
+      if (client.readyState === WebSocket.OPEN) {
+        if (!client.client_slug || client.client_slug === slug || client.client_slug === "hyperion-vis" || slug === "hyperion-vis") {
+          client.send(message);
+          count++;
+        }
+      }
+    });
+    console.log(`[WebSocket Broadcast] Sent media catalog (${clientsMedia[slug]?.items.length || 0} items) to ${count} Unreal Engine sockets for client '${slug}'`);
+  };
+
+  const storeMediaCatalog = (slug: string, catalog: any) => {
+    clientsMedia[slug] = { updatedAt: new Date().toISOString(), items: flattenMediaCatalog(catalog) };
+    try {
+      fs.writeFileSync(MEDIA_CACHE_FILE_PATH, JSON.stringify(clientsMedia), "utf-8");
+    } catch (e) {
+      console.warn("[Media Cache] Could not save media cache:", e);
+    }
+    console.log(`[Media API] Stored ${clientsMedia[slug].items.length} media resources for client '${slug}'.`);
+    broadcastMedia(slug);
+  };
+
+  // Google Drive thumbnail links end in "=s220"; ask for a gallery-sized version instead
+  const upscaleDriveThumbnail = (url: string) =>
+    /googleusercontent\.com/i.test(url) ? url.replace(/=s\d+(-[a-z0-9-]+)?$/i, "=s2048") : url;
+
   // API Endpoint 1: Healthcheck & Dynamic Unreal Compatibility Fallback Route
   // This mirrors what the Unreal Engine C++ plugin queries by default, responding with compiled datasets
   app.get("/api/health", (req, res) => {
@@ -204,6 +348,19 @@ async function startServer() {
   // API Endpoint 3: Receive real-time sheet-data updates from the React Portal Workspace UI
   app.post("/api/sheet-data", (req, res) => {
     const { client_slug, target_class, attributes_matrix, updated_row } = req.body;
+
+    // Media catalog pushed from the Media Resources tab ("Push to UE5")
+    const mediaCatalog = req.body.media_catalog || req.body.media;
+    if (mediaCatalog) {
+      const mediaSlug = client_slug || "hyperion-vis";
+      storeMediaCatalog(mediaSlug, mediaCatalog);
+      if (!(attributes_matrix && Array.isArray(attributes_matrix))) {
+        return res.json({
+          success: true,
+          message: `Media catalog (${clientsMedia[mediaSlug].items.length} items) cached and pushed to Unreal Engine for client '${mediaSlug}'`,
+        });
+      }
+    }
     
     if (attributes_matrix && Array.isArray(attributes_matrix)) {
       const slug = client_slug || "hyperion-vis";
@@ -225,6 +382,59 @@ async function startServer() {
     }
     
     return res.status(400).json({ error: "Invalid payload layout structure: missing 'attributes_matrix' array" });
+  });
+
+  // Media API 1: Receive a media catalog directly (same formats as media_catalog above)
+  app.post("/api/media", (req, res) => {
+    const slug = req.body.client_slug || "hyperion-vis";
+    const catalog = req.body.media_catalog || req.body.media || req.body;
+    storeMediaCatalog(slug, catalog);
+    res.json({ success: true, total_items: clientsMedia[slug].items.length });
+  });
+
+  // Media API 2: List media for Unreal (optional ?client_slug=...&category=project|services|properties)
+  app.get("/api/media", (req, res) => {
+    const slug = resolveMediaSlug(req.query.client_slug as string | undefined);
+    const category = ((req.query.category as string) || "").toLowerCase() || undefined;
+    res.json({ status: "ok", timestamp: new Date().toISOString(), payload: buildMediaPayload(slug, category) });
+  });
+
+  // Media API 3: Serve the image bytes (decodes stored data: URIs or proxies http(s) sources such as Google Drive)
+  app.get("/api/media/:slug/:id/image", async (req, res) => {
+    const item = clientsMedia[req.params.slug]?.items.find((m) => m.id === req.params.id);
+    if (!item) {
+      return res.status(404).json({ error: "Media resource not found" });
+    }
+
+    try {
+      const src = item.url;
+      if (src.startsWith("data:")) {
+        const comma = src.indexOf(",");
+        const header = src.substring(5, comma);
+        const mime = header.split(";")[0] || "image/jpeg";
+        const body = src.substring(comma + 1);
+        const buffer = header.includes(";base64") ? Buffer.from(body, "base64") : Buffer.from(decodeURIComponent(body), "utf-8");
+        res.setHeader("Content-Type", mime);
+        res.setHeader("Cache-Control", "public, max-age=300");
+        return res.send(buffer);
+      }
+
+      if (/^https?:\/\//i.test(src)) {
+        const upstream = await fetch(upscaleDriveThumbnail(src), { headers: { Accept: "image/png,image/jpeg,image/*;q=0.8" } });
+        const contentType = upstream.headers.get("content-type") || "";
+        if (!upstream.ok || !contentType.startsWith("image/")) {
+          return res.status(502).json({ error: `Could not fetch image from source (HTTP ${upstream.status}, ${contentType || "no content type"})` });
+        }
+        res.setHeader("Content-Type", contentType);
+        res.setHeader("Cache-Control", "public, max-age=300");
+        return res.send(Buffer.from(await upstream.arrayBuffer()));
+      }
+
+      return res.status(415).json({ error: "Unsupported media URL format" });
+    } catch (err: any) {
+      console.error("[Media API] Image serve error:", err);
+      return res.status(500).json({ error: err.message || "Failed to serve media image" });
+    }
   });
 
   // API Endpoint 3b: Dedicated single property real-time update endpoint
@@ -866,6 +1076,12 @@ async function startServer() {
         attributes_matrix: data.attributes_matrix
       }
     }));
+
+    // Send the gallery media catalog too, so Unreal can load images even if plain HTTP is gated
+    const mediaSlug = resolveMediaSlug(client_slug);
+    if (clientsMedia[mediaSlug]?.items?.length) {
+      ws.send(JSON.stringify({ event: "media", timestamp: new Date().toISOString(), payload: buildMediaPayload(mediaSlug) }));
+    }
 
     // Listen for peer pings to keep connections alive and logs interactive
     ws.on("message", (rawMsg: any) => {

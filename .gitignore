@@ -18,3 +18,6 @@ coverage/
 /PackagedPlugin/SightPortal/HostProject/Intermediate
 /PackagedPlugin/SightPortal/HostProject/Plugins/SightPortal/Binaries
 /PackagedPlugin/SightPortal/HostProject/Saved
+
+# Gallery media catalog cache written by server.ts
+clients_media_cache.json
