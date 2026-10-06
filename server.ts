@@ -276,7 +276,8 @@ async function startServer() {
   };
 
   const broadcastMedia = (slug: string) => {
-    const message = JSON.stringify({ event: "media", timestamp: new Date().toISOString(), payload: buildMediaPayload(slug) });
+    // reason "push" = the portal's "Push to UE5" button (the Unreal editor imports these as assets)
+    const message = JSON.stringify({ event: "media", reason: "push", timestamp: new Date().toISOString(), payload: buildMediaPayload(slug) });
     let count = 0;
     wss.clients.forEach((client: any) => {
       if (client.readyState === WebSocket.OPEN) {
@@ -1080,7 +1081,7 @@ async function startServer() {
     // Send the gallery media catalog too, so Unreal can load images even if plain HTTP is gated
     const mediaSlug = resolveMediaSlug(client_slug);
     if (clientsMedia[mediaSlug]?.items?.length) {
-      ws.send(JSON.stringify({ event: "media", timestamp: new Date().toISOString(), payload: buildMediaPayload(mediaSlug) }));
+      ws.send(JSON.stringify({ event: "media", reason: "init", timestamp: new Date().toISOString(), payload: buildMediaPayload(mediaSlug) }));
     }
 
     // Listen for peer pings to keep connections alive and logs interactive
