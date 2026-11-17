@@ -34,18 +34,13 @@ import {
   Save,
   Mail,
   Bug,
-  Send,
-  Cloud,
-  FolderCheck,
-  Folder
+  Send
 } from "lucide-react";
 import { Client, Log, BgStyleType, ThemePreset, BugIssue } from "../types";
 import { SPREADSHEET_TEMPLATES } from "../data";
 import { UserProfile, syncThemePresets, saveThemePreset, deleteThemePreset } from "../firebase";
 import ThemePresets from "./ThemePresets";
 import { sendTestBugEmail, getNotificationAuditHistory, getNotificationConfig } from "../services/bugNotificationService";
-import { syncClientMediaWithDrive, getOrProvisionClientFolder, DRIVE_ROOT_FOLDER_URL } from "../services/googleDrive";
-import { getAccessToken, googleSignIn } from "../firebaseAuth";
 
 interface AdminConsoleProps {
   clients: Client[];
@@ -64,7 +59,6 @@ interface AdminConsoleProps {
   isSyncing?: boolean;
   syncStatus?: string | null;
   databaseId?: string;
-  onRecordLog?: (log: Omit<Log, "id" | "timestamp">) => void;
 }
 
 export default function AdminConsole({
@@ -84,85 +78,9 @@ export default function AdminConsole({
   isSyncing = false,
   syncStatus = null,
   databaseId,
-  onRecordLog,
 }: AdminConsoleProps) {
   // Navigation tabs
   const [activeTab, setActiveTab] = useState<"portals" | "users" | "themes" | "notifications">("portals");
-
-  // Google Drive client synchronization state
-  const [syncingDriveClientId, setSyncingDriveClientId] = useState<string | null>(null);
-  const [driveSyncAlert, setDriveSyncAlert] = useState<{
-    clientId: string;
-    clientName: string;
-    message: string;
-    type: "success" | "error";
-  } | null>(null);
-
-  // Synchronize media between portal and Google Drive for a specific client
-  const handleSyncClientDrive = async (targetClient: Client) => {
-    try {
-      setSyncingDriveClientId(targetClient.id);
-      setDriveSyncAlert(null);
-
-      let token = await getAccessToken();
-      if (!token) {
-        const signinRes = await googleSignIn();
-        token = signinRes?.accessToken || null;
-      }
-
-      if (!token) {
-        alert("Google account authentication is required to synchronize media with Google Drive.");
-        return;
-      }
-
-      const syncResult = await syncClientMediaWithDrive({
-        client: targetClient,
-        token,
-        mode: "two-way",
-      });
-
-      const updatedClient: Client = {
-        ...targetClient,
-        mediaResources: syncResult.syncedMediaList,
-        driveFolderId: syncResult.folderInfo.folderId,
-        driveFolderUrl: syncResult.folderInfo.folderUrl,
-        updatedAt: new Date().toISOString(),
-      };
-
-      onUpdateClient(updatedClient);
-
-      setDriveSyncAlert({
-        clientId: targetClient.id,
-        clientName: targetClient.name,
-        message: `Google Drive sync complete for "${targetClient.name}": ${syncResult.uploadedCount} uploaded to Drive, ${syncResult.importedCount} imported to Portal. Dedicated folder: ${syncResult.folderInfo.folderName}`,
-        type: "success",
-      });
-
-      if (onRecordLog) {
-        onRecordLog({
-          clientId: targetClient.id,
-          clientName: targetClient.name,
-          type: "config_change",
-          status: "success",
-          details: `Admin Drive sync: ${syncResult.uploadedCount} uploaded, ${syncResult.importedCount} imported into portal. Dedicated folder: ${syncResult.folderInfo.folderName}`,
-        });
-      }
-
-      setTimeout(() => {
-        setDriveSyncAlert((prev) => (prev?.clientId === targetClient.id ? null : prev));
-      }, 8000);
-    } catch (err: any) {
-      console.warn("[Admin Drive Sync Notice]", err);
-      setDriveSyncAlert({
-        clientId: targetClient.id,
-        clientName: targetClient.name,
-        message: `Drive sync notice for "${targetClient.name}": ${err.message || String(err)}`,
-        type: "error",
-      });
-    } finally {
-      setSyncingDriveClientId(null);
-    }
-  };
 
   // Email Notification States
   const [testEmailLoading, setTestEmailLoading] = useState(false);
@@ -420,7 +338,6 @@ export default function AdminConsole({
                 setEditingClient(null);
                 setShowAddForm(!showAddForm);
               }}
-              title={showAddForm ? "Close registration form" : "Register a new client portal and configuration bridge"}
               className="flex items-center gap-2 px-5 py-3 rounded-lg bg-amber-500 hover:bg-amber-600 text-black font-bold shadow-md transition-all duration-200 text-sm cursor-pointer"
             >
               {showAddForm ? <Minimize2 className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
@@ -433,7 +350,6 @@ export default function AdminConsole({
         <div className="flex gap-1.5 mt-8 border-b border-white/10 pb-0.5">
           <button
             onClick={() => setActiveTab("portals")}
-            title="View configured client staging portals and audit logs"
             className={`px-4 py-2 text-xs font-mono uppercase tracking-wider font-bold transition border-b-2 -mb-[2px] cursor-pointer ${
               activeTab === "portals"
                 ? "border-amber-500 text-amber-400"
@@ -444,7 +360,6 @@ export default function AdminConsole({
           </button>
           <button
             onClick={() => setActiveTab("users")}
-            title="Manage user access permissions and assigned client roles"
             className={`px-4 py-2 text-xs font-mono uppercase tracking-wider font-bold transition border-b-2 -mb-[2px] cursor-pointer flex items-center gap-1.5 ${
               activeTab === "users"
                 ? "border-amber-500 text-amber-400"
@@ -458,7 +373,6 @@ export default function AdminConsole({
           </button>
           <button
             onClick={() => setActiveTab("themes")}
-            title="Customize and save portal themes, colors, and typography"
             className={`px-4 py-2 text-xs font-mono uppercase tracking-wider font-bold transition border-b-2 -mb-[2px] cursor-pointer flex items-center gap-1.5 ${
               activeTab === "themes"
                 ? "border-amber-500 text-amber-400"
@@ -472,7 +386,6 @@ export default function AdminConsole({
           </button>
           <button
             onClick={() => setActiveTab("notifications")}
-            title="Configure SMTP/Resend alert settings and inspect QA bug tickets"
             className={`px-4 py-2 text-xs font-mono uppercase tracking-wider font-bold transition border-b-2 -mb-[2px] cursor-pointer flex items-center gap-1.5 ${
               activeTab === "notifications"
                 ? "border-amber-500 text-amber-400"
@@ -510,7 +423,6 @@ export default function AdminConsole({
                 setShowAddForm(false);
                 setEditingClient(null);
               }}
-              title="Cancel client setup and close form"
               className="text-gray-400 hover:text-white text-sm font-mono cursor-pointer"
             >
               Cancel
@@ -596,7 +508,6 @@ export default function AdminConsole({
                     <button
                       type="button"
                       onClick={() => setWebSocketEndpoint("")}
-                      title="Reset WebSocket endpoint to cloud auto-generation"
                       className="text-[10px] text-amber-400 hover:text-amber-300 font-mono underline cursor-pointer"
                     >
                       Clear override (use cloud auto-generation)
@@ -741,7 +652,6 @@ export default function AdminConsole({
                       key={p.name}
                       type="button"
                       onClick={() => selectColorPreset(p)}
-                      title={`Apply ${p.name} color palette (${p.primary} / ${p.accent})`}
                       className="px-2.5 py-1 text-[10px] bg-white/5 border border-white/5 hover:border-white/10 rounded text-gray-400 hover:text-white transition flex items-center gap-1.5 cursor-pointer"
                     >
                       <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.primary }}></span>
@@ -795,7 +705,6 @@ export default function AdminConsole({
                       resetForm();
                     }
                   }}
-                  title={`Permanently delete client "${editingClient.name}"`}
                   className="px-3 py-2 text-xs font-semibold text-rose-400 hover:text-rose-300 border border-rose-500/20 hover:border-rose-500/40 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -811,14 +720,12 @@ export default function AdminConsole({
                   setEditingClient(null);
                   resetForm();
                 }}
-                title="Discard changes and exit form"
                 className="px-4 py-2 text-xs font-semibold text-gray-400 hover:text-white transition-colors cursor-pointer font-sans"
               >
                 Cancel Setup
               </button>
               <button
                 type="submit"
-                title={editingClient ? "Overwrite client profile in database" : "Activate and save new client portal"}
                 className="px-6 py-2.5 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-black rounded-lg transition-all shadow-md cursor-pointer font-mono uppercase tracking-wider"
               >
                 {editingClient ? "Overwrite Client Profile" : "Activate Client Portal"}
@@ -848,7 +755,6 @@ export default function AdminConsole({
                   setEditingClient(null);
                   setShowAddForm(!showAddForm);
                 }}
-                title={showAddForm ? "Close registration form" : "Register a new client portal and configuration bridge"}
                 className="btn-primary w-full py-3 mb-6"
               >
                 {showAddForm ? "Close Form" : "Register Client"}
@@ -858,7 +764,6 @@ export default function AdminConsole({
               <div className="space-y-1 mb-8">
                 <button
                   onClick={() => setActiveTab("portals")}
-                  title="View configured client staging portals and audit logs"
                   className={`w-full text-left px-3 py-2 text-xs font-mono uppercase tracking-wider font-bold rounded transition ${
                     activeTab === "portals"
                       ? "bg-[var(--accent-soft)] text-[var(--accent)] border border-[var(--accent)]"
@@ -869,7 +774,6 @@ export default function AdminConsole({
                 </button>
                 <button
                   onClick={() => setActiveTab("users")}
-                  title="Manage user access permissions and assigned client roles"
                   className={`w-full text-left px-3 py-2 text-xs font-mono uppercase tracking-wider font-bold rounded transition flex items-center justify-between ${
                     activeTab === "users"
                       ? "bg-[var(--accent-soft)] text-[var(--accent)] border border-[var(--accent)]"
@@ -883,7 +787,6 @@ export default function AdminConsole({
                 </button>
                 <button
                   onClick={() => setActiveTab("themes")}
-                  title="Customize and save portal themes, colors, and typography"
                   className={`w-full text-left px-3 py-2 text-xs font-mono uppercase tracking-wider font-bold rounded transition flex items-center justify-between ${
                     activeTab === "themes"
                       ? "bg-[var(--accent-soft)] text-[var(--accent)] border border-[var(--accent)]"
@@ -975,30 +878,6 @@ export default function AdminConsole({
               </div>
             )}
 
-            {/* Google Drive Media Synchronization Notification Banner */}
-            {driveSyncAlert && (
-              <div
-                className={`mb-4 p-3 rounded-lg border text-xs font-sans flex items-center justify-between gap-3 animate-fadeIn ${
-                  driveSyncAlert.type === "success"
-                    ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-200"
-                    : "bg-rose-950/80 border-rose-500/50 text-rose-200"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Cloud className="h-4 w-4 text-emerald-400 shrink-0" />
-                  <span>{driveSyncAlert.message}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setDriveSyncAlert(null)}
-                  title="Dismiss notification"
-                  className="text-gray-400 hover:text-white p-1 rounded transition cursor-pointer"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
-
             {/* Default sample clients detection & purge action */}
             {clients.some(c => ["neon-nebula", "overlord-stadium", "overlord-egames", "hyperion-vis"].includes(c.id)) && onPurgeDefaultClients && (
               <div className="mb-6 p-3 bg-amber-950/30 border border-amber-500/40 rounded-lg flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -1012,7 +891,6 @@ export default function AdminConsole({
                   id="purge-default-clients-btn"
                   onClick={onPurgeDefaultClients}
                   disabled={isSyncing}
-                  title="Purge default sample template clients from database"
                   className="btn-ghost text-rose-400 border-rose-500/40 hover:bg-rose-500/20 text-xs py-1 px-3 whitespace-nowrap ml-auto"
                 >
                   Purge Template Clients
@@ -1032,7 +910,6 @@ export default function AdminConsole({
                     <button
                       onClick={onForceSyncDatabase}
                       disabled={isSyncing}
-                      title="Retry database synchronization with Firestore"
                       className="btn-ghost text-xs py-1 px-3 text-[var(--accent)] border-[var(--accent)]"
                     >
                       <RefreshCw className={`h-3 w-3 inline mr-1 ${isSyncing ? "animate-spin" : ""}`} />
@@ -1041,7 +918,6 @@ export default function AdminConsole({
                   )}
                   <button
                     onClick={() => setShowAddForm(true)}
-                    title="Open form to register a new client"
                     className="btn-primary text-xs py-1 px-3"
                   >
                     Register New Client
@@ -1053,10 +929,6 @@ export default function AdminConsole({
                 {filteredClients.map((client, idx) => {
                   const isCopied = copiedClientId === client.id;
                   const isActiveCard = idx === 0; // Highlight top portal
-                  const syncedMediaCount = client.mediaResources?.filter((m) => Boolean(m.driveFileId)).length ?? 0;
-                  const totalMediaCount = client.mediaResources?.length ?? 0;
-                  const isSyncingThisClient = syncingDriveClientId === client.id;
-
                   return (
                     <div
                       key={client.id}
@@ -1098,37 +970,6 @@ export default function AdminConsole({
                           {isCopied ? "Copied" : "Link"}
                         </button>
 
-                        {/* Google Drive Media Synchronization for Each Client */}
-                        <button
-                          title={`Synchronize media assets between portal and Google Drive for ${client.name}`}
-                          id={`sync-drive-btn-${client.id}`}
-                          disabled={isSyncingThisClient}
-                          onClick={() => handleSyncClientDrive(client)}
-                          className="btn-ghost flex items-center gap-1.5 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 cursor-pointer disabled:opacity-50"
-                        >
-                          <Cloud className={`h-3 w-3 text-emerald-400 ${isSyncingThisClient ? "animate-spin" : ""}`} />
-                          <span>{isSyncingThisClient ? "Syncing Drive..." : "Sync Drive"}</span>
-                          {totalMediaCount > 0 && (
-                            <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-mono">
-                              {syncedMediaCount}/{totalMediaCount}
-                            </span>
-                          )}
-                        </button>
-
-                        {/* Open Dedicated Client Folder in Google Drive if provisioned */}
-                        {client.driveFolderUrl && (
-                          <a
-                            href={client.driveFolderUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title={`Open dedicated Google Drive folder for ${client.name} in a new tab`}
-                            className="btn-ghost flex items-center gap-1 text-emerald-400/90 hover:text-white"
-                          >
-                            <FolderCheck className="h-3 w-3 text-emerald-400" />
-                            <span>Drive ↗</span>
-                          </a>
-                        )}
-
                         {/* Deletion accessible to Owner and Admin GRP */}
                         {canManageClients && (
                           <button
@@ -1148,8 +989,7 @@ export default function AdminConsole({
                         <button
                           id={`launch-portal-btn-${client.id}`}
                           onClick={() => onSelectClientView(client)}
-                          title="Launch dedicated interactive workspace for this client"
-                          className="btn-primary py-1.5 px-4 text-[0.65rem] ml-auto flex items-center gap-1.5 cursor-pointer"
+                          className="btn-primary py-1.5 px-4 text-[0.65rem] ml-auto flex items-center gap-1.5"
                         >
                           <ExternalLink className="h-3 w-3" />
                           Go to Portal
@@ -1377,7 +1217,6 @@ export default function AdminConsole({
                                   delete editsCopy[profile.uid];
                                   setUserEdits(editsCopy);
                                 }}
-                                title="Save updated role and client assignments for this user"
                                 className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded cursor-pointer transition uppercase"
                               >
                                 Save Changes
@@ -1541,7 +1380,6 @@ export default function AdminConsole({
                   <button
                     onClick={handleSendTestEmail}
                     disabled={testEmailLoading}
-                    title="Dispatch a test bug notification email to verify inbox delivery"
                     className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-bold text-xs rounded cursor-pointer transition flex items-center gap-1.5 shrink-0"
                   >
                     <Mail className="h-3.5 w-3.5" />
@@ -1563,7 +1401,6 @@ export default function AdminConsole({
                         href={testEmailResult.previewUrl}
                         target="_blank"
                         rel="noreferrer"
-                        title="View rendered email preview in a browser tab"
                         className="inline-flex items-center gap-1 font-bold text-amber-400 hover:text-amber-300 underline shrink-0"
                       >
                         Inspect HTML Email in Web Preview &rarr;
@@ -1660,7 +1497,6 @@ export default function AdminConsole({
                         <td className="py-3 px-3 text-right">
                           <button
                             onClick={() => onSelectClientView(bug.client)}
-                            title={`Open portal workspace for ${bug.client.name}`}
                             className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white font-mono text-[11px] rounded transition cursor-pointer"
                           >
                             Launch Portal &rarr;
