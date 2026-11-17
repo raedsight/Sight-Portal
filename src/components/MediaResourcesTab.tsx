@@ -873,19 +873,75 @@ export default function MediaResourcesTab({
   // The portal server stores the catalog and forwards it over the WebSocket that every Unreal session
   // (game, PIE and editor) keeps open. A browser page cannot call Unreal's local Remote Control port
   // (http://127.0.0.1:8008) from the hosted https portal, so the server is the only delivery path.
+  // Downloads one Google Drive image with the signed-in user's access and returns it as a gallery-sized JPEG
+  // data URL. The portal server cannot read Drive itself: Drive's thumbnail links only work in the user's browser
+  // and expire, so the image bytes are sent along with the catalog instead.
+  const embedDriveImage = async (
+    fileId: string,
+    token: string
+  ): Promise<{ url: string; width: number; height: number }> => {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Google Drive answered ${res.status}`);
+    const bitmap = await createImageBitmap(await res.blob());
+    const MAX_SIDE = 2048;
+    const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("This browser cannot resize images");
+    ctx.fillStyle = "#ffffff"; // JPEG has no transparency
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+    return { url: canvas.toDataURL("image/jpeg", 0.85), width, height };
+  };
+
   const handlePushMediaToUE5 = async () => {
     setPushingToUE5(true);
+
+    // Images kept on Google Drive are downloaded here and embedded, so Unreal can load them from the server
+    let pushList: MediaResource[] = mediaList;
+    const driveFailures: string[] = [];
+    const driveItems = mediaList.filter((m) => m.driveFileId && !m.url.startsWith("data:"));
+    if (driveItems.length > 0) {
+      const token = await resolveAccessToken();
+      if (!token) {
+        setPushingToUE5(false);
+        alert("Sign in with Google first: the images stored on Google Drive have to be read before they can be sent to Unreal.");
+        return;
+      }
+      pushList = [];
+      for (const item of mediaList) {
+        if (!item.driveFileId || item.url.startsWith("data:")) {
+          pushList.push(item);
+          continue;
+        }
+        try {
+          const image = await embedDriveImage(item.driveFileId, token);
+          pushList.push({ ...item, url: image.url, dimensions: { width: image.width, height: image.height } });
+        } catch (e: any) {
+          console.warn(`[Media push] Could not read '${item.title}' from Google Drive:`, e);
+          driveFailures.push(item.title);
+          pushList.push(item);
+        }
+      }
+    }
 
     const payload = {
       event: "SYNC_MEDIA_RESOURCES",
       timestamp: new Date().toISOString(),
       clientId: client.id,
       clientName: client.name,
-      total_items: mediaList.length,
+      total_items: pushList.length,
       categories: {
-        project: mediaList.filter((m) => m.category === "project"),
-        services: mediaList.filter((m) => m.category === "services"),
-        properties: mediaList.filter((m) => m.category === "properties"),
+        project: pushList.filter((m) => m.category === "project"),
+        services: pushList.filter((m) => m.category === "services"),
+        properties: pushList.filter((m) => m.category === "properties"),
       },
     };
 
@@ -910,7 +966,7 @@ export default function MediaResourcesTab({
       if (!res.ok) {
         const reason =
           res.status === 413
-            ? "The media catalog is too large for one request (embedded images exceed the 50 MB limit). Save large images to Google Drive or reduce their size."
+            ? "The media catalog is too large for one request. Remove some images or push fewer at a time."
             : result?.error || `Server responded with HTTP ${res.status}`;
         throw new Error(reason);
       }
@@ -932,7 +988,11 @@ export default function MediaResourcesTab({
         details: `Media catalog (${stored} assets) stored on the portal server for client '${client.id}'.${deliveryNote}`,
       });
 
-      alert(`Media Catalog (${stored} assets) pushed to Unreal Engine 5.${deliveryNote}`);
+      const failureNote =
+        driveFailures.length > 0
+          ? `\n\n${driveFailures.length} image(s) could not be read from Google Drive and will not show in Unreal: ${driveFailures.join(", ")}.`
+          : "";
+      alert(`Media Catalog (${stored} assets) pushed to Unreal Engine 5.${deliveryNote}${failureNote}`);
     } catch (err: any) {
       console.warn("UE5 media push failed:", err);
       onRecordLog({
