@@ -56,7 +56,7 @@ export function parseDriveApiError(status: number, rawText: string) {
         (d: any) => d.reason === "SERVICE_DISABLED" || d.metadata?.reason === "SERVICE_DISABLED"
       ));
 
-  let detectedProject = "sodium-icon-v8gvj";
+  let detectedProject = "gen-lang-client-0364468998";
   const projectMatch = rawMsg.match(/project[=\s/]+([0-9a-zA-Z\-_]+)/i);
   if (projectMatch && projectMatch[1]) {
     detectedProject = projectMatch[1];
@@ -274,8 +274,8 @@ export async function getOrProvisionClientFolder(
     };
   }
 
-  // 2c. Create the dedicated client folder inside the root shared directory
-  const createRes = await fetch(
+  // 2c. Create dedicated client folder (attempt inside shared root folder, fallback to user's root Drive)
+  let createRes = await fetch(
     "https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink",
     {
       method: "POST",
@@ -291,6 +291,26 @@ export async function getOrProvisionClientFolder(
       }),
     }
   );
+
+  // If shared root folder fails with 404 or 403 (unauthorized or missing shared folder), create directly in user's root Drive
+  if (!createRes.ok && (createRes.status === 404 || createRes.status === 403)) {
+    console.info("[Google Drive] Root shared folder not writable, creating dedicated folder in user's Drive root...");
+    createRes = await fetch(
+      "https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: targetFolderName,
+          mimeType: "application/vnd.google-apps.folder",
+          description: `SightPortal dedicated media repository for client ${client.name} (${client.company})`,
+        }),
+      }
+    );
+  }
 
   if (!createRes.ok) {
     const errText = await createRes.text();
@@ -543,4 +563,227 @@ export async function grantClientFolderAccess(
   } catch (err) {
     console.warn(`[Google Drive] Could not grant permission to ${clientEmail}:`, err);
   }
+}
+
+export interface DriveSyncProgress {
+  phase: "init" | "upload" | "scan" | "import" | "done" | "error";
+  message: string;
+  current: number;
+  total: number;
+}
+
+export interface DriveSyncResult {
+  success: boolean;
+  folderInfo: DriveFolderInfo;
+  uploadedCount: number;
+  importedCount: number;
+  totalDriveFiles: number;
+  syncedMediaList: MediaResource[];
+  message: string;
+  errors: string[];
+}
+
+/**
+ * Automatically synchronizes media assets between the portal and the client's Google Drive folder.
+ * Supports:
+ * - 'two-way': Uploads all unsynced portal media to Drive AND imports any new media found in Drive into the portal
+ * - 'push': Uploads all unsynced portal media to Drive
+ * - 'pull': Imports new media found in Drive into the portal
+ */
+export async function syncClientMediaWithDrive(params: {
+  client: Client;
+  token: string;
+  mode?: "two-way" | "push" | "pull";
+  onProgress?: (progress: DriveSyncProgress) => void;
+}): Promise<DriveSyncResult> {
+  const { client, token, mode = "two-way", onProgress } = params;
+
+  if (!token) {
+    throw new Error("Google authentication token is required to sync with Google Drive.");
+  }
+
+  const errors: string[] = [];
+  let uploadedCount = 0;
+  let importedCount = 0;
+
+  onProgress?.({
+    phase: "init",
+    message: "Locating client Google Drive repository...",
+    current: 0,
+    total: 1,
+  });
+
+  // 1. Provision / locate dedicated folder
+  const folderInfo = await getOrProvisionClientFolder(client, token);
+  const currentMediaList: MediaResource[] = [...(client.mediaResources || [])];
+
+  // 2. Push Phase: Upload any portal assets that don't have driveFileId yet
+  if (mode === "two-way" || mode === "push") {
+    const unsyncedItems = currentMediaList.filter((m) => !m.driveFileId);
+    const totalToUpload = unsyncedItems.length;
+
+    for (let i = 0; i < totalToUpload; i++) {
+      const item = unsyncedItems[i];
+      onProgress?.({
+        phase: "upload",
+        message: `Uploading to Drive (${i + 1}/${totalToUpload}): ${item.title}...`,
+        current: i + 1,
+        total: totalToUpload,
+      });
+
+      try {
+        const { blob, mimeType } = dataUrlToBlob(item.url);
+        const uploadRes = await uploadMediaToClientFolder({
+          blob,
+          dataUrl: item.url.startsWith("data:") ? item.url : undefined,
+          url: !item.url.startsWith("data:") ? item.url : undefined,
+          fileName: item.fileName || `${item.title.replace(/\s+/g, "_")}.jpg`,
+          mimeType,
+          folderId: folderInfo.folderId,
+          token,
+          description: `${item.title} (${item.category}) - Client: ${client.name}`,
+        });
+
+        const idx = currentMediaList.findIndex((m) => m.id === item.id);
+        if (idx !== -1) {
+          currentMediaList[idx] = {
+            ...currentMediaList[idx],
+            driveFileId: uploadRes.fileId,
+            driveWebViewLink: uploadRes.webViewLink,
+            driveThumbnailLink: uploadRes.thumbnailLink,
+          };
+          uploadedCount++;
+        }
+      } catch (err: any) {
+        console.warn(`[Sync] Failed uploading ${item.title}:`, err);
+        errors.push(`Upload failed for "${item.title}": ${err.message || String(err)}`);
+        if (err.isServiceDisabled) {
+          throw err;
+        }
+      }
+    }
+  }
+
+  // 3. Pull Phase: Fetch files in the client's Drive folder and import any that aren't in portal
+  let totalDriveFiles = 0;
+  if (mode === "two-way" || mode === "pull") {
+    onProgress?.({
+      phase: "scan",
+      message: "Scanning Google Drive folder for media assets...",
+      current: 0,
+      total: 1,
+    });
+
+    try {
+      const driveFiles = await fetchClientFolderFiles(folderInfo.folderId, token);
+      totalDriveFiles = driveFiles.length;
+
+      // Filter for media files (images, videos, floorplans/documents)
+      const mediaFiles = driveFiles.filter((f) => {
+        const mime = (f.mimeType || "").toLowerCase();
+        const name = (f.name || "").toLowerCase();
+        return (
+          mime.startsWith("image/") ||
+          mime.startsWith("video/") ||
+          mime.includes("pdf") ||
+          name.endsWith(".jpg") ||
+          name.endsWith(".jpeg") ||
+          name.endsWith(".png") ||
+          name.endsWith(".webp") ||
+          name.endsWith(".mp4") ||
+          name.endsWith(".mov") ||
+          name.endsWith(".pdf") ||
+          name.endsWith(".fbx") ||
+          name.endsWith(".obj") ||
+          name.endsWith(".gltf")
+        );
+      });
+
+      const existingDriveIds = new Set(
+        currentMediaList.map((m) => m.driveFileId).filter(Boolean)
+      );
+      const existingFileNames = new Set(
+        currentMediaList.map((m) => (m.fileName || "").toLowerCase())
+      );
+
+      const itemsToImport = mediaFiles.filter(
+        (f) => !existingDriveIds.has(f.id) && !existingFileNames.has(f.name.toLowerCase())
+      );
+
+      for (let i = 0; i < itemsToImport.length; i++) {
+        const file = itemsToImport[i];
+        onProgress?.({
+          phase: "import",
+          message: `Importing from Drive (${i + 1}/${itemsToImport.length}): ${file.name}...`,
+          current: i + 1,
+          total: itemsToImport.length,
+        });
+
+        // Determine category based on filename
+        const lower = file.name.toLowerCase();
+        let category: "project" | "services" | "properties" = "project";
+        if (
+          lower.includes("service") ||
+          lower.includes("amenity") ||
+          lower.includes("spa") ||
+          lower.includes("gym") ||
+          lower.includes("pool") ||
+          lower.includes("facility")
+        ) {
+          category = "services";
+        } else if (
+          lower.includes("unit") ||
+          lower.includes("apt") ||
+          lower.includes("floor") ||
+          lower.includes("plan") ||
+          lower.includes("villa") ||
+          lower.includes("penthouse") ||
+          lower.includes("property")
+        ) {
+          category = "properties";
+        }
+
+        const cleanTitle = file.name.replace(/\.[^/.]+$/, "").replace(/[_-]+/g, " ");
+
+        const newMediaItem: MediaResource = {
+          id: `drive_${file.id.substring(0, 8)}_${Date.now()}_${i}`,
+          category,
+          title: cleanTitle,
+          description: `Imported from client Google Drive repository (${folderInfo.folderName})`,
+          fileName: file.name,
+          fileSize: file.size ? parseInt(file.size, 10) : undefined,
+          url: file.thumbnailLink || file.webViewLink || "",
+          driveFileId: file.id,
+          driveWebViewLink: file.webViewLink,
+          driveThumbnailLink: file.thumbnailLink,
+          uploadedAt: file.createdTime || new Date().toISOString(),
+          tags: ["Google Drive", "Synced"],
+        };
+
+        currentMediaList.push(newMediaItem);
+        importedCount++;
+      }
+    } catch (pullErr: any) {
+      console.warn("[Sync] Pull from Drive notice:", pullErr);
+      errors.push(`Drive folder scan notice: ${pullErr.message || String(pullErr)}`);
+    }
+  }
+
+  onProgress?.({
+    phase: "done",
+    message: `Sync complete: ${uploadedCount} uploaded, ${importedCount} imported.`,
+    current: 1,
+    total: 1,
+  });
+
+  return {
+    success: errors.length === 0 || uploadedCount > 0 || importedCount > 0,
+    folderInfo,
+    uploadedCount,
+    importedCount,
+    totalDriveFiles,
+    syncedMediaList: currentMediaList,
+    message: `Synchronized ${uploadedCount} file(s) to Google Drive and imported ${importedCount} file(s) into portal.`,
+    errors,
+  };
 }
