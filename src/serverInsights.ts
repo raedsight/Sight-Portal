@@ -241,6 +241,8 @@ interface AdminContext {
   store: InsightsStore;
   verifyIdToken: (token: string) => Promise<{ uid: string; email?: string }>;
   getUserProfile: (uid: string) => Promise<{ role?: string; clientId?: string } | null>;
+  // True when the portal has a client with this id (the slug used in /ws/<slug>)
+  clientExists: (slug: string) => Promise<boolean>;
 }
 
 function parseServiceAccount(raw: string): Record<string, any> {
@@ -336,6 +338,7 @@ async function createAdminContext(): Promise<AdminContext | null> {
         const snap = await db.collection("users").doc(uid).get();
         return snap.exists ? (snap.data() as { role?: string; clientId?: string }) : null;
       },
+      clientExists: async (slug) => (await db.collection("clients").doc(slug).get()).exists,
     };
   } catch (e: any) {
     console.error("[Insights] Could not start Firestore storage, using the disk cache instead:", e?.message || e);
@@ -436,7 +439,7 @@ export function renderShortlistPage(shortlist: Shortlist | null): string {
 // Routes
 
 export interface InsightsOptions {
-  // Slugs the portal knows about; requests for other slugs are refused
+  // Used only when Firestore is unavailable (local development); with Firestore the clients collection decides
   isKnownClient: (slug: string) => boolean;
 }
 
@@ -461,6 +464,19 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
       return true;
     }
     return false;
+  };
+
+  // Data is only accepted for clients that exist in the portal, so a mistyped slug cannot create orphan records.
+  // Answers are remembered for five minutes to avoid a database read on every analytics batch.
+  const knownClients = new Map<string, { known: boolean; until: number }>();
+  const isKnownClient = async (slug: string): Promise<boolean> => {
+    if (!admin) return options.isKnownClient(slug);
+    const cached = knownClients.get(slug);
+    if (cached && cached.until > Date.now()) return cached.known;
+    const known = await admin.clientExists(slug);
+    if (knownClients.size > 500) knownClients.clear();
+    knownClients.set(slug, { known, until: Date.now() + (known ? 300_000 : 30_000) });
+    return known;
   };
 
   const baseUrl = (req: Request): string => {
@@ -504,7 +520,7 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
     if (limited(req, res, "shortlist", 20, 60_000)) return;
     try {
       const clientSlug = cleanSlug(req.body?.client_slug);
-      if (!clientSlug || !options.isKnownClient(clientSlug)) return res.status(400).json({ status: "error", error: "Unknown client_slug." });
+      if (!clientSlug || !(await isKnownClient(clientSlug))) return res.status(400).json({ status: "error", error: "Unknown client_slug." });
       const rawUnits: any[] = Array.isArray(req.body?.units) ? req.body.units : [];
       const units = rawUnits.slice(0, MAX_UNITS).map(sanitizeUnit).filter((u): u is ShortlistUnit => !!u);
       const leadName = cleanText(req.body?.lead?.name, 80);
@@ -570,7 +586,7 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
     if (limited(req, res, "analytics", 120, 60_000)) return;
     try {
       const clientSlug = cleanSlug(req.body?.client_slug);
-      if (!clientSlug || !options.isKnownClient(clientSlug)) return res.status(400).json({ status: "error", error: "Unknown client_slug." });
+      if (!clientSlug || !(await isKnownClient(clientSlug))) return res.status(400).json({ status: "error", error: "Unknown client_slug." });
       const sessionId = cleanText(req.body?.session_id, 64);
       if (!sessionId) return res.status(400).json({ status: "error", error: "session_id is required." });
       const rawEvents: any[] = Array.isArray(req.body?.events) ? req.body.events : [];
