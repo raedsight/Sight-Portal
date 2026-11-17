@@ -3165,7 +3165,7 @@ export default function ClientDashboard({
         )}
 
         {/* Leads captured in the Unreal app and usage analytics */}
-        {activeTab === "insights" && <InsightsTab clientId={client.id} />}
+        {activeTab === "insights" && <InsightsTab clientId={client.id} clientName={client.name} />}
 
         {/* Tab 3: QA Bug Tracker */}
         {activeTab === "bugs" && (

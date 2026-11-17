@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { BarChart3, Phone, RefreshCw, Users } from "lucide-react";
+import { BarChart3, MessageCircle, Phone, RefreshCw, Users } from "lucide-react";
 import { auth } from "../firebase";
 
 interface LeadRow {
@@ -39,6 +39,34 @@ const EVENT_LABELS: Record<string, string> = {
 
 const STATUSES: LeadRow["status"][] = ["new", "contacted", "closed"];
 
+// Country code added to phone numbers typed in local form (a leading 0), so WhatsApp can open the chat. 964 = Iraq.
+const DEFAULT_COUNTRY_CODE = "964";
+
+// WhatsApp needs the number in international form, digits only. Returns "" when the number cannot be used.
+export function whatsAppNumber(phone: string): string {
+  const trimmed = (phone || "").trim();
+  let digits = trimmed.replace(/\D/g, "");
+  if (trimmed.startsWith("+")) {
+    // already international
+  } else if (digits.startsWith("00")) {
+    digits = digits.slice(2);
+  } else if (digits.startsWith("0")) {
+    digits = DEFAULT_COUNTRY_CODE + digits.slice(1);
+  }
+  return digits.length >= 8 && digits.length <= 15 ? digits : "";
+}
+
+// Opens WhatsApp (app or web) on the advisor's device with the buyer's number and a ready message; the advisor presses send.
+export function whatsAppLink(lead: { name: string; phone: string; shortlist_url?: string | null }, projectName?: string): string {
+  const number = whatsAppNumber(lead.phone);
+  if (!number || !lead.shortlist_url) return "";
+  const firstName = (lead.name || "").trim().split(/\s+/)[0];
+  const greeting = firstName ? `Hello ${firstName},` : "Hello,";
+  const where = projectName ? ` at ${projectName}` : "";
+  const text = `${greeting} here are the homes you saved${where}: ${lead.shortlist_url}`;
+  return `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
+}
+
 async function authorizedFetch(url: string, init?: RequestInit): Promise<any> {
   const token = await auth.currentUser?.getIdToken();
   if (!token) throw new Error("Sign in to the portal to see leads and analytics.");
@@ -51,7 +79,7 @@ async function authorizedFetch(url: string, init?: RequestInit): Promise<any> {
   return body;
 }
 
-export default function InsightsTab({ clientId }: { clientId: string }) {
+export default function InsightsTab({ clientId, clientName }: { clientId: string; clientName?: string }) {
   const [days, setDays] = useState(30);
   const [leads, setLeads] = useState<LeadRow[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -155,6 +183,18 @@ export default function InsightsTab({ clientId }: { clientId: string }) {
                         <Phone className="h-3 w-3" />
                         {lead.phone}
                       </a>
+                      {whatsAppLink(lead, clientName) && (
+                        <a
+                          href={whatsAppLink(lead, clientName)}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Opens WhatsApp with the shortlist link ready to send"
+                          className="mt-1 flex w-fit items-center gap-1 rounded border border-emerald-500/40 bg-emerald-950/30 px-2 py-0.5 text-[11px] text-emerald-200 hover:bg-emerald-900/40"
+                        >
+                          <MessageCircle className="h-3 w-3" />
+                          Send on WhatsApp
+                        </a>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       {lead.shortlist_url ? (
