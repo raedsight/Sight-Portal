@@ -43,7 +43,7 @@ const EVENT_ORDER = [
   "view_item_list", "view_floor_plan", "generate_lead", "share", "get_directions", "enter_interior",
 ];
 // Features the Unreal app does not report yet: a 0 here says nothing about how useful they are
-const NOT_REPORTED_YET = new Set(["get_directions", "enter_interior"]);
+const NOT_REPORTED_YET = new Set(["get_directions"]);
 
 interface EventRow {
   ts: string;
