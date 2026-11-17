@@ -9,13 +9,15 @@ import {
   getEmailAuditHistory 
 } from "./src/serverEmailNotifier";
 import { BugNotificationPayload } from "./src/types";
-import { registerInsightsRoutes } from "./src/serverInsights";
+import { registerInsightsRoutes, shortlistHostGuard } from "./src/serverInsights";
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   // JSON parsing and large coordinate matrices and image base64 payloads helper setting
+  // On the buyer-facing shortlist domain (PUBLIC_SHORTLIST_URL), only shortlist pages are served
+  app.use(shortlistHostGuard);
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 

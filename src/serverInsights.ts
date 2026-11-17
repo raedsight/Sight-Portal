@@ -40,6 +40,8 @@ export interface Shortlist {
   createdAt: string;
   units: ShortlistUnit[];
   currency?: string;
+  // The client's display name when the shortlist was made, shown as the page's brand line
+  projectName?: string;
   sessionId?: string;
   leadId?: string;
   openedCount: number;
@@ -243,6 +245,7 @@ interface AdminContext {
   getUserProfile: (uid: string) => Promise<{ role?: string; clientId?: string } | null>;
   // True when the portal has a client with this id (the slug used in /ws/<slug>)
   clientExists: (slug: string) => Promise<boolean>;
+  getClientName: (slug: string) => Promise<string>;
 }
 
 function parseServiceAccount(raw: string): Record<string, any> {
@@ -339,6 +342,10 @@ async function createAdminContext(): Promise<AdminContext | null> {
         return snap.exists ? (snap.data() as { role?: string; clientId?: string }) : null;
       },
       clientExists: async (slug) => (await db.collection("clients").doc(slug).get()).exists,
+      getClientName: async (slug) => {
+        const data = (await db.collection("clients").doc(slug).get()).data();
+        return typeof data?.name === "string" ? data.name : "";
+      },
     };
   } catch (e: any) {
     console.error("[Insights] Could not start Firestore storage, using the disk cache instead:", e?.message || e);
@@ -394,7 +401,9 @@ const formatNumber = (value: number | undefined, digits = 0): string =>
   typeof value === "number" ? value.toLocaleString("en-US", { maximumFractionDigits: digits }) : "";
 
 export function renderShortlistPage(shortlist: Shortlist | null): string {
-  const title = shortlist ? "Your shortlist" : "Shortlist not found";
+  // What the buyer sees: the brand and the project, nothing that points at the portal
+  const brand = shortlist?.projectName ? `Sight Solution - ${shortlist.projectName}` : "Sight Viz";
+  const heading = shortlist ? "Your shortlist" : "Shortlist not found";
   const cards = (shortlist?.units || []).map((unit) => {
     const facts = [
       unit.propertyClass ? escapeHtml(unit.propertyClass) : "",
@@ -418,10 +427,11 @@ export function renderShortlistPage(shortlist: Shortlist | null): string {
     : `<p class="lead">This link is not valid or the shortlist has been removed. Ask your sales advisor for a new one.</p>`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex,nofollow"><title>${title}</title>
+<meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>${escapeHtml(brand)} - QR</title>
 <style>
   body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:#0d1117;color:#e6edf3}
   main{max-width:640px;margin:0 auto;padding:24px 16px 48px}
+  .brand{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#e7c873;margin:0}
   h1{font-size:24px;margin:8px 0 4px}
   .lead{color:#9aa7b4;font-size:14px;margin:0 0 20px}
   .card{background:#161b22;border:1px solid #2a323c;border-radius:14px;padding:16px;margin-bottom:12px}
@@ -432,11 +442,31 @@ export function renderShortlistPage(shortlist: Shortlist | null): string {
   .facts{margin-top:8px;font-size:14px}
   .place{margin-top:4px;font-size:13px;color:#9aa7b4}
 </style></head>
-<body><main><h1>${title}</h1>${body}</main></body></html>`;
+<body><main><p class="brand">${escapeHtml(brand)}</p><h1>${heading}</h1>${body}</main></body></html>`;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Routes
+
+/**
+ * When PUBLIC_SHORTLIST_URL names a domain of its own, requests that arrive on that domain may only open shortlist
+ * pages: everything else (the portal sign-in, the API) answers "Not found", so the link gives no way into the portal.
+ * Must be added before every other route.
+ */
+export function shortlistHostGuard(req: Request, res: Response, next: () => void): void {
+  let publicHost = "";
+  try {
+    publicHost = process.env.PUBLIC_SHORTLIST_URL ? new URL(process.env.PUBLIC_SHORTLIST_URL).host.toLowerCase() : "";
+  } catch {
+    publicHost = "";
+  }
+  const requestHost = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim().toLowerCase();
+  if (publicHost && requestHost === publicHost && !/^\/s\/[A-Za-z0-9_-]+\/?$/.test(req.path)) {
+    res.status(404).type("text/plain").send("Not found");
+    return;
+  }
+  next();
+}
 
 export interface InsightsOptions {
   // Used only when Firestore is unavailable (local development); with Firestore the clients collection decides
@@ -480,6 +510,8 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
   };
 
   const baseUrl = (req: Request): string => {
+    // The address buyers see in the QR link. Set PUBLIC_SHORTLIST_URL to a domain of your own to keep the portal's out of it.
+    if (process.env.PUBLIC_SHORTLIST_URL && /^https?:\/\//.test(process.env.PUBLIC_SHORTLIST_URL)) return process.env.PUBLIC_SHORTLIST_URL.replace(/\/+$/, "");
     if (process.env.APP_URL && /^https?:\/\//.test(process.env.APP_URL)) return process.env.APP_URL.replace(/\/+$/, "");
     const protocol = (req.headers["x-forwarded-proto"] as string)?.split(",")[0] || req.protocol || "https";
     return `${protocol}://${req.headers["x-forwarded-host"] || req.get("host")}`;
@@ -534,6 +566,7 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
       const shortlist: Shortlist = dropUndefined({
         id: newId(), clientSlug, createdAt: now, units, sessionId,
         currency: cleanText(req.body?.currency, 8) || undefined, openedCount: 0,
+        projectName: admin ? cleanText(await admin.getClientName(clientSlug), 80) || undefined : undefined,
       });
       let lead: Lead | null = null;
       if (hasLead) {
@@ -571,6 +604,8 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
   app.get("/s/:id", async (req, res) => {
     if (limited(req, res, "shortlist-read", 120, 60_000)) return;
     res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Robots-Tag", "noindex, nofollow");
+    res.setHeader("Referrer-Policy", "no-referrer");
     try {
       const shortlist = /^[A-Za-z0-9_-]{6,32}$/.test(req.params.id) ? await store.getShortlist(req.params.id) : null;
       if (shortlist) void store.noteShortlistOpened(shortlist.id).catch(() => undefined);
