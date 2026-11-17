@@ -2893,6 +2893,23 @@ export default function ClientDashboard({
                         : `Force Push Full Datatable to Unreal (${sheetData?.rows?.length || 0} Records)`}
                     </button>
 
+                    <button
+                      type="button"
+                      onClick={handlePushToGoogleSheet}
+                      disabled={pushingSheet || !sheetData?.rows?.length || !client.sheetId}
+                      title="Overwrite the linked Google Sheet tab with this workspace's data (asks for confirmation first)"
+                      className={`w-full py-2 px-4 rounded-lg font-mono text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer select-none border border-emerald-500/30 text-white ${
+                        pushingSheet
+                          ? "bg-emerald-500/20 text-emerald-300 cursor-not-allowed"
+                          : "bg-emerald-950/70 hover:bg-emerald-900/80 border-emerald-500/50 shadow-md shadow-emerald-950/30"
+                      }`}
+                    >
+                      <Database className={`h-3.5 w-3.5 text-emerald-400 ${pushingSheet ? "animate-pulse" : ""}`} />
+                      {pushingSheet
+                        ? "Writing to Google Sheet..."
+                        : `Write to Google Sheet (${sheetData?.rows?.length || 0} Records)`}
+                    </button>
+
                     {pushMessage && (
                       <div className={`p-2 rounded text-[10px] font-mono text-center ${
                         pushStatus === "success" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"
