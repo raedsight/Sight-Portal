@@ -1,0 +1,23 @@
+{
+  "hosting": {
+    "site": "sightsolutions-qr",
+    "public": "public",
+    "cleanUrls": true,
+    "rewrites": [
+      {
+        "source": "/s/**",
+        "run": { "serviceId": "sight-portal", "region": "europe-west2" }
+      }
+    ],
+    "headers": [
+      {
+        "source": "**",
+        "headers": [
+          { "key": "X-Robots-Tag", "value": "noindex, nofollow" },
+          { "key": "Referrer-Policy", "value": "no-referrer" },
+          { "key": "Cache-Control", "value": "no-store" }
+        ]
+      }
+    ]
+  }
+}

@@ -480,7 +480,9 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
   // Simple per-address limiter for the endpoints the Unreal app calls without signing in
   const hits = new Map<string, { count: number; resetAt: number }>();
   const limited = (req: Request, res: Response, bucket: string, max: number, windowMs: number): boolean => {
-    const key = `${bucket}:${req.ip || req.socket.remoteAddress || "unknown"}`;
+    // On Cloud Run every request arrives from Google's proxy, so the caller's own address is the first X-Forwarded-For entry
+    const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+    const key = `${bucket}:${forwarded || req.ip || req.socket.remoteAddress || "unknown"}`;
     const now = Date.now();
     const entry = hits.get(key);
     if (!entry || entry.resetAt <= now) {
