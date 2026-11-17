@@ -37,6 +37,42 @@ const EVENT_LABELS: Record<string, string> = {
   generate_lead: "Leads captured",
 };
 
+// Shown as tiles in this order, also when the count is 0, so unused features stand out
+const EVENT_ORDER = [
+  "session_start", "view_item", "search", "select_item", "add_to_wishlist", "remove_from_wishlist",
+  "view_item_list", "view_floor_plan", "generate_lead", "share", "get_directions", "enter_interior",
+];
+// Features the Unreal app does not report yet: a 0 here says nothing about how useful they are
+const NOT_REPORTED_YET = new Set(["get_directions", "enter_interior"]);
+
+interface EventRow {
+  ts: string;
+  session: string;
+  visitor: string | null;
+  params: Record<string, string | number | boolean>;
+}
+
+const SEARCH_PARAM_LABELS: Record<string, string> = {
+  query: "text", zone: "zone", block: "block", type: "type", availability: "availability", bedrooms: "bedrooms from",
+  bathrooms: "bathrooms from", price_min: "price from", price_max: "price to", surface_min: "area from", surface_max: "area to", sort: "sorted by",
+};
+
+// What one event was about, in words: the unit, the units compared, the filters used...
+function describeEvent(name: string, params: EventRow["params"]): string {
+  const text = (key: string) => (params[key] === undefined || params[key] === "" ? "" : String(params[key]));
+  if (name === "search") {
+    const parts = Object.entries(SEARCH_PARAM_LABELS).filter(([key]) => text(key)).map(([key, label]) => `${label}: ${text(key)}`);
+    const found = text("results") ? ` (${text("results")} units found)` : "";
+    return (parts.length ? parts.join(", ") : "No filters, browsing all units") + found;
+  }
+  if (name === "view_item_list" || name === "generate_lead") return text("items").split(",").join(", ") || "(no units recorded)";
+  if (name === "view_floor_plan") return [text("item_id"), text("type") && `type ${text("type")}`].filter(Boolean).join(", ") || "(no unit recorded)";
+  if (text("item_id")) return text("item_id");
+  if (text("detail")) return text("detail");
+  const rest = Object.entries(params).map(([k, v]) => `${k}: ${v}`).join(", ");
+  return rest || "(no details)";
+}
+
 const STATUSES: LeadRow["status"][] = ["new", "contacted", "closed"];
 
 // Country code added to phone numbers typed in local form (a leading 0), so WhatsApp can open the chat. 964 = Iraq.
@@ -85,6 +121,28 @@ export default function InsightsTab({ clientId, clientName }: { clientId: string
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [openEvent, setOpenEvent] = useState<string | null>(null);
+  const [eventRows, setEventRows] = useState<EventRow[]>([]);
+  const [eventLoading, setEventLoading] = useState(false);
+
+  // Click a tile: load what is behind its number
+  const showEvent = async (name: string) => {
+    if (openEvent === name) {
+      setOpenEvent(null);
+      return;
+    }
+    setOpenEvent(name);
+    setEventRows([]);
+    setEventLoading(true);
+    try {
+      const data = await authorizedFetch(`/api/analytics/events?slug=${encodeURIComponent(clientId)}&name=${encodeURIComponent(name)}&days=${days}`);
+      setEventRows(data.events || []);
+    } catch (e: any) {
+      setError(e?.message || "Could not load the details.");
+    } finally {
+      setEventLoading(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -122,7 +180,20 @@ export default function InsightsTab({ clientId, clientName }: { clientId: string
     }
   };
 
-  const totals = (Object.entries(summary?.totals ?? {}) as [string, number][]).sort((a, b) => b[1] - a[1]);
+  // Every known event, in a fixed order, 0 included; then anything else the app sent
+  const known = EVENT_ORDER.map((name) => [name, summary?.totals?.[name] ?? 0] as [string, number]);
+  const extra = (Object.entries(summary?.totals ?? {}) as [string, number][]).filter(([name]) => !EVENT_ORDER.includes(name));
+  const totals = [...known, ...extra];
+  // The same thing done several times, counted once per kind
+  const breakdown = (
+    Object.entries(
+      eventRows.reduce<Record<string, number>>((acc, row) => {
+        const key = describeEvent(openEvent || "", row.params);
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {})
+    ) as [string, number][]
+  ).sort((a, b) => b[1] - a[1]);
 
   return (
     <div className="animate-fadeIn text-left space-y-6">
@@ -231,18 +302,88 @@ export default function InsightsTab({ clientId, clientName }: { clientId: string
         <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wide flex items-center gap-2">
           <BarChart3 className="h-4 w-4" /> Usage, last {summary?.days ?? days} days
         </h4>
-        {!summary || totals.length === 0 ? (
+        {!summary ? (
           <p className="text-xs text-gray-500">{loading ? "Loading..." : "No usage has been recorded in this period."}</p>
         ) : (
           <>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {totals.map(([name, count]) => (
-                <div key={name} className="p-3 rounded-xl border border-white/10 bg-white/5">
-                  <div className="text-lg font-bold text-white">{count.toLocaleString()}</div>
+                <button
+                  type="button"
+                  key={name}
+                  onClick={() => void showEvent(name)}
+                  title="Show the details behind this number"
+                  className={`p-3 rounded-xl border text-left cursor-pointer transition hover:bg-white/10 ${
+                    openEvent === name ? "border-cyan-400/70 bg-cyan-950/30" : "border-white/10 bg-white/5"
+                  }`}
+                >
+                  <div className={`text-lg font-bold ${count === 0 ? "text-gray-500" : "text-white"}`}>
+                    {NOT_REPORTED_YET.has(name) && count === 0 ? "n/a" : count.toLocaleString()}
+                  </div>
                   <div className="text-[10px] text-gray-400 uppercase tracking-wide">{EVENT_LABELS[name] || name}</div>
-                </div>
+                  {NOT_REPORTED_YET.has(name) && count === 0 && <div className="text-[9px] text-gray-500">Not in the app yet</div>}
+                </button>
               ))}
             </div>
+            {openEvent && (
+              <div className="border border-cyan-500/30 rounded-xl p-3 space-y-3 bg-cyan-950/10">
+                <div className="flex items-center justify-between">
+                  <h5 className="text-xs font-bold text-cyan-200">{EVENT_LABELS[openEvent] || openEvent}: details</h5>
+                  <button type="button" onClick={() => setOpenEvent(null)} className="text-[11px] text-gray-400 hover:text-white cursor-pointer">
+                    Close
+                  </button>
+                </div>
+                {eventLoading ? (
+                  <p className="text-xs text-gray-500">Loading...</p>
+                ) : eventRows.length === 0 ? (
+                  <p className="text-xs text-gray-500">
+                    {NOT_REPORTED_YET.has(openEvent)
+                      ? "The Unreal app does not report this yet."
+                      : "Nothing recorded in this period. Details are kept from 17 Nov 2026 onwards."}
+                  </p>
+                ) : (
+                  <>
+                    {openEvent !== "session_start" && (
+                      <table className="w-full text-xs">
+                        <thead className="text-gray-400 uppercase text-[10px]">
+                          <tr>
+                            <th className="text-left px-2 py-1">What</th>
+                            <th className="text-right px-2 py-1">Times</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {breakdown.slice(0, 30).map(([what, times]) => (
+                            <tr key={what} className="border-t border-white/5 text-gray-200">
+                              <td className="px-2 py-1">{what}</td>
+                              <td className="px-2 py-1 text-right">{times}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    <table className="w-full text-xs">
+                      <thead className="text-gray-400 uppercase text-[10px]">
+                        <tr>
+                          <th className="text-left px-2 py-1">When</th>
+                          <th className="text-left px-2 py-1">Who</th>
+                          <th className="text-left px-2 py-1">What</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {eventRows.slice(0, 100).map((row, i) => (
+                          <tr key={i} className="border-t border-white/5 text-gray-200 align-top">
+                            <td className="px-2 py-1 whitespace-nowrap">{new Date(row.ts).toLocaleString()}</td>
+                            <td className="px-2 py-1 whitespace-nowrap">{row.visitor || `Visitor ${row.session}`}</td>
+                            <td className="px-2 py-1">{openEvent === "session_start" ? "Visit started" : describeEvent(openEvent, row.params)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {eventRows.length > 100 && <p className="text-[10px] text-gray-500">Showing the latest 100 of {eventRows.length}.</p>}
+                  </>
+                )}
+              </div>
+            )}
             {summary.top_units.length > 0 && (
               <div className="overflow-x-auto border border-white/10 rounded-xl">
                 <table className="w-full text-xs">

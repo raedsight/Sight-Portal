@@ -157,6 +157,8 @@ interface InsightsStore {
   updateLeadStatus(id: string, clientSlug: string, status: Lead["status"]): Promise<boolean>;
   saveEvents(events: AnalyticsEvent[], newSessions: number): Promise<void>;
   listDaily(clientSlug: string, sinceDay: string): Promise<DailyAggregate[]>;
+  // The individual events of one kind, newest first (for the dashboard's drill-down)
+  listEvents(clientSlug: string, name: string, sinceIso: string, limit: number): Promise<AnalyticsEvent[]>;
 }
 
 const DISK_PATH = path.join(process.cwd(), "insights_cache.json");
@@ -165,14 +167,17 @@ interface DiskState {
   shortlists: Record<string, Shortlist>;
   leads: Record<string, Lead>;
   daily: Record<string, DailyAggregate>;
+  events: AnalyticsEvent[];
 }
 
+const MAX_DISK_EVENTS = 5000;
+
 function createDiskStore(): InsightsStore {
-  let state: DiskState = { shortlists: {}, leads: {}, daily: {} };
+  let state: DiskState = { shortlists: {}, leads: {}, daily: {}, events: [] };
   try {
     if (fs.existsSync(DISK_PATH)) {
       const parsed = JSON.parse(fs.readFileSync(DISK_PATH, "utf-8"));
-      state = { shortlists: parsed.shortlists || {}, leads: parsed.leads || {}, daily: parsed.daily || {} };
+      state = { shortlists: parsed.shortlists || {}, leads: parsed.leads || {}, daily: parsed.daily || {}, events: Array.isArray(parsed.events) ? parsed.events : [] };
     }
   } catch (e) {
     console.warn("[Insights] Could not read the disk cache:", e);
@@ -203,6 +208,8 @@ function createDiskStore(): InsightsStore {
       lead.status = status; persist(); return true;
     },
     async saveEvents(events, newSessions) {
+      state.events.push(...events);
+      if (state.events.length > MAX_DISK_EVENTS) state.events = state.events.slice(-MAX_DISK_EVENTS);
       for (const [key, delta] of Object.entries(aggregateEvents(events, newSessions))) {
         const current = state.daily[key] || { clientSlug: delta.clientSlug, day: delta.day, events: {}, units: {}, sessions: 0 };
         for (const [name, count] of Object.entries(delta.events)) current.events[name] = (current.events[name] || 0) + count;
@@ -217,6 +224,10 @@ function createDiskStore(): InsightsStore {
     },
     async listDaily(clientSlug, sinceDay) {
       return Object.values(state.daily).filter((d) => d.clientSlug === clientSlug && d.day >= sinceDay);
+    },
+    async listEvents(clientSlug, name, sinceIso, limit) {
+      return state.events.filter((e) => e.clientSlug === clientSlug && e.name === name && e.ts >= sinceIso)
+        .sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, limit);
     },
   };
 }
@@ -329,6 +340,12 @@ async function createAdminContext(): Promise<AdminContext | null> {
           const data = d.data() as Partial<DailyAggregate>;
           return { clientSlug, day: data.day || "", events: data.events || {}, units: data.units || {}, sessions: data.sessions || 0 };
         }).filter((d) => d.day >= sinceDay);
+      },
+      async listEvents(clientSlug, name, sinceIso, limit) {
+        // Two equality filters need no composite index; the date filter and the sort are done here
+        const snap = await db.collection("analyticsEvents").where("clientSlug", "==", clientSlug).where("name", "==", name).limit(3000).get();
+        return snap.docs.map((d) => d.data() as AnalyticsEvent).filter((e) => e.ts >= sinceIso)
+          .sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, limit);
       },
     };
     return {
@@ -643,6 +660,29 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
     } catch (e: any) {
       console.error("[Insights] Could not save analytics events:", e?.message || e);
       res.status(500).json({ status: "error", error: "The events could not be saved." });
+    }
+  });
+
+  // Portal dashboard (signed in): the individual events of one kind, with the visitor's name when that visit left a lead
+  app.get("/api/analytics/events", async (req, res) => {
+    const clientSlug = cleanSlug(req.query.slug);
+    if (!clientSlug) return res.status(400).json({ status: "error", error: "slug is required." });
+    if (!(await authorize(req, res, clientSlug))) return;
+    try {
+      const name = cleanText(req.query.name, 40);
+      if (!EVENT_NAME_PATTERN.test(name)) return res.status(400).json({ status: "error", error: "name is required." });
+      const days = Math.min(Math.max(parseInt(String(req.query.days || "30"), 10) || 30, 1), 365);
+      const sinceIso = new Date(Date.now() - days * 86_400_000).toISOString();
+      const [events, leads] = await Promise.all([store.listEvents(clientSlug, name, sinceIso, 500), store.listLeads(clientSlug, 500)]);
+      const leadBySession = new Map<string, string>();
+      for (const lead of leads) if (lead.sessionId && !leadBySession.has(lead.sessionId)) leadBySession.set(lead.sessionId, lead.name);
+      res.json({
+        status: "ok", client_slug: clientSlug, name, days,
+        events: events.map((e) => ({ ts: e.ts, session: e.sessionId.slice(0, 6), visitor: leadBySession.get(e.sessionId) || null, params: e.params })),
+      });
+    } catch (e: any) {
+      console.error("[Insights] Could not list analytics events:", e?.message || e);
+      res.status(500).json({ status: "error", error: "The events could not be loaded." });
     }
   });
 
