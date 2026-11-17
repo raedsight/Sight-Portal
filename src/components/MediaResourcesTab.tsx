@@ -870,44 +870,111 @@ export default function MediaResourcesTab({
   const [placeClass, setPlaceClass] = useState("");
   const [placeUnit, setPlaceUnit] = useState("");
   const [placeFloorPlan, setPlaceFloorPlan] = useState(false);
+  // Title, description and a replacement image for the same record
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [replaceFile, setReplaceFile] = useState<File | null>(null);
+  const [savingMedia, setSavingMedia] = useState(false);
   useEffect(() => {
     if (!inspectingMedia) return;
+    setEditTitle(inspectingMedia.title);
+    setEditDescription(inspectingMedia.description || "");
+    setReplaceFile(null);
     setPlaceCategory(inspectingMedia.category);
     setPlaceClass(inspectingMedia.propertyClass || "");
     setPlaceUnit(inspectingMedia.propertyName || "");
     setPlaceFloorPlan((inspectingMedia.tags || []).some((t) => t.toLowerCase().replace(/[\s_-]/g, "") === "floorplan"));
   }, [inspectingMedia?.id]);
 
-  const handleSaveMediaPlacement = () => {
+  // Reads an image file and returns it as a JPEG data URL no larger than 2048 px on its long side
+  const fileToImage = async (file: File): Promise<{ dataUrl: string; blob: Blob; width: number; height: number }> => {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 2048 / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("This browser cannot read the image");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+    const blob: Blob = await new Promise((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("The image could not be converted"))), "image/jpeg", 0.88)
+    );
+    return { dataUrl: canvas.toDataURL("image/jpeg", 0.88), blob, width, height };
+  };
+
+  const handleSaveMediaPlacement = async () => {
     if (!inspectingMedia) return;
     const isProperty = placeCategory === "properties";
+    if (!editTitle.trim()) {
+      alert("The image needs a title.");
+      return;
+    }
     if (isProperty && !placeClass.trim() && !placeUnit.trim()) {
       alert("Choose a property class (or type a unit name) so Unreal knows which units this image belongs to.");
       return;
     }
-    const otherTags = (inspectingMedia.tags || []).filter((t) => t.toLowerCase().replace(/[\s_-]/g, "") !== "floorplan");
-    const updated: MediaResource = {
-      ...inspectingMedia,
-      category: placeCategory,
-      propertyClass: isProperty && placeClass.trim() ? placeClass.trim() : undefined,
-      propertyName: isProperty && placeUnit.trim() ? placeUnit.trim() : undefined,
-      tags: isProperty && placeFloorPlan ? ["floorplan", ...otherTags] : otherTags,
-    };
-    // Firestore rejects undefined fields
-    Object.keys(updated).forEach((k) => (updated as any)[k] === undefined && delete (updated as any)[k]);
-    onUpdateClient({
-      ...client,
-      mediaResources: mediaList.map((m) => (m.id === updated.id ? updated : m)),
-      updatedAt: new Date().toISOString(),
-    });
-    setInspectingMedia(updated);
-    onRecordLog({
-      clientId: client.id,
-      clientName: client.name,
-      type: "config_change",
-      status: "success",
-      details: `Updated media "${updated.title}": ${updated.category}${updated.propertyClass ? `, class ${updated.propertyClass}` : ""}${isProperty && placeFloorPlan ? ", floor plan" : ""}`,
-    });
+    setSavingMedia(true);
+    try {
+      const otherTags = (inspectingMedia.tags || []).filter((t) => t.toLowerCase().replace(/[\s_-]/g, "") !== "floorplan");
+      const updated: MediaResource = {
+        ...inspectingMedia,
+        title: editTitle.trim(),
+        description: editDescription.trim() || undefined,
+        category: placeCategory,
+        propertyClass: isProperty && placeClass.trim() ? placeClass.trim() : undefined,
+        propertyName: isProperty && placeUnit.trim() ? placeUnit.trim() : undefined,
+        tags: isProperty && placeFloorPlan ? ["floorplan", ...otherTags] : otherTags,
+      };
+
+      // Replace the picture itself, keeping the same record (and the same Google Drive file when it has one)
+      if (replaceFile) {
+        const image = await fileToImage(replaceFile);
+        updated.dimensions = { width: image.width, height: image.height };
+        updated.fileSize = image.blob.size;
+        if (updated.driveFileId) {
+          const token = await resolveAccessToken();
+          if (!token) throw new Error("Sign in with Google to replace an image that is stored on Google Drive.");
+          const upload = await fetch(
+            `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(updated.driveFileId)}?uploadType=media&fields=id,thumbnailLink,webViewLink`,
+            { method: "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" }, body: image.blob }
+          );
+          if (!upload.ok) throw new Error(`Google Drive did not accept the new image (HTTP ${upload.status}).`);
+          const info = await upload.json().catch(() => ({}));
+          if (info.thumbnailLink) {
+            updated.url = info.thumbnailLink;
+            updated.driveThumbnailLink = info.thumbnailLink;
+          }
+        } else {
+          updated.url = image.dataUrl;
+        }
+      }
+
+      // Firestore rejects undefined fields
+      Object.keys(updated).forEach((k) => (updated as any)[k] === undefined && delete (updated as any)[k]);
+      onUpdateClient({
+        ...client,
+        mediaResources: mediaList.map((m) => (m.id === updated.id ? updated : m)),
+        updatedAt: new Date().toISOString(),
+      });
+      setInspectingMedia(updated);
+      setReplaceFile(null);
+      onRecordLog({
+        clientId: client.id,
+        clientName: client.name,
+        type: "config_change",
+        status: "success",
+        details: `Updated media "${updated.title}": ${updated.category}${updated.propertyClass ? `, class ${updated.propertyClass}` : ""}${isProperty && placeFloorPlan ? ", floor plan" : ""}${replaceFile ? ", image replaced" : ""}`,
+      });
+    } catch (e: any) {
+      alert(`The image could not be saved: ${e?.message || e}`);
+    } finally {
+      setSavingMedia(false);
+    }
   };
 
   // Copy Image URL / Base64 to clipboard
@@ -2517,9 +2584,39 @@ export default function MediaResourcesTab({
                   </div>
                 )}
 
-                {/* Where this image shows in Unreal */}
+                {/* Edit this image: title, description, picture, and where it shows in Unreal */}
                 <div className="pt-2 border-t border-white/10 space-y-2">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Where it shows in Unreal</span>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Edit image</span>
+                  <input
+                    type="text"
+                    placeholder="Title"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="w-full px-2 py-1.5 bg-black border border-white/10 text-white rounded-lg text-xs"
+                  />
+                  <textarea
+                    placeholder="Description (optional)"
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    rows={2}
+                    className="w-full px-2 py-1.5 bg-black border border-white/10 text-white rounded-lg text-xs"
+                  />
+                  <label className="block text-[10.5px] text-gray-300">
+                    Replace the image (optional)
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setReplaceFile(e.target.files?.[0] || null)}
+                      className="mt-1 block w-full text-[10.5px] text-gray-400 file:mr-2 file:rounded file:border-0 file:bg-white/10 file:px-2 file:py-1 file:text-gray-200"
+                    />
+                  </label>
+                  {replaceFile && (
+                    <p className="text-[10px] text-amber-300">
+                      "{replaceFile.name}" will replace the current picture when you save
+                      {inspectingMedia.driveFileId ? ", including the copy on Google Drive" : ""}. This cannot be undone here.
+                    </p>
+                  )}
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block pt-1">Where it shows in Unreal</span>
                   <select
                     value={placeCategory}
                     onChange={(e) => setPlaceCategory(e.target.value as MediaResource["category"])}
@@ -2561,10 +2658,11 @@ export default function MediaResourcesTab({
                   )}
                   <button
                     type="button"
-                    onClick={handleSaveMediaPlacement}
-                    className="w-full py-1.5 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs transition cursor-pointer"
+                    onClick={() => void handleSaveMediaPlacement()}
+                    disabled={savingMedia}
+                    className="w-full py-1.5 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs transition cursor-pointer disabled:opacity-50"
                   >
-                    Save placement
+                    {savingMedia ? "Saving..." : "Save changes"}
                   </button>
                   <p className="text-[10px] text-gray-500">Press Push to UE5 afterwards to send the change to Unreal.</p>
                 </div>
