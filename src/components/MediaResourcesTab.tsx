@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useMemo } from "react";
+import React, { useState, useRef, useMemo, useEffect } from "react";
 import {
   Upload,
   Image as ImageIcon,
@@ -382,7 +382,9 @@ export default function MediaResourcesTab({
       category: formCategory,
       title: formTitle.trim(),
       description: formDescription.trim() || undefined,
-      url: formMediaUrl,
+      // Once the file is on Google Drive the image itself is not kept in the client record: an embedded image
+      // can push the record past the database's size limit, and the save is then lost
+      url: driveFileId && driveThumbnailLink ? driveThumbnailLink : formMediaUrl,
       fileName: formFileName || `${formTitle.trim().replace(/\s+/g, "_")}.jpg`,
       fileSize: formFileSize || undefined,
       dimensions: formDimensions || undefined,
@@ -860,6 +862,52 @@ export default function MediaResourcesTab({
     if (inspectingMedia?.id === mediaId) {
       setInspectingMedia(null);
     }
+  };
+
+  // Change where an existing image shows in Unreal: its category, unit type, and whether it is a floor plan.
+  // Images imported from Google Drive arrive as plain project images, so this is how they are assigned to a unit type.
+  const [placeCategory, setPlaceCategory] = useState<MediaResource["category"]>("project");
+  const [placeClass, setPlaceClass] = useState("");
+  const [placeUnit, setPlaceUnit] = useState("");
+  const [placeFloorPlan, setPlaceFloorPlan] = useState(false);
+  useEffect(() => {
+    if (!inspectingMedia) return;
+    setPlaceCategory(inspectingMedia.category);
+    setPlaceClass(inspectingMedia.propertyClass || "");
+    setPlaceUnit(inspectingMedia.propertyName || "");
+    setPlaceFloorPlan((inspectingMedia.tags || []).some((t) => t.toLowerCase().replace(/[\s_-]/g, "") === "floorplan"));
+  }, [inspectingMedia?.id]);
+
+  const handleSaveMediaPlacement = () => {
+    if (!inspectingMedia) return;
+    const isProperty = placeCategory === "properties";
+    if (isProperty && !placeClass.trim() && !placeUnit.trim()) {
+      alert("Choose a property class (or type a unit name) so Unreal knows which units this image belongs to.");
+      return;
+    }
+    const otherTags = (inspectingMedia.tags || []).filter((t) => t.toLowerCase().replace(/[\s_-]/g, "") !== "floorplan");
+    const updated: MediaResource = {
+      ...inspectingMedia,
+      category: placeCategory,
+      propertyClass: isProperty && placeClass.trim() ? placeClass.trim() : undefined,
+      propertyName: isProperty && placeUnit.trim() ? placeUnit.trim() : undefined,
+      tags: isProperty && placeFloorPlan ? ["floorplan", ...otherTags] : otherTags,
+    };
+    // Firestore rejects undefined fields
+    Object.keys(updated).forEach((k) => (updated as any)[k] === undefined && delete (updated as any)[k]);
+    onUpdateClient({
+      ...client,
+      mediaResources: mediaList.map((m) => (m.id === updated.id ? updated : m)),
+      updatedAt: new Date().toISOString(),
+    });
+    setInspectingMedia(updated);
+    onRecordLog({
+      clientId: client.id,
+      clientName: client.name,
+      type: "config_change",
+      status: "success",
+      details: `Updated media "${updated.title}": ${updated.category}${updated.propertyClass ? `, class ${updated.propertyClass}` : ""}${isProperty && placeFloorPlan ? ", floor plan" : ""}`,
+    });
   };
 
   // Copy Image URL / Base64 to clipboard
@@ -2408,6 +2456,58 @@ export default function MediaResourcesTab({
                     </div>
                   </div>
                 )}
+
+                {/* Where this image shows in Unreal */}
+                <div className="pt-2 border-t border-white/10 space-y-2">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Where it shows in Unreal</span>
+                  <select
+                    value={placeCategory}
+                    onChange={(e) => setPlaceCategory(e.target.value as MediaResource["category"])}
+                    className="w-full px-2 py-1.5 bg-black border border-white/10 text-white rounded-lg text-xs cursor-pointer"
+                  >
+                    <option value="project">Project: main gallery</option>
+                    <option value="services">Services</option>
+                    <option value="properties">Properties: a unit's details window</option>
+                  </select>
+                  {placeCategory === "properties" && (
+                    <>
+                      <input
+                        type="text"
+                        list="media-placement-classes"
+                        placeholder="Property class, e.g. A1"
+                        value={placeClass}
+                        onChange={(e) => setPlaceClass(e.target.value)}
+                        className="w-full px-2 py-1.5 bg-black border border-cyan-500/40 text-cyan-200 rounded-lg text-xs"
+                      />
+                      <datalist id="media-placement-classes">
+                        {sheetClasses.map((cls) => (
+                          <option key={cls} value={cls} />
+                        ))}
+                      </datalist>
+                      <input
+                        type="text"
+                        placeholder="Only one unit, e.g. Z1B11 (optional)"
+                        value={placeUnit}
+                        onChange={(e) => setPlaceUnit(e.target.value)}
+                        className="w-full px-2 py-1.5 bg-black border border-white/10 text-white rounded-lg text-xs"
+                      />
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input type="checkbox" checked={placeFloorPlan} onChange={(e) => setPlaceFloorPlan(e.target.checked)} className="mt-0.5" />
+                        <span className="text-[10.5px] text-gray-300">
+                          <strong className="text-cyan-300">This image is a floor plan.</strong> Shown in the Floor plans tab, never in the main gallery.
+                        </span>
+                      </label>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleSaveMediaPlacement}
+                    className="w-full py-1.5 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs transition cursor-pointer"
+                  >
+                    Save placement
+                  </button>
+                  <p className="text-[10px] text-gray-500">Press Push to UE5 afterwards to send the change to Unreal.</p>
+                </div>
 
                 {/* Google Drive Status & Direct Access */}
                 <div className="pt-2 border-t border-white/10 space-y-2">
