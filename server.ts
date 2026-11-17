@@ -9,6 +9,7 @@ import {
   getEmailAuditHistory 
 } from "./src/serverEmailNotifier";
 import { BugNotificationPayload } from "./src/types";
+import { registerInsightsRoutes } from "./src/serverInsights";
 
 async function startServer() {
   const app = express();
@@ -991,6 +992,10 @@ async function startServer() {
   });
 
   // Attach Vite development server or production static distribution layer
+  // Buyer shortlists (QR handoff), leads and usage analytics from the Unreal app. Registered before the
+  // page fallback below so /s/<id> and the new /api routes are not answered with the portal page.
+  await registerInsightsRoutes(app, { isKnownClient: () => true });
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

@@ -95,8 +95,14 @@ service cloud.firestore {
     }
 
     // Global read access for diagnostic validation and portal access
+    // Buyer leads, shortlists and usage analytics are written and read only by the portal server (Admin SDK),
+    // which checks the signed-in user's role itself. They are excluded from the global read below.
+    function isServerOnlyCollection() {
+      return request.path[3] in ['leads', 'shortlists', 'analyticsEvents', 'analyticsDaily'];
+    }
+
     match /{document=**} {
-      allow read: if true;
+      allow read: if !isServerOnlyCollection();
     }
   }
 }
