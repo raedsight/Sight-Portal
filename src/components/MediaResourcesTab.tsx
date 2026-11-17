@@ -66,6 +66,17 @@ interface MediaResourcesTabProps {
   clientEmail?: string;
 }
 
+// What a property image is for. Stored as a tag so the Unreal app can tell them apart.
+type ImageKind = "photo" | "floorplan" | "room";
+const normalizeTag = (tag: string) => tag.toLowerCase().replace(/[\s_-]/g, "");
+const isKindTag = (tag: string) => ["floorplan", "room", "rooms", "roomimage"].includes(normalizeTag(tag));
+const kindOfTags = (tags?: string[]): ImageKind => {
+  const all = (tags || []).map(normalizeTag);
+  if (all.includes("floorplan")) return "floorplan";
+  if (all.some((t) => t === "room" || t === "rooms" || t === "roomimage")) return "room";
+  return "photo";
+};
+
 export default function MediaResourcesTab({
   client,
   sheetData,
@@ -119,8 +130,8 @@ export default function MediaResourcesTab({
   const [formPropertyName, setFormPropertyName] = useState("");
   const [formServiceName, setFormServiceName] = useState("");
   const [formTags, setFormTags] = useState("");
-  // Floor plans are property images tagged "floorplan"; the Unreal app shows them in the unit's Floor plan tab
-  const [formIsFloorPlan, setFormIsFloorPlan] = useState(false);
+  // A property image is a photo, a floor plan (tag "floorplan") or a room image (tag "room"); Unreal shows each in its own place
+  const [formKind, setFormKind] = useState<ImageKind>("photo");
   const [formMediaUrl, setFormMediaUrl] = useState("");
   const [formFileName, setFormFileName] = useState("");
   const [formFileSize, setFormFileSize] = useState<number>(0);
@@ -261,7 +272,7 @@ export default function MediaResourcesTab({
     setFormPropertyName("");
     setFormServiceName("");
     setFormTags("");
-    setFormIsFloorPlan(false);
+    setFormKind("photo");
     setFormMediaUrl("");
     setFormFileName("");
     setFormFileSize(0);
@@ -396,8 +407,8 @@ export default function MediaResourcesTab({
         const tags = formTags
           .split(",")
           .map((t) => t.trim())
-          .filter((t) => t && t.toLowerCase() !== "floorplan");
-        if (formCategory === "properties" && formIsFloorPlan) tags.unshift("floorplan");
+          .filter((t) => t && !isKindTag(t));
+        if (formCategory === "properties" && formKind !== "photo") tags.unshift(formKind);
         return tags.length ? tags : undefined;
       })(),
       uploadedAt: timestamp,
@@ -869,7 +880,7 @@ export default function MediaResourcesTab({
   const [placeCategory, setPlaceCategory] = useState<MediaResource["category"]>("project");
   const [placeClass, setPlaceClass] = useState("");
   const [placeUnit, setPlaceUnit] = useState("");
-  const [placeFloorPlan, setPlaceFloorPlan] = useState(false);
+  const [placeKind, setPlaceKind] = useState<ImageKind>("photo");
   // Title, description and a replacement image for the same record
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
@@ -883,7 +894,7 @@ export default function MediaResourcesTab({
     setPlaceCategory(inspectingMedia.category);
     setPlaceClass(inspectingMedia.propertyClass || "");
     setPlaceUnit(inspectingMedia.propertyName || "");
-    setPlaceFloorPlan((inspectingMedia.tags || []).some((t) => t.toLowerCase().replace(/[\s_-]/g, "") === "floorplan"));
+    setPlaceKind(kindOfTags(inspectingMedia.tags));
   }, [inspectingMedia?.id]);
 
   // Reads an image file and returns it as a JPEG data URL no larger than 2048 px on its long side
@@ -920,7 +931,7 @@ export default function MediaResourcesTab({
     }
     setSavingMedia(true);
     try {
-      const otherTags = (inspectingMedia.tags || []).filter((t) => t.toLowerCase().replace(/[\s_-]/g, "") !== "floorplan");
+      const otherTags = (inspectingMedia.tags || []).filter((t) => !isKindTag(t));
       const updated: MediaResource = {
         ...inspectingMedia,
         title: editTitle.trim(),
@@ -928,7 +939,7 @@ export default function MediaResourcesTab({
         category: placeCategory,
         propertyClass: isProperty && placeClass.trim() ? placeClass.trim() : undefined,
         propertyName: isProperty && placeUnit.trim() ? placeUnit.trim() : undefined,
-        tags: isProperty && placeFloorPlan ? ["floorplan", ...otherTags] : otherTags,
+        tags: isProperty && placeKind !== "photo" ? [placeKind, ...otherTags] : otherTags,
       };
 
       // Replace the picture itself, keeping the same record (and the same Google Drive file when it has one)
@@ -968,7 +979,7 @@ export default function MediaResourcesTab({
         clientName: client.name,
         type: "config_change",
         status: "success",
-        details: `Updated media "${updated.title}": ${updated.category}${updated.propertyClass ? `, class ${updated.propertyClass}` : ""}${isProperty && placeFloorPlan ? ", floor plan" : ""}${replaceFile ? ", image replaced" : ""}`,
+        details: `Updated media "${updated.title}": ${updated.category}${updated.propertyClass ? `, class ${updated.propertyClass}` : ""}${isProperty && placeKind !== "photo" ? `, ${placeKind === "room" ? "room image" : "floor plan"}` : ""}${replaceFile ? ", image replaced" : ""}`,
       });
     } catch (e: any) {
       alert(`The image could not be saved: ${e?.message || e}`);
@@ -2103,18 +2114,20 @@ export default function MediaResourcesTab({
                     />
                   </div>
 
-                  <label className="flex items-start gap-2 pt-2 border-t border-cyan-500/15 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formIsFloorPlan}
-                      onChange={(e) => setFormIsFloorPlan(e.target.checked)}
-                      className="mt-0.5"
-                    />
-                    <span className="text-[10.5px] text-gray-300">
-                      <strong className="text-cyan-300">This image is a floor plan.</strong> It is shown in the unit's Floor plan
-                      tab in Unreal for every unit of this class (or only the unit named above), and is kept out of the photo gallery.
-                    </span>
-                  </label>
+                  <div className="pt-2 border-t border-cyan-500/15">
+                    <label className="block text-[10.5px] text-gray-300">
+                      What kind of image is this?
+                      <select
+                        value={formKind}
+                        onChange={(e) => setFormKind(e.target.value as ImageKind)}
+                        className="mt-1 w-full px-2 py-1.5 bg-black border border-cyan-500/40 text-cyan-200 rounded-lg text-xs cursor-pointer"
+                      >
+                        <option value="photo">Photo: the Images tab of the unit's details window</option>
+                        <option value="floorplan">Floor plan: the Floor Plans tab of the unit's details window</option>
+                        <option value="room">Room image: the Rooms gallery inside this unit type's interior</option>
+                      </select>
+                    </label>
+                  </div>
                 </div>
               )}
 
@@ -2588,12 +2601,18 @@ export default function MediaResourcesTab({
                         onChange={(e) => setPlaceUnit(e.target.value)}
                         className="w-full px-2 py-1.5 bg-black border border-white/10 text-white rounded-lg text-xs"
                       />
-                      <label className="flex items-start gap-2 cursor-pointer">
-                        <input type="checkbox" checked={placeFloorPlan} onChange={(e) => setPlaceFloorPlan(e.target.checked)} className="mt-0.5" />
-                        <span className="text-[10.5px] text-gray-300">
-                          <strong className="text-cyan-300">This image is a floor plan.</strong> Shown in the Floor plans tab, never in the main gallery.
-                        </span>
-                      </label>
+                    <label className="block text-[10.5px] text-gray-300">
+                      What kind of image is this?
+                      <select
+                        value={placeKind}
+                        onChange={(e) => setPlaceKind(e.target.value as ImageKind)}
+                        className="mt-1 w-full px-2 py-1.5 bg-black border border-cyan-500/40 text-cyan-200 rounded-lg text-xs cursor-pointer"
+                      >
+                        <option value="photo">Photo: the Images tab of the unit's details window</option>
+                        <option value="floorplan">Floor plan: the Floor Plans tab of the unit's details window</option>
+                        <option value="room">Room image: the Rooms gallery inside this unit type's interior</option>
+                      </select>
+                    </label>
                     </>
                   )}
                   <button
