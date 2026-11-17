@@ -21,3 +21,6 @@ coverage/
 
 # Gallery media catalog cache written by server.ts
 clients_media_cache.json
+
+# Shortlists, leads and analytics fallback store written by src/serverInsights.ts when Firestore is unavailable
+insights_cache.json

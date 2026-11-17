@@ -119,6 +119,8 @@ export default function MediaResourcesTab({
   const [formPropertyName, setFormPropertyName] = useState("");
   const [formServiceName, setFormServiceName] = useState("");
   const [formTags, setFormTags] = useState("");
+  // Floor plans are property images tagged "floorplan"; the Unreal app shows them in the unit's Floor plan tab
+  const [formIsFloorPlan, setFormIsFloorPlan] = useState(false);
   const [formMediaUrl, setFormMediaUrl] = useState("");
   const [formFileName, setFormFileName] = useState("");
   const [formFileSize, setFormFileSize] = useState<number>(0);
@@ -259,6 +261,7 @@ export default function MediaResourcesTab({
     setFormPropertyName("");
     setFormServiceName("");
     setFormTags("");
+    setFormIsFloorPlan(false);
     setFormMediaUrl("");
     setFormFileName("");
     setFormFileSize(0);
@@ -387,12 +390,14 @@ export default function MediaResourcesTab({
       propertyClass: formCategory === "properties" ? formPropertyClass.trim() : undefined,
       propertyName: formCategory === "properties" && formPropertyName.trim() ? formPropertyName.trim() : undefined,
       serviceName: formCategory === "services" && formServiceName.trim() ? formServiceName.trim() : undefined,
-      tags: formTags
-        ? formTags
-            .split(",")
-            .map((t) => t.trim())
-            .filter(Boolean)
-        : undefined,
+      tags: (() => {
+        const tags = formTags
+          .split(",")
+          .map((t) => t.trim())
+          .filter((t) => t && t.toLowerCase() !== "floorplan");
+        if (formCategory === "properties" && formIsFloorPlan) tags.unshift("floorplan");
+        return tags.length ? tags : undefined;
+      })(),
       uploadedAt: timestamp,
       driveFileId,
       driveWebViewLink,
@@ -1982,6 +1987,19 @@ export default function MediaResourcesTab({
                       className="w-full px-3 py-1.5 bg-black border border-white/10 text-white rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
                   </div>
+
+                  <label className="flex items-start gap-2 pt-2 border-t border-cyan-500/15 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formIsFloorPlan}
+                      onChange={(e) => setFormIsFloorPlan(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span className="text-[10.5px] text-gray-300">
+                      <strong className="text-cyan-300">This image is a floor plan.</strong> It is shown in the unit's Floor plan
+                      tab in Unreal for every unit of this class (or only the unit named above), and is kept out of the photo gallery.
+                    </span>
+                  </label>
                 </div>
               )}
 

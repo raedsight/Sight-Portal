@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect, useRef } from "react";
-import { 
+import {
+  BarChart3, 
   ArrowLeft, 
   RefreshCw, 
   Send, 
@@ -57,6 +58,7 @@ import { extractSpreadsheetId, getStoredClientSheet, saveStoredClientSheet, SPRE
 import { initAuth, googleSignIn, logout, getAccessToken } from "../firebaseAuth";
 import { saveClientSheetData } from "../firebase";
 import MediaResourcesTab from "./MediaResourcesTab";
+import InsightsTab from "./InsightsTab";
 import { notifyAdminBugEvent } from "../services/bugNotificationService";
 import { syncClientMediaWithDrive } from "../services/googleDrive";
 
@@ -153,7 +155,7 @@ export default function ClientDashboard({
   };
   
   // Tab indicator
-  const [activeTab, setActiveTab ] = useState<"workspace" | "media" | "bugs">("workspace");
+  const [activeTab, setActiveTab ] = useState<"workspace" | "media" | "insights" | "bugs">("workspace");
   
   // Bug tracking states
   const [selectedBugId, setSelectedBugId] = useState<string | null>(null);
@@ -2030,6 +2032,19 @@ export default function ClientDashboard({
               </span>
             )}
           </button>
+
+          <button
+            onClick={() => setActiveTab("insights")}
+            title="Open leads captured in the Unreal app and usage analytics"
+            className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 ${
+              activeTab === "insights"
+                ? "border-emerald-500 text-emerald-400 bg-emerald-500/5"
+                : "border-transparent text-gray-400 hover:text-white"
+            }`}
+          >
+            <BarChart3 className="h-4 w-4 text-emerald-400" />
+            Leads & Analytics
+          </button>
           
           <button
             onClick={() => {
@@ -3131,6 +3146,9 @@ export default function ClientDashboard({
             clientEmail={currentUser?.email}
           />
         )}
+
+        {/* Leads captured in the Unreal app and usage analytics */}
+        {activeTab === "insights" && <InsightsTab clientId={client.id} />}
 
         {/* Tab 3: QA Bug Tracker */}
         {activeTab === "bugs" && (
