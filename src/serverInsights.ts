@@ -504,8 +504,29 @@ async function sendLeadEmail(lead: Lead, shortlistUrl: string | null): Promise<v
     shortlistUrl ? `Shortlist: ${shortlistUrl}` : "",
     `Received: ${lead.createdAt}`,
   ].filter(Boolean);
+  await deliverEmail(recipient, subject, lines, `Lead ${lead.id} is stored`);
+}
+
+// What the buyer receives after an advisor reserves a unit for them: a short confirmation, with none of the
+// portal's internal details
+async function sendReservationConfirmation(lead: Lead, projectName: string): Promise<void> {
+  if (!lead.email || !lead.reservedUnit) return;
+  const project = projectName || "our project";
+  const lines = [
+    `Dear ${lead.name},`,
+    `Thank you for your interest in ${project}. Unit ${lead.reservedUnit} has been reserved in your name.`,
+    "Our sales team will contact you shortly to confirm the details and the next steps.",
+    `Phone on file: ${lead.phone}`,
+    lead.city || lead.country ? `Address on file: ${[lead.city, lead.country].filter(Boolean).join(", ")}` : "",
+    "If you did not ask for this reservation, please reply to this email.",
+  ].filter(Boolean);
+  await deliverEmail(lead.email, `Your reservation of unit ${lead.reservedUnit} at ${project}`, lines, `Reservation ${lead.id} is stored`);
+}
+
+async function deliverEmail(recipient: string, subject: string, lines: string[], what: string): Promise<void> {
   const text = lines.join("\n");
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6">${lines.map((l) => `<div>${escapeHtml(l)}</div>`).join("")}</div>`;
+  const cleanSubject = subject.replace(/[\r\n]+/g, " ").slice(0, 200);
   try {
     if (process.env.SMTP_HOST && process.env.SMTP_USER) {
       const transporter = nodemailer.createTransport({
@@ -514,19 +535,19 @@ async function sendLeadEmail(lead: Lead, shortlistUrl: string | null): Promise<v
         secure: process.env.SMTP_SECURE === "true" || process.env.SMTP_PORT === "465",
         auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
       });
-      await transporter.sendMail({ from: process.env.FROM_EMAIL || `"Sight Portal" <no-reply@sightportal.app>`, to: recipient, subject, text, html });
+      await transporter.sendMail({ from: process.env.FROM_EMAIL || `"Sight Portal" <no-reply@sightportal.app>`, to: recipient, subject: cleanSubject, text, html });
     } else if (process.env.RESEND_API_KEY) {
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from: process.env.RESEND_FROM || "Sight Portal <onboarding@resend.dev>", to: [recipient], subject, html, text }),
+        body: JSON.stringify({ from: process.env.RESEND_FROM || "Sight Portal <onboarding@resend.dev>", to: [recipient], subject: cleanSubject, html, text }),
       });
       if (!res.ok) throw new Error(`Resend answered ${res.status}`);
     } else {
-      console.log(`[Insights] No email service is configured; lead ${lead.id} is stored but no email was sent.`);
+      console.log(`[Insights] No email service is configured; ${what} but no email was sent.`);
     }
   } catch (e: any) {
-    console.warn(`[Insights] Lead ${lead.id} is stored, but the email failed:`, e?.message || e);
+    console.warn(`[Insights] ${what}, but the email to ${recipient} failed:`, e?.message || e);
   }
 }
 
@@ -637,6 +658,8 @@ export interface InsightsRoutes {
   // True when the request carries a valid portal sign-in (in X-Portal-Auth or Authorization). Answers nothing
   // itself; used to decide whether a large request body is read at all.
   hasValidSignIn: (req: Request) => Promise<boolean>;
+  // The unit rows the portal has saved for a client, or null (also null without the database connection)
+  loadSheetRows: (clientSlug: string) => Promise<Record<string, any>[] | null>;
   // Email addresses of the moderators assigned to a client (empty without the database connection)
   listModeratorEmails: (clientSlug: string) => Promise<string[]>;
 }
@@ -1122,6 +1145,11 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
       });
       await store.saveLead(lead);
       if (!overLimit(`lead-email:${clientSlug}`, 20, 3_600_000)) void sendLeadEmail(lead, null);
+      // The buyer gets a confirmation at the address the advisor typed (same hourly ceiling per project)
+      if (!overLimit(`buyer-email:${clientSlug}`, 20, 3_600_000)) {
+        void (async () => sendReservationConfirmation(lead, admin ? cleanText(await admin.getClientName(clientSlug), 80) : ""))()
+          .catch((e) => console.warn("[Insights] Could not send a reservation confirmation:", e?.message || e));
+      }
       res.json({ status: "ok", unit: unitName, availability: RESERVED_STATUS, lead_id: lead.id });
     } catch (e: any) {
       console.error("[Insights] Could not reserve a unit:", e?.message || e);
@@ -1271,5 +1299,15 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
     }
   });
 
-  return { authorize, authorizeWrite, authorizeAdmin, authorizeMember, hasValidSignIn, listModeratorEmails };
+  const loadSheetRows = async (clientSlug: string): Promise<Record<string, any>[] | null> => {
+    if (!admin || !SLUG_PATTERN.test(clientSlug)) return null;
+    try {
+      return await admin.getSheetRows(clientSlug);
+    } catch (e: any) {
+      console.error("[Insights] Could not load a client's unit rows:", e?.message || e);
+      return null;
+    }
+  };
+
+  return { authorize, authorizeWrite, authorizeAdmin, authorizeMember, hasValidSignIn, listModeratorEmails, loadSheetRows };
 }

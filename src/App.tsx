@@ -522,9 +522,23 @@ export default function App() {
   };
 
   const handleUpdateClient = async (updatedClient: Client) => {
-    await createOrUpdateClient(updatedClient);
+    // Show the change at once, then save it. If the save fails, say so: a silent failure looks like the
+    // change was kept until the page is reloaded and it is gone.
     if (selectedClient && selectedClient.id === updatedClient.id) {
       setSelectedClient(updatedClient);
+    }
+    try {
+      await createOrUpdateClient(updatedClient);
+    } catch (err: any) {
+      console.error("[Save] The change to the client was not saved:", err);
+      let reason = err?.message || String(err);
+      try {
+        reason = JSON.parse(reason).error || reason;
+      } catch {
+        // not a structured error
+      }
+      alert(`This change could not be saved, so it will be gone after a reload.\n\nReason: ${String(reason).slice(0, 300)}`);
+      return;
     }
     await handleRecordLog({
       clientId: updatedClient.id,
