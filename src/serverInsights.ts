@@ -175,6 +175,8 @@ interface InsightsStore {
   saveLead(lead: Lead): Promise<void>;
   listLeads(clientSlug: string, limit: number): Promise<Lead[]>;
   updateLeadStatus(id: string, clientSlug: string, status: Lead["status"]): Promise<boolean>;
+  // Removes a lead for good. False when there is no such lead for this client.
+  deleteLead(id: string, clientSlug: string): Promise<boolean>;
   saveEvents(events: AnalyticsEvent[], newSessions: number): Promise<void>;
   listDaily(clientSlug: string, sinceDay: string): Promise<DailyAggregate[]>;
   // The individual events of one kind, newest first (for the dashboard's drill-down)
@@ -226,6 +228,11 @@ function createDiskStore(): InsightsStore {
       const lead = state.leads[id];
       if (!lead || lead.clientSlug !== clientSlug) return false;
       lead.status = status; persist(); return true;
+    },
+    async deleteLead(id, clientSlug) {
+      const lead = state.leads[id];
+      if (!lead || lead.clientSlug !== clientSlug) return false;
+      delete state.leads[id]; persist(); return true;
     },
     async saveEvents(events, newSessions) {
       state.events.push(...events);
@@ -341,6 +348,13 @@ async function createAdminContext(): Promise<AdminContext | null> {
         const snap = await ref.get();
         if (!snap.exists || (snap.data() as Lead).clientSlug !== clientSlug) return false;
         await ref.update({ status });
+        return true;
+      },
+      async deleteLead(id, clientSlug) {
+        const ref = db.collection("leads").doc(id);
+        const snap = await ref.get();
+        if (!snap.exists || (snap.data() as Lead).clientSlug !== clientSlug) return false;
+        await ref.delete();
         return true;
       },
       async saveEvents(events, newSessions) {
@@ -976,6 +990,27 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
     } catch (e: any) {
       console.error("[Insights] Could not update a lead:", e?.message || e);
       res.status(500).json({ status: "error", error: "The lead could not be updated." });
+    }
+  });
+
+  // Portal: removes a lead for good (a test entry, a duplicate, a buyer who asked to be forgotten). For the people
+  // who look after the portal: the owner, admins and the client's moderators. The buyer's shortlist page, which
+  // holds units only and no contact details, is left as it is.
+  app.delete("/api/leads/:id", async (req, res) => {
+    const clientSlug = cleanSlug(req.query.slug);
+    if (!clientSlug || !/^[A-Za-z0-9_-]{6,64}$/.test(req.params.id)) return res.status(400).json({ status: "error", error: "slug and a lead are required." });
+    try {
+      if (admin) {
+        if (!(await checkStaff(req, res, clientSlug))) return;
+      } else if (!(process.env.NODE_ENV !== "production" && isLoopback(req))) {
+        return res.status(503).json({ status: "error", error: "This needs the FIREBASE_SERVICE_ACCOUNT secret on the server." });
+      }
+      const removed = await store.deleteLead(req.params.id, clientSlug);
+      if (!removed) return res.status(404).json({ status: "error", error: "Lead not found." });
+      res.json({ status: "ok" });
+    } catch (e: any) {
+      console.error("[Insights] Could not delete a lead:", e?.message || e);
+      res.status(500).json({ status: "error", error: "The lead could not be deleted." });
     }
   });
 

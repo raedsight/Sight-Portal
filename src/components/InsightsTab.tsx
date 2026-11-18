@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { BarChart3, MessageCircle, Phone, RefreshCw, Users } from "lucide-react";
+import { BarChart3, MessageCircle, Phone, RefreshCw, Trash2, Users } from "lucide-react";
 import { auth } from "../firebase";
 
 interface LeadRow {
@@ -227,6 +227,18 @@ export default function InsightsTab({ clientId, clientName }: { clientId: string
     }
   };
 
+  // Owner, admins and the project's moderators only (the same people who can change the traffic limits)
+  const canDeleteLeads = traffic?.canEdit === true;
+  const deleteLead = async (lead: LeadRow) => {
+    if (!confirm(`Delete the lead '${lead.name}' (${lead.phone}) for good? This cannot be undone.`)) return;
+    try {
+      await authorizedFetch(`/api/leads/${encodeURIComponent(lead.id)}?slug=${encodeURIComponent(clientId)}`, { method: "DELETE" });
+      setLeads((rows) => rows.filter((r) => r.id !== lead.id));
+    } catch (e: any) {
+      setError(e?.message || "Could not delete the lead.");
+    }
+  };
+
   // Every known event, in a fixed order, 0 included; then anything else the app sent
   const known = EVENT_ORDER.map((name) => [name, summary?.totals?.[name] ?? 0] as [string, number]);
   const extra = (Object.entries(summary?.totals ?? {}) as [string, number][]).filter(([name]) => !EVENT_ORDER.includes(name));
@@ -358,6 +370,15 @@ export default function InsightsTab({ clientId, clientName }: { clientId: string
                           </option>
                         ))}
                       </select>
+                      {canDeleteLeads && (
+                        <button
+                          onClick={() => void deleteLead(lead)}
+                          title="Delete this lead for good"
+                          className="ml-2 p-1.5 rounded border border-white/10 bg-white/5 hover:bg-red-950/20 text-red-400 hover:border-red-900/40 cursor-pointer align-middle"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
