@@ -198,7 +198,7 @@ export default function AdminConsole({
   const [fontFamily, setFontFamily] = useState<"sans" | "mono" | "grotesk">("grotesk");
   const [selectedTemplate, setSelectedTemplate] = useState<string>("Virtual Camera & Rig Parameters");
 
-  const [userEdits, setUserEdits] = useState<Record<string, { role: "owner" | "admin" | "client"; clientId: string | null }>>({});
+  const [userEdits, setUserEdits] = useState<Record<string, { role: UserProfile["role"]; clientId: string | null; clientIds: string[] }>>({});
   const [themePresets, setThemePresets] = useState<ThemePreset[]>([]);
 
   // Listen for theme presets changes
@@ -1285,8 +1285,9 @@ export default function AdminConsole({
                 ) : (
                   filteredUsers.map((profile) => {
                     // Pull current state or edit overrides
-                    const currentEdits = userEdits[profile.uid] || { role: profile.role, clientId: profile.clientId || "" };
-                    const isEdited = currentEdits.role !== profile.role || currentEdits.clientId !== (profile.clientId || "");
+                    const currentEdits = userEdits[profile.uid] || { role: profile.role, clientId: profile.clientId || "", clientIds: profile.clientIds || [] };
+                    const isEdited = currentEdits.role !== profile.role || currentEdits.clientId !== (profile.clientId || "") ||
+                      [...currentEdits.clientIds].sort().join("|") !== [...(profile.clientIds || [])].sort().join("|");
                     const isEditingSelf = currentUserProfile?.uid === profile.uid;
 
                     return (
@@ -1310,14 +1311,16 @@ export default function AdminConsole({
                             value={currentEdits.role}
                             disabled={isEditingSelf && profile.role === "owner"} // prevent lock-out of the owner profile
                             onChange={(e) => {
-                              const nextRole = e.target.value as "owner" | "admin" | "client";
+                              const nextRole = e.target.value as UserProfile["role"];
                               setUserEdits({
                                 ...userEdits,
                                 [profile.uid]: {
                                   ...currentEdits,
                                   role: nextRole,
                                   // Clear client ID assignment if promoted to developer roles
-                                  clientId: nextRole !== "client" ? "" : currentEdits.clientId
+                                  clientId: nextRole !== "client" ? "" : currentEdits.clientId,
+                                  // Only moderators keep a list of portals
+                                  clientIds: nextRole === "moderator" ? currentEdits.clientIds : []
                                 }
                               });
                             }}
@@ -1325,6 +1328,7 @@ export default function AdminConsole({
                           >
                             <option value="owner">Owner GRP (All / Delete)</option>
                             <option value="admin">Admin GRP (Edit / Create)</option>
+                            <option value="moderator">Moderator GRP (Assigned portals)</option>
                             <option value="client">Client GRP (Isolated view)</option>
                           </select>
                         </td>
@@ -1352,6 +1356,32 @@ export default function AdminConsole({
                                 </option>
                               ))}
                             </select>
+                          ) : currentEdits.role === "moderator" ? (
+                            <div className="flex flex-col gap-1 max-h-28 overflow-y-auto pr-1">
+                              {clients.length === 0 && <span className="text-[10px] text-gray-500">No portals yet</span>}
+                              {clients.map(c => (
+                                <label key={c.id} className="flex items-center gap-2 text-xs text-white cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={currentEdits.clientIds.includes(c.id)}
+                                    onChange={(e) => {
+                                      const nextIds = e.target.checked
+                                        ? [...currentEdits.clientIds, c.id]
+                                        : currentEdits.clientIds.filter(id => id !== c.id);
+                                      setUserEdits({
+                                        ...userEdits,
+                                        [profile.uid]: { ...currentEdits, clientIds: nextIds }
+                                      });
+                                    }}
+                                    className="accent-amber-500 cursor-pointer"
+                                  />
+                                  {c.name}
+                                </label>
+                              ))}
+                              {currentEdits.clientIds.length === 0 && clients.length > 0 && (
+                                <span className="text-[10px] text-gray-500">Awaiting Allocation...</span>
+                              )}
+                            </div>
                           ) : (
                             <span className="text-amber-400 text-[10px] uppercase font-bold tracking-wider flex items-center gap-1">
                               <Sparkles className="h-3 w-3 animate-pulse" />
@@ -1370,7 +1400,8 @@ export default function AdminConsole({
                                     uid: profile.uid,
                                     email: profile.email,
                                     role: currentEdits.role,
-                                    clientId: currentEdits.clientId || null
+                                    clientId: currentEdits.clientId || null,
+                                    clientIds: currentEdits.role === "moderator" ? currentEdits.clientIds : []
                                   });
                                   // Clear edit buffers
                                   const editsCopy = { ...userEdits };
@@ -1414,6 +1445,7 @@ export default function AdminConsole({
               <ul className="list-disc pl-5 space-y-1 mt-1 font-sans">
                 <li><strong>Owner GRP</strong>: Full unlimited write actions. Only role that can delete clients, wipe system activity logs, or revoke user accounts.</li>
                 <li><strong>Admin GRP</strong>: Manage configs, register portal slugs, configure Google Sheets IDs, and assign user permissions, but cannot perform deletions.</li>
+                <li><strong>Moderator GRP</strong>: Looks after the portals assigned to them: full access to those portals, receives their bug ticket emails, and can remove their client accounts. No Admin Console.</li>
                 <li><strong>Client GRP</strong>: Completely isolated. Clients can only log into their assigned client slug and are strictly banned from seeing or editing other client spaces.</li>
               </ul>
             </div>

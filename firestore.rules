@@ -32,6 +32,10 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientId', '');
     }
 
+    function myClientIds() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientIds', []);
+    }
+
     function isOwner() {
       return isSignedIn() && (isOwnerAccount() || myRole() == 'owner');
     }
@@ -43,6 +47,11 @@ service cloud.firestore {
     // A client account, and only for the one portal an admin assigned to it
     function isClientOf(clientId) {
       return isSignedIn() && myRole() == 'client' && myClientId() == clientId;
+    }
+
+    // A moderator, and only for the portals an admin assigned to them
+    function isModeratorOf(clientId) {
+      return isSignedIn() && myRole() == 'moderator' && clientId in myClientIds();
     }
 
     // ==========================================
@@ -59,16 +68,18 @@ service cloud.firestore {
         isSignedIn() && request.auth.uid == userId &&
         request.resource.data.get('uid', userId) == userId &&
         request.resource.data.role == 'client' &&
-        request.resource.data.get('clientId', null) == null
+        request.resource.data.get('clientId', null) == null &&
+        request.resource.data.get('clientIds', []).size() == 0
       );
 
       // Owners change anything. Admins manage clients and admins but cannot create or change an owner.
-      // A person may update their own profile as long as the role and the assigned portal stay the same.
+      // A person may update their own profile as long as the role and the assigned portals stay the same.
       allow update: if isOwner() ||
         (isAdminOrOwner() && resource.data.get('role', '') != 'owner' && request.resource.data.get('role', '') != 'owner') ||
         (isSignedIn() && request.auth.uid == userId &&
          request.resource.data.get('role', '') == resource.data.get('role', '') &&
-         request.resource.data.get('clientId', null) == resource.data.get('clientId', null));
+         request.resource.data.get('clientId', null) == resource.data.get('clientId', null) &&
+         request.resource.data.get('clientIds', []) == resource.data.get('clientIds', []));
 
       allow delete: if isOwner();
     }
@@ -79,11 +90,12 @@ service cloud.firestore {
       allow write: if isAdminOrOwner();
     }
 
-    // 3. Client portals: admins manage all of them; a client account reads and edits only its own portal
+    // 3. Client portals: admins manage all of them; a moderator reads and edits the portals assigned to them;
+    //    a client account reads and edits only its own portal
     match /clients/{clientId} {
-      allow read: if isAdminOrOwner() || isClientOf(clientId);
+      allow read: if isAdminOrOwner() || isModeratorOf(clientId) || isClientOf(clientId);
       allow create, delete: if isAdminOrOwner();
-      allow update: if isAdminOrOwner() || isClientOf(clientId);
+      allow update: if isAdminOrOwner() || isModeratorOf(clientId) || isClientOf(clientId);
     }
 
     // Older names for the same collection, still read as a fallback by the admin console
@@ -105,6 +117,9 @@ service cloud.firestore {
         request.resource.data.get('details', '') is string &&
         request.resource.data.get('details', '').size() <= 4000;
     }
+
+    // Moderators remove client accounts through the portal server, which checks the account belongs to one of
+    // their portals; they have no direct access to other people's profiles here.
 
     // Everything else is closed. Buyer leads, shortlists and usage analytics are read and written only by the
     // portal server, which checks the signed-in user's role itself and is not subject to these rules.

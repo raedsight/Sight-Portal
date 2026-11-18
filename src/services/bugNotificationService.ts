@@ -1,4 +1,5 @@
 import { BugNotificationPayload, BugNotificationResult } from "../types";
+import { portalJsonHeaders } from "../portalApi";
 
 /**
  * Dispatches an automated bug notification email to the administrator's email address.
@@ -8,9 +9,7 @@ export async function notifyAdminBugEvent(payload: BugNotificationPayload): Prom
   try {
     const res = await fetch("/api/notify-bug", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: await portalJsonHeaders(),
       body: JSON.stringify(payload),
     });
 
@@ -40,7 +39,7 @@ export async function notifyAdminBugEvent(payload: BugNotificationPayload): Prom
 export async function sendTestBugEmail(targetEmail?: string): Promise<{ success: boolean; message: string; previewUrl?: string }> {
   const res = await fetch("/api/notify-test-email", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await portalJsonHeaders(),
     body: JSON.stringify({ targetEmail }),
   });
 
@@ -55,7 +54,7 @@ export async function sendTestBugEmail(targetEmail?: string): Promise<{ success:
  * Fetches recent email dispatch audit history
  */
 export async function getNotificationAuditHistory(): Promise<{ history: any[]; defaultAdminEmail: string }> {
-  const res = await fetch("/api/notify-audit-history");
+  const res = await fetch("/api/notify-audit-history", { headers: await portalJsonHeaders() });
   if (!res.ok) return { history: [], defaultAdminEmail: "raed.sight@gmail.com" };
   return res.json();
 }
@@ -64,7 +63,7 @@ export async function getNotificationAuditHistory(): Promise<{ history: any[]; d
  * Fetches notification configuration metadata
  */
 export async function getNotificationConfig(): Promise<{ adminEmail: string; hasSmtp: boolean; hasResend: boolean; mode: string }> {
-  const res = await fetch("/api/notify-config");
+  const res = await fetch("/api/notify-config", { headers: await portalJsonHeaders() });
   if (!res.ok) return { adminEmail: "raed.sight@gmail.com", hasSmtp: false, hasResend: false, mode: "test/ethereal" };
   return res.json();
 }

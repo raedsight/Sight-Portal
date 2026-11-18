@@ -9,7 +9,7 @@ import {
   getEmailAuditHistory 
 } from "./src/serverEmailNotifier";
 import { BugNotificationPayload } from "./src/types";
-import { registerInsightsRoutes, shortlistHostGuard, type ClientAccessCheck } from "./src/serverInsights";
+import { registerInsightsRoutes, shortlistHostGuard, type ClientAccessCheck, type InsightsRoutes } from "./src/serverInsights";
 
 async function startServer() {
   const app = express();
@@ -340,6 +340,22 @@ async function startServer() {
   // portal users who own the client: the owner, an admin, or the client's own account. Unreal itself only reads.
   // The check is created further down with the leads and analytics routes, once the database connection is ready.
   let clientWriteCheck: ClientAccessCheck | null = null;
+  let insightsRoutes: InsightsRoutes | null = null;
+  // Admin console endpoints: the owner and admins only
+  const mayAdminister = async (req: express.Request, res: express.Response) => {
+    if (!insightsRoutes) {
+      res.status(503).json({ status: "error", error: "The server is still starting. Try again in a moment." });
+      return null;
+    }
+    return insightsRoutes.authorizeAdmin(req, res);
+  };
+  // The portal's own address, used for links in emails. Never taken from the caller.
+  const portalBaseUrl = (req: express.Request): string => {
+    if (process.env.APP_URL && /^https?:\/\//.test(process.env.APP_URL)) return process.env.APP_URL.replace(/\/+$/, "");
+    const host = req.get("host") || "localhost:3000";
+    const protocol = req.protocol === "https" || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+    return `${protocol}://${host}`;
+  };
   const mayChangeClient = async (req: express.Request, res: express.Response, slug: unknown): Promise<boolean> => {
     if (!clientWriteCheck) {
       res.status(503).json({ status: "error", error: "The server is still starting. Try again in a moment." });
@@ -527,17 +543,18 @@ async function startServer() {
   app.post("/api/notify-bug", async (req, res) => {
     try {
       const payload = req.body as BugNotificationPayload;
-      if (!payload || !payload.client || !payload.bug) {
+      if (!payload || !payload.client || !payload.bug || typeof payload.bug.id !== "string") {
         return res.status(400).json({ error: "Missing required 'client' or 'bug' payload object." });
       }
+      // Only someone signed in who works on this client's portal can file or update its tickets
+      if (!(await mayChangeClient(req, res, payload.client.id))) return;
 
-      // Infer current app URL if not provided
-      const host = req.get("host") || "localhost:3000";
-      const protocol = req.protocol === "https" || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
-      const currentAppUrl = process.env.APP_URL || `${protocol}://${host}`;
-      payload.appUrl = payload.appUrl || currentAppUrl;
+      // The server decides who is emailed: the admin address (added by the notifier) and this client's moderators.
+      // Recipients and links sent by the caller are ignored.
+      payload.adminEmails = insightsRoutes ? await insightsRoutes.listModeratorEmails(String(payload.client.id).trim()) : [];
+      payload.appUrl = portalBaseUrl(req);
 
-      console.log(`[Bug Notification Endpoint] Action: ${payload.action} on Bug #${payload.bug.id} (${payload.bug.title}) for client '${payload.client.company}'`);
+      console.log(`[Bug Notification Endpoint] Action: ${payload.action} on Bug #${payload.bug.id} for client '${payload.client.id}' (+${payload.adminEmails.length} moderator address(es))`);
 
       const result = await sendBugNotificationEmail(payload);
       return res.json(result);
@@ -551,15 +568,16 @@ async function startServer() {
     }
   });
 
-  // Endpoint to send a test email to admin's address
+  // Endpoint to send a test email (admin console). Goes to the admin address, plus one address the admin types.
   app.post("/api/notify-test-email", async (req, res) => {
     try {
-      const { targetEmail } = req.body;
+      if (!(await mayAdminister(req, res))) return;
+      const targetEmail = typeof req.body?.targetEmail === "string" ? req.body.targetEmail.trim() : "";
+      if (targetEmail && !/^[^\s@,;<>]+@[^\s@,;<>]+$/.test(targetEmail)) {
+        return res.status(400).json({ error: "Enter one valid email address." });
+      }
       const recipient = targetEmail || DEFAULT_ADMIN_EMAIL;
-
-      const host = req.get("host") || "localhost:3000";
-      const protocol = req.protocol === "https" || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
-      const currentAppUrl = process.env.APP_URL || `${protocol}://${host}`;
+      const currentAppUrl = portalBaseUrl(req);
 
       const testPayload: BugNotificationPayload = {
         action: "created",
@@ -600,16 +618,18 @@ async function startServer() {
     }
   });
 
-  // Endpoint to fetch email audit history
-  app.get("/api/notify-audit-history", (req, res) => {
+  // Endpoint to fetch email audit history (admin console)
+  app.get("/api/notify-audit-history", async (req, res) => {
+    if (!(await mayAdminister(req, res))) return;
     return res.json({
       history: getEmailAuditHistory(),
       defaultAdminEmail: DEFAULT_ADMIN_EMAIL,
     });
   });
 
-  // Endpoint to inspect notification configuration
-  app.get("/api/notify-config", (req, res) => {
+  // Endpoint to inspect notification configuration (admin console)
+  app.get("/api/notify-config", async (req, res) => {
+    if (!(await mayAdminister(req, res))) return;
     return res.json({
       adminEmail: DEFAULT_ADMIN_EMAIL,
       hasSmtp: Boolean(process.env.SMTP_HOST && process.env.SMTP_USER),
@@ -1014,6 +1034,7 @@ async function startServer() {
   // page fallback below so /s/<id> and the new /api routes are not answered with the portal page.
   const insights = await registerInsightsRoutes(app, { isKnownClient: () => true });
   clientWriteCheck = insights.authorizeWrite;
+  insightsRoutes = insights;
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

@@ -300,8 +300,9 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 export interface UserProfile {
   uid: string;
   email: string;
-  role: "owner" | "admin" | "client";
+  role: "owner" | "admin" | "moderator" | "client";
   clientId?: string | null; // Null if developer/admin, holds assigned client portal slug if client group
+  clientIds?: string[]; // Moderators only: the portals they look after
 }
 
 // -------------------------------------------------------------

@@ -253,7 +253,13 @@ export function aggregateEvents(events: AnalyticsEvent[], newSessions: number): 
 interface AdminContext {
   store: InsightsStore;
   verifyIdToken: (token: string) => Promise<{ uid: string; email?: string; emailVerified?: boolean }>;
-  getUserProfile: (uid: string) => Promise<{ role?: string; clientId?: string } | null>;
+  getUserProfile: (uid: string) => Promise<{ role?: string; clientId?: string; clientIds?: string[] } | null>;
+  // Email addresses of the moderators assigned to this client
+  listModeratorEmails: (slug: string) => Promise<string[]>;
+  // The client accounts assigned to this client's portal
+  listClientUsers: (slug: string) => Promise<{ uid: string; email: string }[]>;
+  // Removes a client account's profile, only if it is a client account of this portal. False when it is not.
+  deleteClientUser: (slug: string, uid: string) => Promise<boolean>;
   // True when the portal has a client with this id (the slug used in /ws/<slug>)
   clientExists: (slug: string) => Promise<boolean>;
   getClientName: (slug: string) => Promise<string>;
@@ -356,7 +362,27 @@ async function createAdminContext(): Promise<AdminContext | null> {
       },
       getUserProfile: async (uid) => {
         const snap = await db.collection("users").doc(uid).get();
-        return snap.exists ? (snap.data() as { role?: string; clientId?: string }) : null;
+        return snap.exists ? (snap.data() as { role?: string; clientId?: string; clientIds?: string[] }) : null;
+      },
+      listModeratorEmails: async (slug) => {
+        // One array filter needs no extra index; the role is checked here
+        const snap = await db.collection("users").where("clientIds", "array-contains", slug).limit(50).get();
+        return snap.docs.map((d) => d.data() as { role?: string; email?: string })
+          .filter((u) => u.role === "moderator" && typeof u.email === "string" && /^[^\s@,;<>]+@[^\s@,;<>]+$/.test(u.email))
+          .map((u) => u.email as string);
+      },
+      listClientUsers: async (slug) => {
+        const snap = await db.collection("users").where("clientId", "==", slug).limit(200).get();
+        return snap.docs.filter((d) => d.data().role === "client")
+          .map((d) => ({ uid: d.id, email: typeof d.data().email === "string" ? d.data().email : "" }));
+      },
+      deleteClientUser: async (slug, uid) => {
+        const ref = db.collection("users").doc(uid);
+        const snap = await ref.get();
+        const data = snap.data();
+        if (!snap.exists || data?.role !== "client" || data?.clientId !== slug) return false;
+        await ref.delete();
+        return true;
       },
       clientExists: async (slug) => (await db.collection("clients").doc(slug).get()).exists,
       getClientName: async (slug) => {
@@ -494,11 +520,23 @@ export interface InsightsOptions {
 // Answers the request itself (401/403/503) and returns false when it may not go ahead.
 export type ClientAccessCheck = (req: Request, res: Response, clientSlug: string) => Promise<boolean>;
 
+// The signed-in portal user behind a request
+export interface PortalUser {
+  email: string;
+  role: "owner" | "admin" | "moderator" | "client" | "";
+  clientId: string;
+  clientIds: string[];
+}
+
 export interface InsightsRoutes {
   // For reading a client's leads and analytics
   authorize: ClientAccessCheck;
-  // For changing what Unreal shows for a client (property data, media, re-sync)
+  // For changing what Unreal shows for a client (property data, media, re-sync) and for filing its bug tickets
   authorizeWrite: ClientAccessCheck;
+  // For the admin console only: the owner and admins. Answers the request itself and returns null when refused.
+  authorizeAdmin: (req: Request, res: Response) => Promise<PortalUser | null>;
+  // Email addresses of the moderators assigned to a client (empty without the database connection)
+  listModeratorEmails: (clientSlug: string) => Promise<string[]>;
 }
 
 const isLoopback = (req: Request): boolean => {
@@ -576,25 +614,81 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
     return checkUser(req, res, clientSlug);
   };
 
-  const checkUser: ClientAccessCheck = async (req, res, clientSlug) => {
-    if (!admin) return false;
+  // Who is signed in. Answers 401 itself and returns null when nobody is, or the sign-in has expired.
+  const identify = async (req: Request, res: Response): Promise<PortalUser | null> => {
+    if (!admin) return null;
     const header = req.headers.authorization || "";
     const token = header.startsWith("Bearer ") ? header.slice(7) : "";
     if (!token) {
       res.status(401).json({ status: "error", error: "Sign in to the portal first." });
-      return false;
+      return null;
     }
     try {
       const user = await admin.verifyIdToken(token);
-      const isOwner = !!user.email && user.emailVerified === true && user.email.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase();
-      const profile = isOwner ? null : await admin.getUserProfile(user.uid);
-      const allowed = isOwner || profile?.role === "owner" || profile?.role === "admin" ||
-        (profile?.role === "client" && profile?.clientId === clientSlug);
-      if (!allowed) res.status(403).json({ status: "error", error: "This account cannot view that client." });
-      return allowed;
+      const email = user.email || "";
+      if (!!email && user.emailVerified === true && email.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
+        return { email, role: "owner", clientId: "", clientIds: [] };
+      }
+      const profile = await admin.getUserProfile(user.uid);
+      const role = profile?.role === "owner" || profile?.role === "admin" || profile?.role === "moderator" || profile?.role === "client" ? profile.role : "";
+      return {
+        email,
+        role,
+        clientId: typeof profile?.clientId === "string" ? profile.clientId : "",
+        clientIds: Array.isArray(profile?.clientIds) ? profile.clientIds.filter((id) => typeof id === "string") : [],
+      };
     } catch {
       res.status(401).json({ status: "error", error: "The sign-in has expired. Sign in again." });
+      return null;
+    }
+  };
+
+  // The owner and admins reach every client, a moderator the clients assigned to them, a client account its own
+  const checkUser: ClientAccessCheck = async (req, res, clientSlug) => {
+    const user = await identify(req, res);
+    if (!user) return false;
+    const allowed = user.role === "owner" || user.role === "admin" ||
+      (user.role === "moderator" && user.clientIds.includes(clientSlug)) ||
+      (user.role === "client" && user.clientId === clientSlug);
+    if (!allowed) res.status(403).json({ status: "error", error: "This account cannot view that client." });
+    return allowed;
+  };
+
+  // The people who look after a client's portal: the owner, admins and the moderators assigned to it
+  const checkStaff: ClientAccessCheck = async (req, res, clientSlug) => {
+    if (!admin) {
+      res.status(503).json({ status: "error", error: "This needs the FIREBASE_SERVICE_ACCOUNT secret on the server." });
       return false;
+    }
+    const user = await identify(req, res);
+    if (!user) return false;
+    const allowed = user.role === "owner" || user.role === "admin" || (user.role === "moderator" && user.clientIds.includes(clientSlug));
+    if (!allowed) res.status(403).json({ status: "error", error: "This account cannot manage that client's users." });
+    return allowed;
+  };
+
+  const authorizeAdmin = async (req: Request, res: Response): Promise<PortalUser | null> => {
+    if (!admin) {
+      if (process.env.NODE_ENV !== "production" && isLoopback(req)) return { email: DEFAULT_ADMIN_EMAIL, role: "owner", clientId: "", clientIds: [] };
+      res.status(503).json({ status: "error", error: "This needs the FIREBASE_SERVICE_ACCOUNT secret on the server." });
+      return null;
+    }
+    const user = await identify(req, res);
+    if (!user) return null;
+    if (user.role !== "owner" && user.role !== "admin") {
+      res.status(403).json({ status: "error", error: "Only the owner and admins can do this." });
+      return null;
+    }
+    return user;
+  };
+
+  const listModeratorEmails = async (clientSlug: string): Promise<string[]> => {
+    if (!admin || !clientSlug) return [];
+    try {
+      return await admin.listModeratorEmails(clientSlug);
+    } catch (e: any) {
+      console.error("[Insights] Could not list the moderators of a client:", e?.message || e);
+      return [];
     }
   };
 
@@ -783,5 +877,35 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
     }
   });
 
-  return { authorize, authorizeWrite };
+  // Portal: the client accounts of one portal, for the people who look after it
+  app.get("/api/portal-users", async (req, res) => {
+    const clientSlug = String(req.query.slug || "").trim();
+    if (!clientSlug) return res.status(400).json({ status: "error", error: "slug is required." });
+    if (!(await checkStaff(req, res, clientSlug)) || !admin) return;
+    try {
+      res.json({ status: "ok", users: await admin.listClientUsers(clientSlug) });
+    } catch (e: any) {
+      console.error("[Insights] Could not list a client's users:", e?.message || e);
+      res.status(500).json({ status: "error", error: "The users could not be loaded." });
+    }
+  });
+
+  // Portal: removes one client account from a portal. Only client accounts of that portal can be removed here;
+  // moderators, admins and the owner are managed in the admin console.
+  app.delete("/api/portal-users/:uid", async (req, res) => {
+    const clientSlug = String(req.query.slug || "").trim();
+    const uid = String(req.params.uid || "").trim();
+    if (!clientSlug || !uid || uid.includes("/")) return res.status(400).json({ status: "error", error: "slug and user are required." });
+    if (!(await checkStaff(req, res, clientSlug)) || !admin) return;
+    try {
+      const removed = await admin.deleteClientUser(clientSlug, uid);
+      if (!removed) return res.status(404).json({ status: "error", error: "That user is not a client account of this portal." });
+      res.json({ status: "ok" });
+    } catch (e: any) {
+      console.error("[Insights] Could not remove a client's user:", e?.message || e);
+      res.status(500).json({ status: "error", error: "The user could not be removed." });
+    }
+  });
+
+  return { authorize, authorizeWrite, authorizeAdmin, listModeratorEmails };
 }

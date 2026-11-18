@@ -64,13 +64,37 @@ export function recordEmailAudit(entry: EmailAuditLog) {
   saveAuditHistory(emailAuditHistory);
 }
 
+const escapeHtml = (value: string): string =>
+  value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+// A copy with every piece of text made safe to place inside HTML, so what someone typed in a ticket shows as
+// plain words in the email and can never become a link, an image or markup of its own
+function escapeDeep<T>(value: T): T {
+  if (typeof value === "string") return escapeHtml(value) as unknown as T;
+  if (Array.isArray(value)) return value.map((item) => escapeDeep(item)) as unknown as T;
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) out[key] = escapeDeep(item);
+    return out as T;
+  }
+  return value;
+}
+
 /**
  * Generates an HTML email for bug creation or status updates
  */
 function generateBugNotificationHtml(payload: BugNotificationPayload, appUrl: string): { html: string; text: string; subject: string } {
+  const plain = renderBugNotification(payload, appUrl);
+  const safe = renderBugNotification(escapeDeep(payload), escapeHtml(appUrl));
+  // The subject is a mail header: one line, of a sensible length
+  const subject = plain.subject.replace(/[\r\n]+/g, " ").slice(0, 250);
+  return { html: safe.html, text: plain.text, subject };
+}
+
+function renderBugNotification(payload: BugNotificationPayload, appUrl: string): { html: string; text: string; subject: string } {
   const { action, client, bug, updateDetails } = payload;
   const shortBugId = bug.id.slice(-6);
-  const portalUrl = `${appUrl}/?client=${client.id}&tab=bugs&bugId=${bug.id}`;
+  const portalUrl = `${appUrl}/?portal=${client.id}&tab=bugs&bugId=${bug.id}`;
 
   const isNewBug = action === "created";
   const actionTitle = isNewBug ? "New Bug Report Filed" : "Bug Status / Progress Update";
@@ -246,7 +270,7 @@ ${portalUrl}
 
 --
 Sight Portal QA Notification System
-Dispatched to: raed.sight@gmail.com
+Dispatched to: ${Array.from(new Set([DEFAULT_ADMIN_EMAIL, ...(payload.adminEmails || [])])).join(", ")}
   `.trim();
 
   return { html, text, subject };
@@ -259,11 +283,12 @@ export async function sendBugNotificationEmail(payload: BugNotificationPayload):
   const appUrl = payload.appUrl || process.env.APP_URL || "https://ais-pre-4wjcvfkjzt7ohntjrl7gk5-405891248157.europe-west3.run.app";
   const { html, text, subject } = generateBugNotificationHtml(payload, appUrl);
 
-  // Determine recipients
+  // Recipients: the admin address plus the addresses the server added (the client's moderators, or the
+  // address of a test email). The endpoints never pass on recipients sent by the caller.
   const recipients = Array.from(new Set([
     DEFAULT_ADMIN_EMAIL,
     ...(payload.adminEmails || [])
-  ])).filter(Boolean);
+  ])).filter((address) => typeof address === "string" && /^[^\s@,;<>]+@[^\s@,;<>]+$/.test(address));
 
   const recipientString = recipients.join(", ");
   const fromAddress = process.env.FROM_EMAIL || `"Sight Portal QA" <no-reply@sightportal.app>`;

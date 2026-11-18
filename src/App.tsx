@@ -40,6 +40,7 @@ import { Client, Log } from "./types";
 import { DEFAULT_CLIENTS, DEFAULT_LOGS, extractSpreadsheetId } from "./data";
 import AdminConsole from "./components/AdminConsole";
 import ClientDashboard from "./components/ClientDashboard";
+import PortalUsersPanel from "./components/PortalUsersPanel";
 import GlobalTooltip from "./components/GlobalTooltip";
 import { 
   Building2, 
@@ -150,6 +151,7 @@ export default function App() {
   // URL Query deep link: ?portal=id-slug
   const [deepLinkPortal, setDeepLinkPortal] = useState<string | null>(null);
   const [accessDeniedError, setAccessDeniedError] = useState<string | null>(null);
+  const [showPortalUsers, setShowPortalUsers] = useState<boolean>(false);
 
   // Parse deep link portal parameter on startup
   useEffect(() => {
@@ -299,6 +301,21 @@ export default function App() {
             setClients([]);
           }
         });
+      } else if (userProfile.role === "moderator" && (userProfile.clientIds || []).length > 0) {
+        // A moderator follows each of the portals assigned to them
+        const ids = userProfile.clientIds || [];
+        const byId = new Map<string, Client>();
+        const unsubs = await Promise.all(ids.map((id) => syncSingleClient(id, (updatedClient) => {
+          if (updatedClient) byId.set(id, updatedClient);
+          else byId.delete(id);
+          const list = ids.map((i) => byId.get(i)).filter((c): c is Client => !!c);
+          setClients(list);
+          setSelectedClient(prev => {
+            if (!prev) return prev;
+            return list.find(c => c.id === prev.id) || prev;
+          });
+        })));
+        unsubscribe = () => unsubs.forEach((u) => u());
       }
     };
 
@@ -310,7 +327,7 @@ export default function App() {
 
   // Synchronize System Central logs from Firestore in real-time (Owner/Admin only)
   useEffect(() => {
-    if (authLoading || !userProfile || userProfile.role === "client") {
+    if (authLoading || !userProfile || (userProfile.role !== "owner" && userProfile.role !== "admin")) {
       setLogs([]);
       return;
     }
@@ -351,7 +368,10 @@ export default function App() {
           setSelectedClient(matchedClient);
           setActiveView("client");
           setAccessDeniedError(null);
-        } else if (userProfile.role === "client" && userProfile.clientId === deepLinkPortal) {
+        } else if (
+          (userProfile.role === "client" && userProfile.clientId === deepLinkPortal) ||
+          (userProfile.role === "moderator" && (userProfile.clientIds || []).includes(deepLinkPortal))
+        ) {
           setSelectedClient(matchedClient);
           setActiveView("client");
           setAccessDeniedError(null);
@@ -381,6 +401,17 @@ export default function App() {
         }
       } else {
         setAccessDeniedError("Awaiting Portal Allocation: Your account belongs to the Client Group, but has not yet been assigned to a designated portal. Please contact the project Owner/Admin.");
+      }
+    } else if (userProfile.role === "moderator") {
+      // Moderators go straight to a portal assigned to them; they have no admin console
+      if ((userProfile.clientIds || []).length === 0) {
+        setAccessDeniedError("Awaiting Portal Allocation: Your moderator account has not been assigned to a portal yet. Please contact the project Owner/Admin.");
+      } else {
+        setAccessDeniedError(null);
+        if (clients.length > 0) {
+          setSelectedClient(prev => (prev && clients.some(c => c.id === prev.id) ? prev : clients[0]));
+          setActiveView("client");
+        }
       }
     } else {
       // Admins and owners default to the Admin Console
@@ -950,6 +981,7 @@ export default function App() {
   }
 
   const isDeveloperUser = userProfile?.role === "owner" || userProfile?.role === "admin";
+  const isModerator = userProfile?.role === "moderator";
 
   return (
     <div className="min-h-screen bg-[#050505] text-[#e5e5e5] flex flex-col font-sans selection:bg-amber-500 selection:text-black" id="app-wrapper">
@@ -1002,6 +1034,39 @@ export default function App() {
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {/* Moderators: switch between their portals and manage the client accounts of the open one */}
+          {isModerator && (
+            <div className="flex items-center justify-center gap-3">
+              {clients.length > 1 && (
+                <select
+                  id="moderator-portal-selector"
+                  value={selectedClient ? selectedClient.id : ""}
+                  onChange={(e) => {
+                    const clientObj = clients.find(c => c.id === e.target.value);
+                    if (clientObj) handleLaunchClientWorkspace(clientObj);
+                  }}
+                  className="portal-select w-[200px] sm:w-[240px]"
+                >
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      Portal: {c.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {selectedClient && (
+                <button
+                  id="moderator-portal-users"
+                  onClick={() => setShowPortalUsers(true)}
+                  title="See and remove the client accounts of this portal"
+                  className="btn-ghost"
+                >
+                  Portal Users
+                </button>
+              )}
             </div>
           )}
 
@@ -1075,6 +1140,22 @@ export default function App() {
             </button>
           </div>
         </div>
+      )}
+
+      {isModerator && showPortalUsers && selectedClient && (
+        <PortalUsersPanel
+          client={selectedClient}
+          onClose={() => setShowPortalUsers(false)}
+          onRemoved={(email) => {
+            handleRecordLog({
+              clientId: selectedClient.id,
+              clientName: selectedClient.name,
+              type: "config_change",
+              status: "warning",
+              details: `Moderator removed client account from portal: ${email}`
+            }).catch(() => {});
+          }}
+        />
       )}
 
       {/* Main Container */}
