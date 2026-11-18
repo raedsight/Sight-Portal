@@ -8,3 +8,9 @@ export async function portalJsonHeaders(): Promise<Record<string, string>> {
   if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
 }
+
+// The same sign-in proof for requests whose Authorization header is already taken by the Google Drive token
+export async function portalAuthHeader(): Promise<Record<string, string>> {
+  const token = await auth.currentUser?.getIdToken();
+  return token ? { "X-Portal-Auth": `Bearer ${token}` } : {};
+}

@@ -535,6 +535,8 @@ export interface InsightsRoutes {
   authorizeWrite: ClientAccessCheck;
   // For the admin console only: the owner and admins. Answers the request itself and returns null when refused.
   authorizeAdmin: (req: Request, res: Response) => Promise<PortalUser | null>;
+  // For the Google Drive endpoints: any portal account with a portal assigned (sign-in sent in X-Portal-Auth)
+  authorizeMember: (req: Request, res: Response) => Promise<boolean>;
   // Email addresses of the moderators assigned to a client (empty without the database connection)
   listModeratorEmails: (clientSlug: string) => Promise<string[]>;
 }
@@ -548,26 +550,41 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
   const admin = await createAdminContext();
   const store = admin?.store || createDiskStore();
 
-  // Simple per-address limiter for the endpoints the Unreal app calls without signing in
+  // Limits for the endpoints the Unreal app calls without signing in. One counter per key and time window.
   const hits = new Map<string, { count: number; resetAt: number }>();
-  const limited = (req: Request, res: Response, bucket: string, max: number, windowMs: number): boolean => {
-    // On Cloud Run every request arrives from Google's proxy, so the caller's own address is the first X-Forwarded-For entry
-    const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
-    const key = `${bucket}:${forwarded || req.ip || req.socket.remoteAddress || "unknown"}`;
+  const overLimit = (key: string, max: number, windowMs: number): boolean => {
     const now = Date.now();
     const entry = hits.get(key);
     if (!entry || entry.resetAt <= now) {
-      hits.set(key, { count: 1, resetAt: now + windowMs });
       if (hits.size > 5000) for (const [k, v] of hits) if (v.resetAt <= now) hits.delete(k);
+      if (hits.size > 50_000) hits.clear();
+      hits.set(key, { count: 1, resetAt: now + windowMs });
       return false;
     }
     entry.count += 1;
-    if (entry.count > max) {
-      res.status(429).json({ status: "error", error: "Too many requests. Try again shortly." });
-      return true;
-    }
-    return false;
+    return entry.count > max;
   };
+  const tooMany = (res: Response): true => {
+    res.status(429).json({ status: "error", error: "Too many requests. Try again shortly." });
+    return true;
+  };
+  // Per caller. X-Forwarded-For is a list: the first entry is whatever the caller claims and can be faked, the
+  // last one is added by Google's own front end and cannot. Counting only the first let a script dodge the limit
+  // by changing it on every request, so both are counted; the last may be shared by several callers behind one
+  // of Google's proxies, so it gets a wider allowance.
+  const limited = (req: Request, res: Response, bucket: string, max: number, windowMs: number): boolean => {
+    const forwarded = String(req.headers["x-forwarded-for"] || "").split(",").map((part) => part.trim()).filter(Boolean);
+    const direct = req.socket.remoteAddress || "unknown";
+    const claimed = forwarded[0] || direct;
+    const seenByGoogle = forwarded[forwarded.length - 1] || direct;
+    const overClaimed = overLimit(`${bucket}:c:${claimed}`, max, windowMs);
+    const overSeen = overLimit(`${bucket}:g:${seenByGoogle}`, max * 5, windowMs);
+    return overClaimed || overSeen ? tooMany(res) : false;
+  };
+  // Per client, whoever the caller is: a ceiling well above what a busy showroom produces, so a script that
+  // gets past the per-caller limits still cannot flood one client's leads or analytics.
+  const clientLimited = (res: Response, bucket: string, clientSlug: string, perMinute: number, perDay: number): boolean =>
+    overLimit(`${bucket}:m:${clientSlug}`, perMinute, 60_000) || overLimit(`${bucket}:d:${clientSlug}`, perDay, 86_400_000) ? tooMany(res) : false;
 
   // Data is only accepted for clients that exist in the portal, so a mistyped slug cannot create orphan records.
   // Answers are remembered for five minutes to avoid a database read on every analytics batch.
@@ -615,9 +632,9 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
   };
 
   // Who is signed in. Answers 401 itself and returns null when nobody is, or the sign-in has expired.
-  const identify = async (req: Request, res: Response): Promise<PortalUser | null> => {
+  const identify = async (req: Request, res: Response, headerName: "authorization" | "x-portal-auth" = "authorization"): Promise<PortalUser | null> => {
     if (!admin) return null;
-    const header = req.headers.authorization || "";
+    const header = String(req.headers[headerName] || "");
     const token = header.startsWith("Bearer ") ? header.slice(7) : "";
     if (!token) {
       res.status(401).json({ status: "error", error: "Sign in to the portal first." });
@@ -682,6 +699,22 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
     return user;
   };
 
+  // Anyone with a place in the portal: the owner, admins, moderators with a portal, client accounts with a portal.
+  // The sign-in is read from X-Portal-Auth, because these requests use Authorization for the Google Drive token.
+  const authorizeMember = async (req: Request, res: Response): Promise<boolean> => {
+    if (!admin) {
+      if (process.env.NODE_ENV !== "production" && isLoopback(req)) return true;
+      res.status(503).json({ status: "error", error: "This needs the FIREBASE_SERVICE_ACCOUNT secret on the server." });
+      return false;
+    }
+    const user = await identify(req, res, "x-portal-auth");
+    if (!user) return false;
+    const allowed = user.role === "owner" || user.role === "admin" ||
+      (user.role === "moderator" && user.clientIds.length > 0) || (user.role === "client" && !!user.clientId);
+    if (!allowed) res.status(403).json({ status: "error", error: "This account has no portal assigned." });
+    return allowed;
+  };
+
   const listModeratorEmails = async (clientSlug: string): Promise<string[]> => {
     if (!admin || !clientSlug) return [];
     try {
@@ -708,6 +741,7 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
       const leadPhone = cleanText(req.body?.lead?.phone, 40);
       const hasLead = !!leadName && !!leadPhone;
       if (!units.length && !hasLead) return res.status(400).json({ status: "error", error: "Send at least one unit or a lead." });
+      if (clientLimited(res, "shortlist", clientSlug, 30, 500)) return;
       if (leadPhone && !/^[+0-9()\-.\s]{5,40}$/.test(leadPhone)) return res.status(400).json({ status: "error", error: "The phone number is not valid." });
 
       const now = new Date().toISOString();
@@ -729,7 +763,8 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
       await store.saveShortlist(shortlist);
       if (lead) await store.saveLead(lead);
       const url = `${baseUrl(req)}/s/${shortlist.id}`;
-      if (lead) void sendLeadEmail(lead, url);
+      // The lead is always saved; the email about it is held back if they arrive faster than people can type them
+      if (lead && !overLimit(`lead-email:${clientSlug}`, 20, 3_600_000)) void sendLeadEmail(lead, url);
       res.json({ status: "ok", id: shortlist.id, url, lead_id: lead?.id || null, durable: store.mode === "firestore" });
     } catch (e: any) {
       console.error("[Insights] Could not save a shortlist:", e?.message || e);
@@ -773,6 +808,9 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
       if (!clientSlug || !(await isKnownClient(clientSlug))) return res.status(400).json({ status: "error", error: "Unknown client_slug." });
       const sessionId = cleanText(req.body?.session_id, 64);
       if (!sessionId) return res.status(400).json({ status: "error", error: "session_id is required." });
+      // One Unreal session sends a batch every few seconds; a whole showroom stays far below the client ceiling
+      if (overLimit(`analytics:s:${clientSlug}:${sessionId}`, 40, 60_000)) return void tooMany(res);
+      if (clientLimited(res, "analytics", clientSlug, 600, 100_000)) return;
       const rawEvents: any[] = Array.isArray(req.body?.events) ? req.body.events : [];
       const receivedAt = new Date().toISOString();
       const events: AnalyticsEvent[] = [];
@@ -907,5 +945,5 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
     }
   });
 
-  return { authorize, authorizeWrite, authorizeAdmin, listModeratorEmails };
+  return { authorize, authorizeWrite, authorizeAdmin, authorizeMember, listModeratorEmails };
 }

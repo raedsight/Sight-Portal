@@ -350,6 +350,14 @@ async function startServer() {
     }
     return insightsRoutes.authorizeAdmin(req, res);
   };
+  // Google Drive endpoints: a portal account with a portal assigned, on top of the Google token they already need
+  const mayUseDrive = async (req: express.Request, res: express.Response): Promise<boolean> => {
+    if (!insightsRoutes) {
+      res.status(503).json({ status: "error", error: "The server is still starting. Try again in a moment." });
+      return false;
+    }
+    return insightsRoutes.authorizeMember(req, res);
+  };
   // The portal's own address, used for links in emails. Never taken from the caller.
   const portalBaseUrl = (req: express.Request): string => {
     if (process.env.APP_URL && /^https?:\/\//.test(process.env.APP_URL)) return process.env.APP_URL.replace(/\/+$/, "");
@@ -717,6 +725,7 @@ async function startServer() {
 
   // Endpoint: Provision or locate client dedicated folder
   app.post("/api/drive/provision-folder", async (req, res) => {
+    if (!(await mayUseDrive(req, res))) return;
     const token = getAuthToken(req);
     if (!token) {
       return res.status(401).json({ error: "Google OAuth access token missing from Authorization header" });
@@ -857,6 +866,7 @@ async function startServer() {
 
   // Endpoint: Upload file directly to Google Drive
   app.post("/api/drive/upload", async (req, res) => {
+    if (!(await mayUseDrive(req, res))) return;
     const token = getAuthToken(req);
     if (!token) {
       return res.status(401).json({ error: "Google OAuth access token missing from Authorization header" });
@@ -956,6 +966,7 @@ async function startServer() {
 
   // Endpoint: Query folder files
   app.get("/api/drive/files", async (req, res) => {
+    if (!(await mayUseDrive(req, res))) return;
     const token = getAuthToken(req);
     if (!token) {
       return res.status(401).json({ error: "Google OAuth access token missing from Authorization header" });
@@ -994,6 +1005,7 @@ async function startServer() {
 
   // Endpoint: Grant folder permissions to client email
   app.post("/api/drive/share-folder", async (req, res) => {
+    if (!(await mayUseDrive(req, res))) return;
     const token = getAuthToken(req);
     if (!token) {
       return res.status(401).json({ error: "Google OAuth access token missing from Authorization header" });

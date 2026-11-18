@@ -4,6 +4,7 @@
  */
 
 import { Client, MediaResource } from "../types";
+import { portalAuthHeader } from "../portalApi";
 
 export const DRIVE_ROOT_MEDIA_FOLDER_ID = "13fE2R_-qxOMlT2U7tY1NtK36xpwahMkg";
 export const DRIVE_ROOT_FOLDER_URL =
@@ -175,6 +176,7 @@ export async function getOrProvisionClientFolder(
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
+        ...(await portalAuthHeader()),
       },
       body: JSON.stringify({ client }),
     });
@@ -363,6 +365,7 @@ export async function uploadMediaToClientFolder(params: {
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
+        ...(await portalAuthHeader()),
       },
       body: JSON.stringify({
         fileName,
@@ -477,7 +480,7 @@ export async function fetchClientFolderFiles(
   // Try proxy first
   try {
     const proxyRes = await fetch(`/api/drive/files?folderId=${encodeURIComponent(folderId)}`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}`, ...(await portalAuthHeader()) },
     });
     if (proxyRes.ok) {
       const data = await proxyRes.json();
@@ -530,6 +533,7 @@ export async function grantClientFolderAccess(
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
+        ...(await portalAuthHeader()),
       },
       body: JSON.stringify({ folderId, clientEmail, role }),
     });
