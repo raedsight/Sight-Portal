@@ -252,7 +252,7 @@ export function aggregateEvents(events: AnalyticsEvent[], newSessions: number): 
 
 interface AdminContext {
   store: InsightsStore;
-  verifyIdToken: (token: string) => Promise<{ uid: string; email?: string }>;
+  verifyIdToken: (token: string) => Promise<{ uid: string; email?: string; emailVerified?: boolean }>;
   getUserProfile: (uid: string) => Promise<{ role?: string; clientId?: string } | null>;
   // True when the portal has a client with this id (the slug used in /ws/<slug>)
   clientExists: (slug: string) => Promise<boolean>;
@@ -352,7 +352,7 @@ async function createAdminContext(): Promise<AdminContext | null> {
       store,
       verifyIdToken: async (token) => {
         const decoded = await auth.verifyIdToken(token);
-        return { uid: decoded.uid, email: decoded.email };
+        return { uid: decoded.uid, email: decoded.email, emailVerified: decoded.email_verified === true };
       },
       getUserProfile: async (uid) => {
         const snap = await db.collection("users").doc(uid).get();
@@ -490,7 +490,23 @@ export interface InsightsOptions {
   isKnownClient: (slug: string) => boolean;
 }
 
-export async function registerInsightsRoutes(app: Express, options: InsightsOptions): Promise<void> {
+// Checks that the request comes from a signed-in portal user who may act on this client.
+// Answers the request itself (401/403/503) and returns false when it may not go ahead.
+export type ClientAccessCheck = (req: Request, res: Response, clientSlug: string) => Promise<boolean>;
+
+export interface InsightsRoutes {
+  // For reading a client's leads and analytics
+  authorize: ClientAccessCheck;
+  // For changing what Unreal shows for a client (property data, media, re-sync)
+  authorizeWrite: ClientAccessCheck;
+}
+
+const isLoopback = (req: Request): boolean => {
+  const address = req.socket.remoteAddress || "";
+  return !req.headers["x-forwarded-for"] && (address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1");
+};
+
+export async function registerInsightsRoutes(app: Express, options: InsightsOptions): Promise<InsightsRoutes> {
   const admin = await createAdminContext();
   const store = admin?.store || createDiskStore();
 
@@ -537,11 +553,31 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
   };
 
   // Resolves the signed-in portal user and whether they may see a client's leads and analytics
-  const authorize = async (req: Request, res: Response, clientSlug: string): Promise<boolean> => {
+  const authorize: ClientAccessCheck = async (req, res, clientSlug) => {
     if (!admin) {
       res.status(503).json({ status: "error", error: "Leads and analytics need the FIREBASE_SERVICE_ACCOUNT secret on the server." });
       return false;
     }
+    return checkUser(req, res, clientSlug);
+  };
+
+  // Same check for the endpoints that change what Unreal shows. Without the service account the server cannot
+  // verify anyone, so it only accepts changes from the same machine while developing, never on the live site.
+  const authorizeWrite: ClientAccessCheck = async (req, res, clientSlug) => {
+    if (!admin) {
+      if (process.env.NODE_ENV !== "production" && isLoopback(req)) return true;
+      res.status(503).json({ status: "error", error: "Changes need the FIREBASE_SERVICE_ACCOUNT secret on the server." });
+      return false;
+    }
+    if (!clientSlug) {
+      res.status(400).json({ status: "error", error: "client_slug is required." });
+      return false;
+    }
+    return checkUser(req, res, clientSlug);
+  };
+
+  const checkUser: ClientAccessCheck = async (req, res, clientSlug) => {
+    if (!admin) return false;
     const header = req.headers.authorization || "";
     const token = header.startsWith("Bearer ") ? header.slice(7) : "";
     if (!token) {
@@ -550,7 +586,7 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
     }
     try {
       const user = await admin.verifyIdToken(token);
-      const isOwner = !!user.email && user.email.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase();
+      const isOwner = !!user.email && user.emailVerified === true && user.email.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase();
       const profile = isOwner ? null : await admin.getUserProfile(user.uid);
       const allowed = isOwner || profile?.role === "owner" || profile?.role === "admin" ||
         (profile?.role === "client" && profile?.clientId === clientSlug);
@@ -746,4 +782,6 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
       res.status(500).json({ status: "error", error: "The lead could not be updated." });
     }
   });
+
+  return { authorize, authorizeWrite };
 }
