@@ -148,6 +148,23 @@ async function startServer() {
     const key = typeof slug === "string" ? slug.trim() : "";
     return clientsData[key] || { client_slug: key, target_class: "ArchViz Real-Estate Portfolio", attributes_matrix: [] as any[] };
   };
+  // After a restart the server holds no units until someone pushes from the portal. The portal keeps its own
+  // copy of every project's units, so the first request for a project loads that copy instead of answering empty.
+  const unitsLoading = new Map<string, Promise<void>>();
+  const ensureUnits = async (slug: string | undefined): Promise<void> => {
+    const key = typeof slug === "string" ? slug.trim() : "";
+    if (!key || clientsData[key]?.attributes_matrix?.length || !insightsRoutes) return;
+    if (!unitsLoading.has(key)) {
+      unitsLoading.set(key, (async () => {
+        const rows = await insightsRoutes!.loadSheetRows(key);
+        if (rows?.length && !clientsData[key]?.attributes_matrix?.length) {
+          clientsData[key] = { client_slug: key, target_class: "ArchViz Real-Estate Portfolio", attributes_matrix: rows };
+          console.log(`[Full-Stack API] Loaded ${rows.length} units for '${key}' from the portal's saved sheet data.`);
+        }
+      })().finally(() => unitsLoading.delete(key)));
+    }
+    await unitsLoading.get(key);
+  };
   // A socket only receives what belongs to the project it connected for
   const socketIsFor = (client: any, slug: string): boolean => !!slug && client.client_slug === slug;
 
@@ -319,8 +336,9 @@ async function startServer() {
 
   // API Endpoint 1: Healthcheck & Dynamic Unreal Compatibility Fallback Route
   // This mirrors what the Unreal Engine C++ plugin queries by default, responding with compiled datasets
-  app.get("/api/health", (req, res) => {
+  app.get("/api/health", async (req, res) => {
     const slug = (req.query.client_slug as string) || "";
+    await ensureUnits(slug);
     const data = dataFor(slug);
 
     let ue5Alive = false;
@@ -381,8 +399,9 @@ async function startServer() {
   };
 
   // API Endpoint 2: Fetch spreadsheet datasets currently cached in memory
-  app.get("/api/sheet-data", (req, res) => {
+  app.get("/api/sheet-data", async (req, res) => {
     const slug = (req.query.client_slug as string) || "";
+    await ensureUnits(slug);
     const data = dataFor(slug);
     res.json({
       timestamp: new Date().toISOString(),
@@ -1138,14 +1157,11 @@ async function startServer() {
     }
   });
 
-  wss.on("connection", (ws: any) => {
-    const client_slug = ws.client_slug || "";
-    console.log(`[WebSocket connection] Direct Unreal Plugin client linked successfully for client: '${client_slug}'! Sending initial payload attributes...`);
-    
-    // An unknown project starts empty; it never borrows the demo's units
-    const data = dataFor(client_slug);
-
-    // Immediately stream latest spreadsheet properties matching the active portfolio state (the client initiates, the server responds)
+  // Sends a project's units and gallery to one connected Unreal app
+  const sendInit = async (ws: any, slug: string) => {
+    await ensureUnits(slug);
+    if (ws.readyState !== WebSocket.OPEN || ws.client_slug !== slug) return;
+    const data = dataFor(slug);
     ws.send(JSON.stringify({
       event: "init",
       timestamp: new Date().toISOString(),
@@ -1155,14 +1171,21 @@ async function startServer() {
         attributes_matrix: data.attributes_matrix
       }
     }));
-
-    // Send the gallery media catalog too, so Unreal can load images even if plain HTTP is gated
-    const mediaSlug = resolveMediaSlug(client_slug);
+    // The gallery media catalog too, so Unreal can load images even if plain HTTP is gated
+    const mediaSlug = resolveMediaSlug(slug);
     if (clientsMedia[mediaSlug]?.items?.length) {
       ws.send(JSON.stringify({ event: "media", reason: "init", timestamp: new Date().toISOString(), payload: buildMediaPayload(mediaSlug) }));
     }
+  };
 
-    // Listen for peer pings to keep connections alive and logs interactive
+  wss.on("connection", (ws: any) => {
+    ws.client_slug = ws.client_slug || "";
+    console.log(`[WebSocket connection] Direct Unreal Plugin client linked successfully for client: '${ws.client_slug}'.`);
+
+    // An app that connected with its project in the address gets that project's data at once. One that
+    // connected without it says which project it is with a "hello" message, below.
+    if (ws.client_slug) void sendInit(ws, ws.client_slug).catch((e) => console.error("[WebSocket] Could not send the first data:", e));
+
     ws.on("message", (rawMsg: any) => {
       try {
         const msgStr = rawMsg.toString();
@@ -1172,21 +1195,31 @@ async function startServer() {
         }
 
         const msgObj = JSON.parse(msgStr);
-        console.log(`[WebSocket Received - ${client_slug}] Got socket event:`, msgObj);
         if (msgObj && msgObj.event === "ping") {
           ws.send(JSON.stringify({ event: "pong" }));
+          return;
         }
+        // The app names its project: from now on it receives that project's pushes and reservations
+        if (msgObj && msgObj.event === "hello" && typeof msgObj.client_slug === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(msgObj.client_slug)) {
+          if (ws.client_slug !== msgObj.client_slug) {
+            ws.client_slug = msgObj.client_slug;
+            console.log(`[WebSocket] App announced project '${ws.client_slug}'.`);
+            void sendInit(ws, ws.client_slug).catch((e) => console.error("[WebSocket] Could not send the first data:", e));
+          }
+          return;
+        }
+        console.log(`[WebSocket Received - ${ws.client_slug}] Got socket event:`, msgObj?.event);
       } catch (err) {
         // Fallback for simple message formats
       }
     });
 
     ws.on("close", () => {
-      console.log(`[WebSocket disconnection] Plugin client link terminated for client: '${client_slug}'.`);
+      console.log(`[WebSocket disconnection] Plugin client link terminated for client: '${ws.client_slug}'.`);
     });
 
     ws.on("error", (err: any) => {
-      console.error(`[WebSocket error - ${client_slug}]`, err);
+      console.error(`[WebSocket error - ${ws.client_slug}]`, err);
     });
   });
 }
