@@ -110,6 +110,7 @@ export interface Client {
   mediaResources?: MediaResource[]; // Categorized media resources (Project, Services, Properties)
   driveFolderId?: string; // Dedicated Google Drive folder ID under shared root
   driveFolderUrl?: string; // Direct link to client's dedicated Google Drive folder
+  rev?: number;           // Version of the record this copy was read at; goes up by one with every save
 }
 
 export interface Log {

@@ -23,8 +23,12 @@ import {
   limit, 
   onSnapshot, 
   getDocFromServer,
-  writeBatch
+  writeBatch,
+  runTransaction,
+  deleteField,
+  increment
 } from "firebase/firestore";
+import { changedFields, REMOVED } from "./clientMerge";
 import { Client, Log, ThemePreset } from "./types";
 import { DEFAULT_CLIENTS, DEFAULT_LOGS } from "./data";
 import firebaseConfig from "../firebase-applet-config.json";
@@ -396,7 +400,25 @@ export async function deleteUserProfile(uid: string): Promise<void> {
 // CLIENT OPERATIONS (REAL FIRESTORE)
 // -------------------------------------------------------------
 
+// The versions of each client this browser has read from the database, by id and rev. A save is compared with
+// the version it started from to find what the person actually changed (see clientMerge).
+const seenClientVersions = new Map<string, Client>();
+const latestClientVersion = new Map<string, Client>();
+const versionKey = (id: string, rev: number | undefined): string => `${id}:${rev || 0}`;
+function rememberClientVersion(client: Client): Client {
+  const key = versionKey(client.id, client.rev);
+  seenClientVersions.delete(key);
+  seenClientVersions.set(key, client);
+  latestClientVersion.set(client.id, client);
+  if (seenClientVersions.size > 80) seenClientVersions.delete(seenClientVersions.keys().next().value as string);
+  return client;
+}
+
 function normalizeClientDoc(id: string, rawData: any): Client {
+  return rememberClientVersion(readClientDoc(id, rawData));
+}
+
+function readClientDoc(id: string, rawData: any): Client {
   const data = rawData || {};
   
   // Custom WebSocket endpoint override:
@@ -430,7 +452,10 @@ function normalizeClientDoc(id: string, rawData: any): Client {
     updatedAt: data.updatedAt || new Date().toISOString(),
     sheetData: data.sheetData,
     bugs: data.bugs || [],
-    mediaResources: data.mediaResources || []
+    mediaResources: data.mediaResources || [],
+    ...(typeof data.driveFolderId === "string" && data.driveFolderId ? { driveFolderId: data.driveFolderId } : {}),
+    ...(typeof data.driveFolderUrl === "string" && data.driveFolderUrl ? { driveFolderUrl: data.driveFolderUrl } : {}),
+    rev: typeof data.rev === "number" ? data.rev : 0
   };
 }
 
@@ -569,8 +594,32 @@ export async function createOrUpdateClient(client: Client): Promise<void> {
 
   if (isQuotaExceeded()) return;
   try {
-    const cleaned = sanitizeForFirestore(client);
-    await setDoc(doc(db, "clients", client.id), cleaned, { merge: true });
+    const ref = doc(db, "clients", client.id);
+    const { rev: startedAtRev, ...withoutRev } = client;
+    const mine = sanitizeForFirestore(withoutRev) as Record<string, any>;
+    // A copy that carries no rev was put together by a form from what was on screen: the latest version read
+    const startedFrom = startedAtRev === undefined
+      ? latestClientVersion.get(client.id)
+      : seenClientVersions.get(versionKey(client.id, startedAtRev));
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) {
+        tx.set(ref, { ...mine, rev: 1 });
+        return;
+      }
+      const current = readClientDoc(snap.id, snap.data()) as unknown as Record<string, any>;
+      // Without the version this save started from, there is nothing to compare with: every field is written
+      // as it is, which is how saving worked before
+      const changes: Record<string, any> = startedFrom
+        ? changedFields(sanitizeForFirestore(startedFrom) as unknown as Record<string, any>, mine, current, ["id", "rev"])
+        : mine;
+      const fields = Object.keys(changes).filter((field) => field !== "id" && field !== "rev");
+      // Nothing but the save time differs: nothing to write
+      if (fields.length === 0 || (fields.length === 1 && fields[0] === "updatedAt")) return;
+      const write: Record<string, any> = { rev: (typeof snap.data().rev === "number" ? snap.data().rev : 0) + 1 };
+      for (const field of fields) write[field] = changes[field] === REMOVED ? deleteField() : changes[field];
+      tx.set(ref, write, { merge: true });
+    });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `clients/${client.id}`);
   }
@@ -589,7 +638,8 @@ export async function saveClientSheetData(clientId: string, sheetData: import(".
     const cleaned = sanitizeForFirestore(sheetData);
     await setDoc(doc(db, "clients", clientId), { 
       sheetData: cleaned, 
-      updatedAt: new Date().toISOString() 
+      updatedAt: new Date().toISOString(),
+      rev: increment(1)
     }, { merge: true });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `clients/${clientId}`);

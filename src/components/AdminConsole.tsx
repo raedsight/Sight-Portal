@@ -1165,7 +1165,7 @@ export default function AdminConsole({
             <div className="instruction-box">
               <div className="label mb-3 text-[var(--accent)]">System Integration</div>
               <p className="opacity-90 mb-3 text-xs leading-relaxed">
-                To connect UE5: Import <code>/ue5-plugin</code> classes into your project Source. Update <code>Build.cs</code> with <code>"WebSockets"</code>. Use <code>ASightPortalSiteManager</code> actor for real-time telemetry streaming.
+                To connect UE5: add the <code>SightPortal</code> plugin from the SightViz5.8 project (<code>Plugins/SightPortal</code>) to your Unreal project, then set the project ID and the address below in its settings. The plugin connects to this portal on its own.
               </p>
               <div className="p-3 bg-black/30 rounded border border-[var(--accent-soft)] font-mono text-[0.65rem] text-[var(--accent)] break-all select-all">
                 WSS://ais-pre-4wjcvfkjzt7ohntjrl7gk5-405891248157.europe-west3.run.app/ws/{filteredClients[0]?.id || "hyperion-vis"}

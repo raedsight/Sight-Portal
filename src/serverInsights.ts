@@ -59,6 +59,11 @@ export interface Lead {
   unitNames: string[];
   sessionId?: string;
   status: "new" | "contacted" | "closed";
+  // Set when the lead comes from a reservation made in the Unreal app
+  email?: string;
+  country?: string;
+  city?: string;
+  reservedUnit?: string;
 }
 
 export interface AnalyticsEvent {
@@ -105,6 +110,20 @@ export const TRAFFIC_PRESETS: Record<TrafficPreset, TrafficLimits> = {
   busy: { label: "Busy Day", sessionBatchesPerMinute: 30, shortlistsPerMinute: 20, shortlistsPerDay: 400, analyticsBatchesPerMinute: 600, flushSeconds: 5 },
   open: { label: "Open Day", sessionBatchesPerMinute: 50, shortlistsPerMinute: 50, shortlistsPerDay: 500, analyticsBatchesPerMinute: 600, flushSeconds: 5 },
 };
+// Reservations from the Unreal app
+export const DEFAULT_RESERVATION_PIN = "0000";
+export const RESERVED_STATUS = "Booked";
+const PIN_PATTERN = /^\d{4,8}$/;
+const asReservationPin = (value: unknown): string => (typeof value === "string" && PIN_PATTERN.test(value) ? value : DEFAULT_RESERVATION_PIN);
+// A row of unit data belongs to a unit when one of its name columns matches
+export const isUnitRow = (row: Record<string, any> | null | undefined, unitName: string): boolean =>
+  !!row && [row.Name, row.ActorName, row.PropID].some((value) => typeof value === "string" && value.trim() === unitName);
+const samePin = (a: string, b: string): boolean => {
+  const left = crypto.createHash("sha256").update(a).digest();
+  const right = crypto.createHash("sha256").update(b).digest();
+  return crypto.timingSafeEqual(left, right);
+};
+
 const asTrafficPreset = (value: unknown): TrafficPreset => (value === "busy" || value === "open" ? value : "default");
 const MAX_PARAMS = 25;
 
@@ -175,6 +194,8 @@ interface InsightsStore {
   saveLead(lead: Lead): Promise<void>;
   listLeads(clientSlug: string, limit: number): Promise<Lead[]>;
   updateLeadStatus(id: string, clientSlug: string, status: Lead["status"]): Promise<boolean>;
+  // Removes a lead for good. False when there is no such lead for this client.
+  deleteLead(id: string, clientSlug: string): Promise<boolean>;
   saveEvents(events: AnalyticsEvent[], newSessions: number): Promise<void>;
   listDaily(clientSlug: string, sinceDay: string): Promise<DailyAggregate[]>;
   // The individual events of one kind, newest first (for the dashboard's drill-down)
@@ -226,6 +247,11 @@ function createDiskStore(): InsightsStore {
       const lead = state.leads[id];
       if (!lead || lead.clientSlug !== clientSlug) return false;
       lead.status = status; persist(); return true;
+    },
+    async deleteLead(id, clientSlug) {
+      const lead = state.leads[id];
+      if (!lead || lead.clientSlug !== clientSlug) return false;
+      delete state.leads[id]; persist(); return true;
     },
     async saveEvents(events, newSessions) {
       state.events.push(...events);
@@ -282,6 +308,13 @@ interface AdminContext {
   deleteClientUser: (slug: string, uid: string) => Promise<boolean>;
   // True when the portal has a client with this id (the slug used in /ws/<slug>)
   clientExists: (slug: string) => Promise<boolean>;
+  // The PIN an advisor types in the Unreal app to reserve a unit ("0000" until someone changes it)
+  getReservationPin: (slug: string) => Promise<string>;
+  setReservationPin: (slug: string, pin: string) => Promise<void>;
+  // The unit rows the portal keeps for a client (its sheet data), or null when it has none
+  getSheetRows: (slug: string) => Promise<Record<string, any>[] | null>;
+  // Sets a unit's Availability in the portal's sheet data. False when the unit is not in it.
+  setUnitAvailability: (slug: string, unitName: string, availability: string) => Promise<boolean>;
   getTrafficPreset: (slug: string) => Promise<TrafficPreset>;
   setTrafficPreset: (slug: string, preset: TrafficPreset) => Promise<void>;
   getClientName: (slug: string) => Promise<string>;
@@ -341,6 +374,13 @@ async function createAdminContext(): Promise<AdminContext | null> {
         const snap = await ref.get();
         if (!snap.exists || (snap.data() as Lead).clientSlug !== clientSlug) return false;
         await ref.update({ status });
+        return true;
+      },
+      async deleteLead(id, clientSlug) {
+        const ref = db.collection("leads").doc(id);
+        const snap = await ref.get();
+        if (!snap.exists || (snap.data() as Lead).clientSlug !== clientSlug) return false;
+        await ref.delete();
         return true;
       },
       async saveEvents(events, newSessions) {
@@ -407,6 +447,29 @@ async function createAdminContext(): Promise<AdminContext | null> {
         return true;
       },
       clientExists: async (slug) => (await db.collection("clients").doc(slug).get()).exists,
+      getReservationPin: async (slug) => asReservationPin((await db.collection("clients").doc(slug).get()).data()?.reservationPin),
+      setReservationPin: async (slug, pin) => { await db.collection("clients").doc(slug).update({ reservationPin: pin }); },
+      getSheetRows: async (slug) => {
+        const rows = (await db.collection("clients").doc(slug).get()).data()?.sheetData?.rows;
+        return Array.isArray(rows) ? rows : null;
+      },
+      setUnitAvailability: async (slug, unitName, availability) => {
+        const ref = db.collection("clients").doc(slug);
+        return db.runTransaction(async (tx) => {
+          const data = (await tx.get(ref)).data();
+          const rows: Record<string, any>[] | undefined = data?.sheetData?.rows;
+          if (!data || !Array.isArray(rows)) return false;
+          const index = rows.findIndex((row) => isUnitRow(row, unitName));
+          if (index < 0) return false;
+          const nextRows = rows.map((row, i) => (i === index ? { ...row, Availability: availability } : row));
+          tx.update(ref, {
+            "sheetData.rows": nextRows,
+            updatedAt: new Date().toISOString(),
+            rev: (typeof data.rev === "number" ? data.rev : 0) + 1,
+          });
+          return true;
+        });
+      },
       getTrafficPreset: async (slug) => asTrafficPreset((await db.collection("clients").doc(slug).get()).data()?.trafficPreset),
       setTrafficPreset: async (slug, preset) => { await db.collection("clients").doc(slug).update({ trafficPreset: preset }); },
       getClientName: async (slug) => {
@@ -425,13 +488,19 @@ async function createAdminContext(): Promise<AdminContext | null> {
 
 async function sendLeadEmail(lead: Lead, shortlistUrl: string | null): Promise<void> {
   const recipient = process.env.LEADS_EMAIL || DEFAULT_ADMIN_EMAIL;
-  const subject = `New lead: ${lead.name} (${lead.clientSlug})`;
+  const subject = lead.reservedUnit
+    ? `Unit reserved: ${lead.reservedUnit} by ${lead.name} (${lead.clientSlug})`
+    : `New lead: ${lead.name} (${lead.clientSlug})`;
   const lines = [
     `Name: ${lead.name}`,
     `Phone: ${lead.phone}`,
     lead.note ? `Note: ${lead.note}` : "",
     `Project: ${lead.clientSlug}`,
-    lead.unitNames.length ? `Shortlisted units: ${lead.unitNames.join(", ")}` : "No units shortlisted",
+    lead.email ? `Email: ${lead.email}` : "",
+    lead.country || lead.city ? `Address: ${[lead.city, lead.country].filter(Boolean).join(", ")}` : "",
+    lead.reservedUnit
+      ? `Reserved unit: ${lead.reservedUnit} (now ${RESERVED_STATUS})`
+      : lead.unitNames.length ? `Shortlisted units: ${lead.unitNames.join(", ")}` : "No units shortlisted",
     shortlistUrl ? `Shortlist: ${shortlistUrl}` : "",
     `Received: ${lead.createdAt}`,
   ].filter(Boolean);
@@ -538,6 +607,10 @@ export function shortlistHostGuard(req: Request, res: Response, next: () => void
 export interface InsightsOptions {
   // Used only when Firestore is unavailable (local development); with Firestore the clients collection decides
   isKnownClient: (slug: string) => boolean;
+  // Marks a unit as reserved in the data the server sends to Unreal, and tells every connected Unreal app.
+  // loadRows gives the portal's own unit rows, for when the server holds none for this client (after a restart).
+  // "unknown": no such unit; "taken": it is not Available any more.
+  reserveUnit: (slug: string, unitName: string, loadRows: () => Promise<Record<string, any>[] | null>) => Promise<"ok" | "unknown" | "taken">;
 }
 
 // Checks that the request comes from a signed-in portal user who may act on this client.
@@ -976,6 +1049,156 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
     } catch (e: any) {
       console.error("[Insights] Could not update a lead:", e?.message || e);
       res.status(500).json({ status: "error", error: "The lead could not be updated." });
+    }
+  });
+
+  // ---- Reservations -------------------------------------------------------------------------------------------
+  // An advisor reserves a unit from the Unreal app's Shortlist window. The Unreal app is not signed in, so the
+  // reservation PIN of the project is what allows it. Five wrong PINs lock reservations for 15 minutes.
+  const localPins = new Map<string, string>(); // only without the database (local development)
+  const reservationPinOf = async (clientSlug: string): Promise<string> =>
+    admin ? admin.getReservationPin(clientSlug) : localPins.get(clientSlug) || DEFAULT_RESERVATION_PIN;
+  const pinFailures = new Map<string, { count: number; resetAt: number }>();
+  const pinLocked = (clientSlug: string): boolean => {
+    const entry = pinFailures.get(clientSlug);
+    return !!entry && entry.resetAt > Date.now() && entry.count >= 5;
+  };
+  const notePinFailure = (clientSlug: string): void => {
+    const entry = pinFailures.get(clientSlug);
+    if (!entry || entry.resetAt <= Date.now()) pinFailures.set(clientSlug, { count: 1, resetAt: Date.now() + 15 * 60_000 });
+    else entry.count += 1;
+  };
+  // Answers the request itself and returns false when the PIN is wrong or reservations are locked
+  const checkPin = async (res: Response, clientSlug: string, pin: unknown): Promise<boolean> => {
+    if (pinLocked(clientSlug)) {
+      res.status(429).json({ status: "error", error: "Too many wrong PINs. Try again in 15 minutes." });
+      return false;
+    }
+    if (typeof pin !== "string" || !samePin(pin.trim(), await reservationPinOf(clientSlug))) {
+      notePinFailure(clientSlug);
+      res.status(403).json({ status: "error", error: "Wrong PIN." });
+      return false;
+    }
+    pinFailures.delete(clientSlug);
+    return true;
+  };
+
+  app.post("/api/reservations", async (req, res) => {
+    if (limited(req, res, "reserve", 10, 60_000)) return;
+    try {
+      const clientSlug = cleanSlug(req.body?.client_slug);
+      if (!clientSlug || !(await isKnownClient(clientSlug))) return res.status(400).json({ status: "error", error: "Unknown client_slug." });
+      const unitName = cleanText(req.body?.unit, 80);
+      const name = cleanText(req.body?.buyer?.name, 80);
+      const phone = cleanText(req.body?.buyer?.phone, 40);
+      const email = cleanText(req.body?.buyer?.email, 120);
+      const country = cleanText(req.body?.buyer?.country, 60);
+      const city = cleanText(req.body?.buyer?.city, 60);
+      if (!unitName) return res.status(400).json({ status: "error", error: "Choose a unit to reserve." });
+      if (!name) return res.status(400).json({ status: "error", error: "The buyer's name is required." });
+      if (!/^[+0-9()\-.\s]{5,40}$/.test(phone)) return res.status(400).json({ status: "error", error: "The phone number is not valid." });
+      if (!/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(email)) return res.status(400).json({ status: "error", error: "The email address is not valid." });
+      if (!country || !city) return res.status(400).json({ status: "error", error: "The buyer's country and city are required." });
+      if (!(await checkPin(res, clientSlug, req.body?.pin))) return;
+
+      const outcome = await options.reserveUnit(clientSlug, unitName, async () => (admin ? admin.getSheetRows(clientSlug) : null));
+      if (outcome === "unknown") return res.status(404).json({ status: "error", error: "That unit was not found in this project." });
+      if (outcome === "taken") return res.status(409).json({ status: "error", error: "That unit is no longer available." });
+
+      // The portal's own copy of the units, so the reservation shows there and survives a later push
+      if (admin) {
+        try {
+          if (!(await admin.setUnitAvailability(clientSlug, unitName, RESERVED_STATUS))) {
+            console.warn(`[Insights] Reserved '${unitName}' for '${clientSlug}', but the portal's sheet data has no such unit.`);
+          }
+        } catch (e: any) {
+          console.error("[Insights] Could not mark a reserved unit in the portal's sheet data:", e?.message || e);
+        }
+      }
+      const lead: Lead = dropUndefined({
+        id: newId(), clientSlug, createdAt: new Date().toISOString(), name, phone, email, country, city,
+        note: `Reserved ${unitName} from the Unreal app`, reservedUnit: unitName, unitNames: [unitName],
+        sessionId: cleanText(req.body?.session_id, 64) || undefined, status: "new" as const,
+      });
+      await store.saveLead(lead);
+      if (!overLimit(`lead-email:${clientSlug}`, 20, 3_600_000)) void sendLeadEmail(lead, null);
+      res.json({ status: "ok", unit: unitName, availability: RESERVED_STATUS, lead_id: lead.id });
+    } catch (e: any) {
+      console.error("[Insights] Could not reserve a unit:", e?.message || e);
+      res.status(500).json({ status: "error", error: "The unit could not be reserved." });
+    }
+  });
+
+  // Unreal (Settings menu): change the PIN by giving the current one
+  app.post("/api/reservation-pin", async (req, res) => {
+    if (limited(req, res, "reserve-pin", 10, 60_000)) return;
+    try {
+      const clientSlug = cleanSlug(req.body?.client_slug);
+      if (!clientSlug || !(await isKnownClient(clientSlug))) return res.status(400).json({ status: "error", error: "Unknown client_slug." });
+      const newPin = cleanText(req.body?.new_pin, 16);
+      if (!PIN_PATTERN.test(newPin)) return res.status(400).json({ status: "error", error: "The new PIN must be 4 to 8 digits." });
+      if (!(await checkPin(res, clientSlug, req.body?.current_pin))) return;
+      if (admin) await admin.setReservationPin(clientSlug, newPin);
+      else localPins.set(clientSlug, newPin);
+      res.json({ status: "ok" });
+    } catch (e: any) {
+      console.error("[Insights] Could not change a reservation PIN:", e?.message || e);
+      res.status(500).json({ status: "error", error: "The PIN could not be changed." });
+    }
+  });
+
+  // Portal (project settings): the owner, admins and the client's moderators see and set the PIN
+  const staffOrLocal = async (req: Request, res: Response, clientSlug: string): Promise<boolean> => {
+    if (admin) return checkStaff(req, res, clientSlug);
+    if (process.env.NODE_ENV !== "production" && isLoopback(req)) return true;
+    res.status(503).json({ status: "error", error: "This needs the FIREBASE_SERVICE_ACCOUNT secret on the server." });
+    return false;
+  };
+  app.get("/api/reservation-pin", async (req, res) => {
+    const clientSlug = cleanSlug(req.query.slug);
+    if (!clientSlug) return res.status(400).json({ status: "error", error: "slug is required." });
+    if (!(await staffOrLocal(req, res, clientSlug))) return;
+    try {
+      res.json({ status: "ok", pin: await reservationPinOf(clientSlug) });
+    } catch (e: any) {
+      console.error("[Insights] Could not read a reservation PIN:", e?.message || e);
+      res.status(500).json({ status: "error", error: "The PIN could not be read." });
+    }
+  });
+  app.put("/api/reservation-pin", async (req, res) => {
+    const clientSlug = cleanSlug(req.body?.slug);
+    const pin = cleanText(req.body?.pin, 16);
+    if (!clientSlug || !PIN_PATTERN.test(pin)) return res.status(400).json({ status: "error", error: "slug and a PIN of 4 to 8 digits are required." });
+    if (!(await staffOrLocal(req, res, clientSlug))) return;
+    try {
+      if (admin) await admin.setReservationPin(clientSlug, pin);
+      else localPins.set(clientSlug, pin);
+      pinFailures.delete(clientSlug);
+      res.json({ status: "ok", pin });
+    } catch (e: any) {
+      console.error("[Insights] Could not save a reservation PIN:", e?.message || e);
+      res.status(500).json({ status: "error", error: "The PIN could not be saved." });
+    }
+  });
+
+  // Portal: removes a lead for good (a test entry, a duplicate, a buyer who asked to be forgotten). For the people
+  // who look after the portal: the owner, admins and the client's moderators. The buyer's shortlist page, which
+  // holds units only and no contact details, is left as it is.
+  app.delete("/api/leads/:id", async (req, res) => {
+    const clientSlug = cleanSlug(req.query.slug);
+    if (!clientSlug || !/^[A-Za-z0-9_-]{6,64}$/.test(req.params.id)) return res.status(400).json({ status: "error", error: "slug and a lead are required." });
+    try {
+      if (admin) {
+        if (!(await checkStaff(req, res, clientSlug))) return;
+      } else if (!(process.env.NODE_ENV !== "production" && isLoopback(req))) {
+        return res.status(503).json({ status: "error", error: "This needs the FIREBASE_SERVICE_ACCOUNT secret on the server." });
+      }
+      const removed = await store.deleteLead(req.params.id, clientSlug);
+      if (!removed) return res.status(404).json({ status: "error", error: "Lead not found." });
+      res.json({ status: "ok" });
+    } catch (e: any) {
+      console.error("[Insights] Could not delete a lead:", e?.message || e);
+      res.status(500).json({ status: "error", error: "The lead could not be deleted." });
     }
   });
 

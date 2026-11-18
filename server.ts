@@ -10,7 +10,7 @@ import {
 } from "./src/serverEmailNotifier";
 import { BugNotificationPayload } from "./src/types";
 import { fetchPublicImage, UnsafeUrlError } from "./src/serverSafeFetch";
-import { registerInsightsRoutes, shortlistHostGuard, type ClientAccessCheck, type InsightsRoutes } from "./src/serverInsights";
+import { registerInsightsRoutes, shortlistHostGuard, isUnitRow, RESERVED_STATUS, type ClientAccessCheck, type InsightsRoutes } from "./src/serverInsights";
 
 async function startServer() {
   const app = express();
@@ -1053,7 +1053,24 @@ async function startServer() {
   // Attach Vite development server or production static distribution layer
   // Buyer shortlists (QR handoff), leads and usage analytics from the Unreal app. Registered before the
   // page fallback below so /s/<id> and the new /api routes are not answered with the portal page.
-  const insights = await registerInsightsRoutes(app, { isKnownClient: () => true });
+  const insights = await registerInsightsRoutes(app, {
+    isKnownClient: () => true,
+    // A reservation from the Unreal app: the unit becomes Booked in what the server holds, and every connected
+    // Unreal app of the project is told at once
+    reserveUnit: async (slug, unitName, loadRows) => {
+      if (!clientsData[slug]?.attributes_matrix?.length) {
+        const rows = await loadRows();
+        if (rows?.length) clientsData[slug] = { client_slug: slug, target_class: "ArchViz Real-Estate Portfolio", attributes_matrix: rows };
+      }
+      const row = clientsData[slug]?.attributes_matrix?.find((r: any) => isUnitRow(r, unitName));
+      if (!row) return "unknown";
+      if (String(row.Availability || "").trim().toLowerCase() !== "available") return "taken";
+      row.Availability = RESERVED_STATUS;
+      savePersistedClients(clientsData);
+      broadcastSync("update", slug, { property: unitName, data: { Availability: RESERVED_STATUS } });
+      return "ok";
+    },
+  });
   clientWriteCheck = insights.authorizeWrite;
   insightsRoutes = insights;
 
