@@ -98,13 +98,15 @@ export function whatsAppNumber(phone: string): string {
 }
 
 // Opens WhatsApp (app or web) on the advisor's device with the buyer's number and a ready message; the advisor presses send.
-export function whatsAppLink(lead: { name: string; phone: string; shortlist_url?: string | null }, projectName?: string): string {
+export function whatsAppLink(lead: { name: string; phone: string; shortlist_url?: string | null; reservedUnit?: string }, projectName?: string): string {
   const number = whatsAppNumber(lead.phone);
   if (!number || !lead.shortlist_url) return "";
   const firstName = (lead.name || "").trim().split(/\s+/)[0];
   const greeting = firstName ? `Hello ${firstName},` : "Hello,";
   const where = projectName ? ` at ${projectName}` : "";
-  const text = `${greeting} here are the homes you saved${where}: ${lead.shortlist_url}`;
+  const text = lead.reservedUnit
+    ? `${greeting} here is your reservation of unit ${lead.reservedUnit}${where}: ${lead.shortlist_url}`
+    : `${greeting} here are the homes you saved${where}: ${lead.shortlist_url}`;
   return `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
 }
 
