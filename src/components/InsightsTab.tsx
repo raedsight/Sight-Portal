@@ -11,6 +11,11 @@ interface LeadRow {
   unitNames: string[];
   status: "new" | "contacted" | "closed";
   shortlist_url?: string | null;
+  // Reservations made in the Unreal app
+  email?: string;
+  country?: string;
+  city?: string;
+  reservedUnit?: string;
 }
 
 interface Summary {
@@ -142,6 +147,45 @@ export default function InsightsTab({ clientId, clientName }: { clientId: string
   const [eventLoading, setEventLoading] = useState(false);
   const [traffic, setTraffic] = useState<TrafficState | null>(null);
   const [trafficSaving, setTrafficSaving] = useState(false);
+  // The PIN an advisor types in the Unreal app to reserve a unit. Only staff receive it from the server.
+  const [reservationPin, setReservationPin] = useState<string | null>(null);
+  const [pinDraft, setPinDraft] = useState("");
+  const [pinSaving, setPinSaving] = useState(false);
+  const [pinSaved, setPinSaved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setReservationPin(null);
+    setPinSaved(false);
+    authorizedFetch(`/api/reservation-pin?slug=${encodeURIComponent(clientId)}`)
+      .then((data) => {
+        if (cancelled || typeof data?.pin !== "string") return;
+        setReservationPin(data.pin);
+        setPinDraft(data.pin);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId]);
+
+  const saveReservationPin = async () => {
+    if (!/^\d{4,8}$/.test(pinDraft)) {
+      setError("The reservation PIN must be 4 to 8 digits.");
+      return;
+    }
+    setPinSaving(true);
+    setPinSaved(false);
+    try {
+      const data = await authorizedFetch("/api/reservation-pin", { method: "PUT", body: JSON.stringify({ slug: clientId, pin: pinDraft }) });
+      setReservationPin(data.pin);
+      setPinSaved(true);
+    } catch (e: any) {
+      setError(e?.message || "The reservation PIN could not be saved.");
+    } finally {
+      setPinSaving(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -304,6 +348,33 @@ export default function InsightsTab({ clientId, clientName }: { clientId: string
         </div>
       )}
 
+      {reservationPin !== null && (
+        <div className="flex flex-wrap items-center gap-3 p-3 rounded-lg border border-white/10 bg-white/5">
+          <div className="text-xs font-bold text-white uppercase tracking-wider">Reservation PIN</div>
+          <input
+            value={pinDraft}
+            onChange={(e) => {
+              setPinDraft(e.target.value.replace(/\D/g, "").slice(0, 8));
+              setPinSaved(false);
+            }}
+            inputMode="numeric"
+            title="The PIN an advisor types in the Unreal app to reserve a unit"
+            className="w-28 px-3 py-1.5 bg-black border border-white/10 text-white rounded-lg text-xs font-mono tracking-widest"
+          />
+          <button
+            onClick={() => void saveReservationPin()}
+            disabled={pinSaving || pinDraft === reservationPin}
+            className="px-3 py-1.5 border border-white/10 text-white rounded-lg text-xs hover:bg-white/5 disabled:opacity-50 cursor-pointer"
+          >
+            {pinSaved ? "Saved" : "Save PIN"}
+          </button>
+          <p className="text-xs text-gray-400">
+            Asked for in the Unreal app before a unit is reserved from the Shortlist window. It can also be changed in the app's Settings menu.
+            {reservationPin === "0000" && <span className="text-amber-300"> Still the default: change it before the showroom opens.</span>}
+          </p>
+        </div>
+      )}
+
       {error && <div className="p-3 rounded-lg border border-red-500/30 bg-red-950/20 text-xs text-red-300">{error}</div>}
 
       <section className="space-y-3">
@@ -329,7 +400,20 @@ export default function InsightsTab({ clientId, clientName }: { clientId: string
                 {leads.map((lead) => (
                   <tr key={lead.id} className="border-t border-white/5 text-gray-200 align-top">
                     <td className="px-3 py-2 whitespace-nowrap">{new Date(lead.createdAt).toLocaleString()}</td>
-                    <td className="px-3 py-2">{lead.name}</td>
+                    <td className="px-3 py-2">
+                      {lead.name}
+                      {lead.reservedUnit && (
+                        <span className="mt-1 block w-fit rounded border border-amber-500/40 bg-amber-950/30 px-2 py-0.5 text-[11px] text-amber-200">
+                          Reserved {lead.reservedUnit}
+                        </span>
+                      )}
+                      {lead.email && (
+                        <a href={`mailto:${lead.email}`} className="mt-1 block text-[11px] text-cyan-300 break-all">{lead.email}</a>
+                      )}
+                      {(lead.city || lead.country) && (
+                        <span className="mt-0.5 block text-[11px] text-gray-400">{[lead.city, lead.country].filter(Boolean).join(", ")}</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 whitespace-nowrap">
                       <a href={`tel:${lead.phone}`} className="text-emerald-300 inline-flex items-center gap-1">
                         <Phone className="h-3 w-3" />
