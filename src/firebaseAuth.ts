@@ -7,7 +7,9 @@ import {
 import { auth } from "./firebase";
 
 const provider = new GoogleAuthProvider();
-// Request Google Sheets and Google Drive scopes for client media storage and spreadsheet bridge
+// Google Sheets and Google Drive access for client media storage and the spreadsheet bridge. This provider is
+// only used by googleSignIn() below, when someone uses a Drive or Sheets action; the portal's own sign-in
+// (triggerGoogleLogin in firebase.ts) asks for none of this.
 provider.addScope("https://www.googleapis.com/auth/spreadsheets");
 provider.addScope("https://www.googleapis.com/auth/drive");
 provider.addScope("https://www.googleapis.com/auth/drive.file");
@@ -42,6 +44,9 @@ export const initAuth = (
 export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
   try {
     isSigningIn = true;
+    // Suggest the Google account already signed in to the portal, so connecting Drive does not switch accounts by accident
+    const currentEmail = auth.currentUser?.email;
+    provider.setCustomParameters(currentEmail ? { login_hint: currentEmail } : {});
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
