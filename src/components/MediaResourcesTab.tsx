@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useRef, useMemo, useEffect } from "react";
+import { portalJsonHeaders } from "../portalApi";
 import {
   Upload,
   Image as ImageIcon,
@@ -1074,7 +1075,7 @@ export default function MediaResourcesTab({
     try {
       const res = await fetch("/api/sheet-data", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await portalJsonHeaders(),
         body: JSON.stringify({
           client_slug: client.id,
           target_class: "MediaResourcesCatalog",

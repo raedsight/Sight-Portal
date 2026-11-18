@@ -9,7 +9,7 @@ import {
   getEmailAuditHistory 
 } from "./src/serverEmailNotifier";
 import { BugNotificationPayload } from "./src/types";
-import { registerInsightsRoutes, shortlistHostGuard } from "./src/serverInsights";
+import { registerInsightsRoutes, shortlistHostGuard, type ClientAccessCheck } from "./src/serverInsights";
 
 async function startServer() {
   const app = express();
@@ -336,6 +336,18 @@ async function startServer() {
     });
   });
 
+  // The endpoints below that change what Unreal shows (property data, media, re-sync) are only for signed-in
+  // portal users who own the client: the owner, an admin, or the client's own account. Unreal itself only reads.
+  // The check is created further down with the leads and analytics routes, once the database connection is ready.
+  let clientWriteCheck: ClientAccessCheck | null = null;
+  const mayChangeClient = async (req: express.Request, res: express.Response, slug: unknown): Promise<boolean> => {
+    if (!clientWriteCheck) {
+      res.status(503).json({ status: "error", error: "The server is still starting. Try again in a moment." });
+      return false;
+    }
+    return clientWriteCheck(req, res, typeof slug === "string" ? slug.trim() : "");
+  };
+
   // API Endpoint 2: Fetch spreadsheet datasets currently cached in memory
   app.get("/api/sheet-data", (req, res) => {
     const slug = (req.query.client_slug as string) || "hyperion-vis";
@@ -351,8 +363,9 @@ async function startServer() {
   });
 
   // API Endpoint 3: Receive real-time sheet-data updates from the React Portal Workspace UI
-  app.post("/api/sheet-data", (req, res) => {
+  app.post("/api/sheet-data", async (req, res) => {
     const { client_slug, target_class, attributes_matrix, updated_row } = req.body;
+    if (!(await mayChangeClient(req, res, client_slug))) return;
 
     // Media catalog pushed from the Media Resources tab ("Push to UE5")
     const mediaCatalog = req.body.media_catalog || req.body.media;
@@ -392,7 +405,8 @@ async function startServer() {
   });
 
   // Media API 1: Receive a media catalog directly (same formats as media_catalog above)
-  app.post("/api/media", (req, res) => {
+  app.post("/api/media", async (req, res) => {
+    if (!(await mayChangeClient(req, res, req.body.client_slug))) return;
     const slug = req.body.client_slug || "hyperion-vis";
     const catalog = req.body.media_catalog || req.body.media || req.body;
     const unrealSessions = storeMediaCatalog(slug, catalog);
@@ -445,8 +459,9 @@ async function startServer() {
   });
 
   // API Endpoint 3b: Dedicated single property real-time update endpoint
-  app.post("/api/update-property", (req, res) => {
+  app.post("/api/update-property", async (req, res) => {
     const { client_slug, property_name, property_data } = req.body;
+    if (!(await mayChangeClient(req, res, client_slug))) return;
     const slug = client_slug || "hyperion-vis";
 
     if (!clientsData[slug]) {
@@ -484,8 +499,9 @@ async function startServer() {
   });
 
   // API Endpoint 4: Force manual re-sync broadcast to connected Unreal Engine clients
-  app.post("/api/force-sync", (req, res) => {
-    const slug = (req.body.client_slug as string) || (req.query.client_slug as string) || "hyperion-vis";
+  app.post("/api/force-sync", async (req, res) => {
+    const slug = (req.body.client_slug as string) || (req.query.client_slug as string) || "";
+    if (!(await mayChangeClient(req, res, slug))) return;
     const data = clientsData[slug] || clientsData["hyperion-vis"];
     
     console.log(`[Full-Stack API] Force re-sync requested for client '${slug}'. Broadcasting state to all active WebSockets...`);
@@ -996,7 +1012,8 @@ async function startServer() {
   // Attach Vite development server or production static distribution layer
   // Buyer shortlists (QR handoff), leads and usage analytics from the Unreal app. Registered before the
   // page fallback below so /s/<id> and the new /api routes are not answered with the portal page.
-  await registerInsightsRoutes(app, { isKnownClient: () => true });
+  const insights = await registerInsightsRoutes(app, { isKnownClient: () => true });
+  clientWriteCheck = insights.authorizeWrite;
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

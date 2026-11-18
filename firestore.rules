@@ -1,108 +1,112 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
     // ==========================================
-    // HARDENED SECURITY GLOBAL PRIMITIVES
+    // WHO IS ASKING
     // ==========================================
-    
-    // Checks if a client request is authenticated
+
     function isSignedIn() {
       return request.auth != null;
     }
 
-    // Identifies if the authenticated user is the designated system owner by UID or email
-    function isOwnerByEmail() {
+    // The system owner: the known owner accounts, or the owner's Google address once Google has verified it
+    function isOwnerAccount() {
       return isSignedIn() && (
-             request.auth.uid == 'nKJz7KlPOkN7y9rXG2ZKLL5Lowp1' ||
-             request.auth.uid == 'GDtCCZxWf2brJSU2aoamHTKmrrA3' ||
-             request.auth.uid == 'OUHZt9WNCvghWlqbw9p1e3PVeLC2' ||
-             (request.auth.token != null && (
-               request.auth.token.email == 'raed.sight@gmail.com' ||
-               request.auth.token.email.lower() == 'raed.sight@gmail.com'
-             ))
-             );
-    }
-
-    // Resolves role-based access control (RBAC) parameters from the user's own profile document
-    function userHasRole(uid, role) {
-      return exists(/databases/$(database)/documents/users/$(uid)) && 
-             get(/databases/$(database)/documents/users/$(uid)).data.get('role', '') == role;
-    }
-
-    // Checks if the authenticated user has the 'owner' role
-    function isOwner() {
-      return isSignedIn() && (
-        isOwnerByEmail() ||
-        userHasRole(request.auth.uid, 'owner')
-      );
-    }
-
-    // Checks if the authenticated user has either 'admin' or 'owner' privileges
-    function isAdminOrOwner() {
-      return isSignedIn() && (
+        request.auth.uid == 'nKJz7KlPOkN7y9rXG2ZKLL5Lowp1' ||
         request.auth.uid == 'GDtCCZxWf2brJSU2aoamHTKmrrA3' ||
-        (request.auth.token != null && (
-          request.auth.token.email == 'raed.sight@gmail.com' ||
-          request.auth.token.email.lower() == 'raed.sight@gmail.com'
-        )) ||
-        userHasRole(request.auth.uid, 'admin') ||
-        userHasRole(request.auth.uid, 'owner')
+        request.auth.uid == 'OUHZt9WNCvghWlqbw9p1e3PVeLC2' ||
+        (request.auth.token.email_verified == true &&
+         request.auth.token.email.lower() == 'raed.sight@gmail.com')
       );
     }
 
-    // Strictly verifies if a client is authenticated and restricted only to their own client staging portal
+    // The role stored in the signed-in user's own profile ('' when there is no profile yet)
+    function myRole() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '')
+        : '';
+    }
+
+    function myClientId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientId', '');
+    }
+
+    function isOwner() {
+      return isSignedIn() && (isOwnerAccount() || myRole() == 'owner');
+    }
+
+    function isAdminOrOwner() {
+      return isSignedIn() && (isOwnerAccount() || myRole() in ['admin', 'owner']);
+    }
+
+    // A client account, and only for the one portal an admin assigned to it
     function isClientOf(clientId) {
-      return isSignedIn() && 
-             userHasRole(request.auth.uid, 'client') && 
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientId', '') == clientId;
+      return isSignedIn() && myRole() == 'client' && myClientId() == clientId;
     }
 
     // ==========================================
-    // COLLECTION-LEVEL ACCESS CONTROL POLICIES
+    // COLLECTIONS
     // ==========================================
 
-    // 1. Users Collection: Synchronized user registry
+    // 1. Users: each person sees their own profile; admins see and manage everyone's.
     match /users/{userId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isAdminOrOwner() || (isSignedIn() && request.auth.uid == userId);
+
+      // A new sign-in may only register itself as a client with no portal assigned. It can see nothing
+      // until an admin assigns a portal. Nobody can make themselves an admin or pick their own portal.
+      allow create: if isAdminOrOwner() || (
+        isSignedIn() && request.auth.uid == userId &&
+        request.resource.data.get('uid', userId) == userId &&
+        request.resource.data.role == 'client' &&
+        request.resource.data.get('clientId', null) == null
+      );
+
+      // Owners change anything. Admins manage clients and admins but cannot create or change an owner.
+      // A person may update their own profile as long as the role and the assigned portal stay the same.
+      allow update: if isOwner() ||
+        (isAdminOrOwner() && resource.data.get('role', '') != 'owner' && request.resource.data.get('role', '') != 'owner') ||
+        (isSignedIn() && request.auth.uid == userId &&
+         request.resource.data.get('role', '') == resource.data.get('role', '') &&
+         request.resource.data.get('clientId', null) == resource.data.get('clientId', null));
+
+      allow delete: if isOwner();
     }
 
-    // 2. Theme Presets Collection: Accessible to everyone for branding and custom style loading
+    // 2. Theme presets: managed in the admin console
     match /themePresets/{presetId} {
-      allow read, write: if true;
+      allow read: if isSignedIn();
+      allow write: if isAdminOrOwner();
     }
 
-    // 3. Client Portals Collection: Read accessible to client portals & authenticated users
+    // 3. Client portals: admins manage all of them; a client account reads and edits only its own portal
     match /clients/{clientId} {
-      allow read, write: if true;
+      allow read: if isAdminOrOwner() || isClientOf(clientId);
+      allow create, delete: if isAdminOrOwner();
+      allow update: if isAdminOrOwner() || isClientOf(clientId);
     }
 
-    // Legacy and alternative collection aliases
+    // Older names for the same collection, still read as a fallback by the admin console
     match /clientPortals/{clientId} {
-      allow read, write: if true;
+      allow read, write: if isAdminOrOwner();
     }
     match /client_portals/{clientId} {
-      allow read, write: if true;
+      allow read, write: if isAdminOrOwner();
     }
     match /portals/{clientId} {
-      allow read, write: if true;
+      allow read, write: if isAdminOrOwner();
     }
 
-    // 4. Logs Collection: Real-time system activity and audit trail
+    // 4. Activity log: any signed-in user adds entries (sign-ins, pushes); only admins read, change or clear it
     match /logs/{logId} {
-      allow read, write: if true;
+      allow read, update, delete: if isAdminOrOwner();
+      allow create: if isSignedIn() &&
+        request.resource.data.keys().size() <= 12 &&
+        request.resource.data.get('details', '') is string &&
+        request.resource.data.get('details', '').size() <= 4000;
     }
 
-    // Global read access for diagnostic validation and portal access
-    // Buyer leads, shortlists and usage analytics are written and read only by the portal server (Admin SDK),
-    // which checks the signed-in user's role itself. They are excluded from the global read below.
-    function isServerOnlyCollection() {
-      return request.path[3] in ['leads', 'shortlists', 'analyticsEvents', 'analyticsDaily'];
-    }
-
-    match /{document=**} {
-      allow read: if !isServerOnlyCollection();
-    }
+    // Everything else is closed. Buyer leads, shortlists and usage analytics are read and written only by the
+    // portal server, which checks the signed-in user's role itself and is not subject to these rules.
   }
 }

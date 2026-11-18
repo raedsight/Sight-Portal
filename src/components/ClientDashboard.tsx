@@ -57,6 +57,7 @@ import { Client, SpreadsheetData, SheetRow, Log, BugIssue, BugActivity, ThemePre
 import { extractSpreadsheetId, getStoredClientSheet, saveStoredClientSheet, SPREADSHEET_TEMPLATES } from "../data";
 import { initAuth, googleSignIn, logout, getAccessToken } from "../firebaseAuth";
 import { saveClientSheetData } from "../firebase";
+import { portalJsonHeaders } from "../portalApi";
 import MediaResourcesTab from "./MediaResourcesTab";
 import InsightsTab from "./InsightsTab";
 import { notifyAdminBugEvent } from "../services/bugNotificationService";
@@ -482,7 +483,7 @@ export default function ClientDashboard({
     try {
       const res = await fetch("/api/sheet-data", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await portalJsonHeaders(),
         body: JSON.stringify({
           client_slug: client.id,
           target_class: currentPresetName,
@@ -887,9 +888,7 @@ export default function ClientDashboard({
       try {
         await fetch("/api/sheet-data", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
+          headers: await portalJsonHeaders(),
           body: JSON.stringify({
             client_slug: client.id,
             target_class: currentPresetName,
@@ -1025,7 +1024,7 @@ export default function ClientDashboard({
     try {
       await fetch("/api/sheet-data", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await portalJsonHeaders(),
         body: JSON.stringify({
           client_slug: client.id,
           target_class: currentPresetName,
@@ -1454,9 +1453,7 @@ export default function ClientDashboard({
       // 2. Sync to express backend store for connected WebSocket subscribers
       await fetch("/api/sheet-data", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: await portalJsonHeaders(),
         body: JSON.stringify({
           client_slug: client.id,
           target_class: currentPresetName,

@@ -29,12 +29,12 @@ import {
   resetQuotaStatus,
   QuotaStatusInfo
 } from "./firebase";
+import { portalJsonHeaders } from "./portalApi";
 import { 
   onAuthStateChanged, 
   signOut, 
   User,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword
+  signInWithEmailAndPassword
 } from "firebase/auth";
 import { Client, Log } from "./types";
 import { DEFAULT_CLIENTS, DEFAULT_LOGS, extractSpreadsheetId } from "./data";
@@ -137,7 +137,6 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState<boolean>(true);
 
   // Email/Password Auth Form state
-  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [authError, setAuthError] = useState<string | null>(null);
@@ -400,9 +399,7 @@ export default function App() {
     try {
       const res = await fetch("/api/force-sync", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: await portalJsonHeaders(),
         body: JSON.stringify({ client_slug: slug })
       });
       const data = await res.json();
@@ -635,11 +632,8 @@ export default function App() {
     }
 
     try {
-      if (authMode === "signin") {
-        await signInWithEmailAndPassword(auth, email, password);
-      } else {
-        await createUserWithEmailAndPassword(auth, email, password);
-      }
+      // Accounts are created by the Sight team; this form only signs in an existing one
+      await signInWithEmailAndPassword(auth, email, password);
     } catch (err: any) {
       const code = err?.code || "";
       if (code === "auth/operation-not-allowed") {
@@ -853,41 +847,9 @@ export default function App() {
                 <div className="flex-grow border-t border-white/10"></div>
               </div>
 
-              {/* Toggle Tab for Email */}
-              <div className="grid grid-cols-2 bg-white/5 p-1 rounded-xl border border-white/5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMode("signin");
-                    setAuthError(null);
-                    setSuggestGoogleAuth(false);
-                  }}
-                  title="Switch to email sign in form"
-                  className={`py-2 rounded-lg text-xs font-mono font-bold uppercase transition ${
-                    authMode === "signin"
-                      ? "bg-amber-500 text-black shadow"
-                      : "text-gray-400 hover:text-white"
-                  }`}
-                >
-                  Sign In
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMode("signup");
-                    setAuthError(null);
-                    setSuggestGoogleAuth(false);
-                  }}
-                  title="Switch to account registration form"
-                  className={`py-2 rounded-lg text-xs font-mono font-bold uppercase transition ${
-                    authMode === "signup"
-                      ? "bg-amber-500 text-black shadow"
-                      : "text-gray-400 hover:text-white"
-                  }`}
-                >
-                  Sign Up
-                </button>
-              </div>
+              <p className="text-[10px] text-gray-500 font-mono text-center leading-relaxed">
+                Accounts are created by the Sight team. To get access, ask your Sight contact for an invitation.
+              </p>
 
               {/* Credential Form */}
               <form onSubmit={handleEmailAuth} className="space-y-4 text-left">
@@ -922,19 +884,14 @@ export default function App() {
                 <button
                   type="submit"
                   disabled={formLoading}
-                  title={authMode === "signin" ? "Sign into your SightPortal account" : "Register new SightPortal account"}
+                  title="Sign into your SightPortal account"
                   className="w-full py-3 px-4 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 hover:text-amber-200 border border-amber-500/30 active:scale-[0.98] transition-all rounded-xl font-bold text-xs font-mono uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   {formLoading ? (
                     <Compass className="h-4 w-4 text-amber-300 animate-spin" />
-                  ) : authMode === "signin" ? (
-                    <>
-                      Sign In with Password
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </>
                   ) : (
                     <>
-                      Create New Account
+                      Sign In with Password
                       <ChevronRight className="h-3.5 w-3.5" />
                     </>
                   )}
