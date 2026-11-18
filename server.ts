@@ -9,6 +9,7 @@ import {
   getEmailAuditHistory 
 } from "./src/serverEmailNotifier";
 import { BugNotificationPayload } from "./src/types";
+import { fetchPublicImage, UnsafeUrlError } from "./src/serverSafeFetch";
 import { registerInsightsRoutes, shortlistHostGuard, type ClientAccessCheck, type InsightsRoutes } from "./src/serverInsights";
 
 async function startServer() {
@@ -457,14 +458,15 @@ async function startServer() {
       }
 
       if (/^https?:\/\//i.test(src)) {
-        const upstream = await fetch(upscaleDriveThumbnail(src), { headers: { Accept: "image/png,image/jpeg,image/*;q=0.8" } });
-        const contentType = upstream.headers.get("content-type") || "";
-        if (!upstream.ok || !contentType.startsWith("image/")) {
-          return res.status(502).json({ error: `Could not fetch image from source (HTTP ${upstream.status}, ${contentType || "no content type"})` });
+        // Only public https image addresses are fetched; see serverSafeFetch
+        try {
+          const image = await fetchPublicImage(upscaleDriveThumbnail(src));
+          res.setHeader("Content-Type", image.contentType);
+          res.setHeader("Cache-Control", "public, max-age=300");
+          return res.send(image.buffer);
+        } catch (fetchErr: any) {
+          return res.status(fetchErr instanceof UnsafeUrlError ? 400 : 502).json({ error: fetchErr?.message || "Could not fetch image from source" });
         }
-        res.setHeader("Content-Type", contentType);
-        res.setHeader("Cache-Control", "public, max-age=300");
-        return res.send(Buffer.from(await upstream.arrayBuffer()));
       }
 
       return res.status(415).json({ error: "Unsupported media URL format" });
@@ -881,13 +883,13 @@ async function startServer() {
           fileBuffer = Buffer.from(dataUrl.substring(commaIdx + 1), "base64");
         }
       } else if (url && (url.startsWith("http://") || url.startsWith("https://"))) {
-        const imgRes = await fetch(url);
-        if (imgRes.ok) {
-          fileBuffer = Buffer.from(await imgRes.arrayBuffer());
-          const cType = imgRes.headers.get("content-type");
-          if (cType) effectiveMime = cType.split(";")[0];
-        } else {
-          return res.status(400).json({ error: `Could not fetch remote media from URL: ${url}` });
+        // Only public https image addresses are fetched; see serverSafeFetch
+        try {
+          const image = await fetchPublicImage(url);
+          fileBuffer = image.buffer;
+          effectiveMime = image.contentType;
+        } catch (fetchErr: any) {
+          return res.status(400).json({ error: `Could not fetch remote media from URL: ${fetchErr?.message || "fetch failed"}` });
         }
       }
 
