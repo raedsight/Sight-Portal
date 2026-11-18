@@ -115,6 +115,22 @@ async function authorizedFetch(url: string, init?: RequestInit): Promise<any> {
   return body;
 }
 
+interface TrafficPresetInfo {
+  id: string;
+  label: string;
+  sessionBatchesPerMinute: number;
+  shortlistsPerMinute: number;
+  shortlistsPerDay: number;
+  analyticsBatchesPerMinute: number;
+  flushSeconds: number;
+}
+
+interface TrafficState {
+  preset: string;
+  canEdit: boolean;
+  presets: TrafficPresetInfo[];
+}
+
 export default function InsightsTab({ clientId, clientName }: { clientId: string; clientName?: string }) {
   const [days, setDays] = useState(30);
   const [leads, setLeads] = useState<LeadRow[]>([]);
@@ -124,6 +140,37 @@ export default function InsightsTab({ clientId, clientName }: { clientId: string
   const [openEvent, setOpenEvent] = useState<string | null>(null);
   const [eventRows, setEventRows] = useState<EventRow[]>([]);
   const [eventLoading, setEventLoading] = useState(false);
+  const [traffic, setTraffic] = useState<TrafficState | null>(null);
+  const [trafficSaving, setTrafficSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTraffic(null);
+    authorizedFetch(`/api/traffic-preset?slug=${encodeURIComponent(clientId)}`)
+      .then((data) => {
+        if (!cancelled) setTraffic({ preset: data.preset, canEdit: data.can_edit === true, presets: Array.isArray(data.presets) ? data.presets : [] });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId]);
+
+  const changeTrafficPreset = async (preset: string) => {
+    if (!traffic) return;
+    const previous = traffic.preset;
+    setTrafficSaving(true);
+    setTraffic({ ...traffic, preset });
+    try {
+      await authorizedFetch("/api/traffic-preset", { method: "PUT", body: JSON.stringify({ slug: clientId, preset }) });
+    } catch (e: any) {
+      setTraffic({ ...traffic, preset: previous });
+      setError(e?.message || "The traffic setting could not be saved.");
+    } finally {
+      setTrafficSaving(false);
+    }
+  };
+  const activeTraffic = traffic?.presets.find((p) => p.id === traffic.preset);
 
   // Click a tile: load what is behind its number
   const showEvent = async (name: string) => {
@@ -222,6 +269,28 @@ export default function InsightsTab({ clientId, clientName }: { clientId: string
           </button>
         </div>
       </div>
+
+      {traffic && activeTraffic && (
+        <div className="flex flex-wrap items-center gap-3 p-3 rounded-lg border border-white/10 bg-white/5">
+          <div className="text-xs font-bold text-white uppercase tracking-wider">Traffic limits</div>
+          <select
+            value={traffic.preset}
+            disabled={!traffic.canEdit || trafficSaving}
+            onChange={(e) => void changeTrafficPreset(e.target.value)}
+            title={traffic.canEdit ? "How much traffic from the Unreal app the server accepts for this project" : "Set by the Sight team"}
+            className="px-3 py-1.5 bg-black border border-white/10 text-white rounded-lg text-xs disabled:opacity-60"
+          >
+            {traffic.presets.map((p) => (
+              <option key={p.id} value={p.id}>{p.label}</option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-400">
+            Up to {activeTraffic.shortlistsPerMinute} shortlists a minute and {activeTraffic.shortlistsPerDay} a day,{" "}
+            {activeTraffic.analyticsBatchesPerMinute} analytics batches a minute ({activeTraffic.sessionBatchesPerMinute} per visit).
+            Unreal sends analytics every {activeTraffic.flushSeconds} seconds.
+          </p>
+        </div>
+      )}
 
       {error && <div className="p-3 rounded-lg border border-red-500/30 bg-red-950/20 text-xs text-red-300">{error}</div>}
 

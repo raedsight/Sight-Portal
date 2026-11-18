@@ -86,6 +86,26 @@ const SLUG_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 const EVENT_NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]{0,39}$/;
 const MAX_UNITS = 30;
 const MAX_EVENTS_PER_REQUEST = 100;
+
+// How much traffic from the Unreal app the server accepts for one client. Chosen per client in the portal
+// (Leads & Analytics); "default" suits a normal showroom day.
+export type TrafficPreset = "default" | "busy" | "open";
+export interface TrafficLimits {
+  label: string;
+  // Analytics batches one Unreal session may send per minute
+  sessionBatchesPerMinute: number;
+  shortlistsPerMinute: number;
+  shortlistsPerDay: number;
+  analyticsBatchesPerMinute: number;
+  // How often the Unreal app is asked to send its analytics
+  flushSeconds: number;
+}
+export const TRAFFIC_PRESETS: Record<TrafficPreset, TrafficLimits> = {
+  default: { label: "Default", sessionBatchesPerMinute: 20, shortlistsPerMinute: 10, shortlistsPerDay: 200, analyticsBatchesPerMinute: 300, flushSeconds: 10 },
+  busy: { label: "Busy Day", sessionBatchesPerMinute: 30, shortlistsPerMinute: 20, shortlistsPerDay: 400, analyticsBatchesPerMinute: 600, flushSeconds: 5 },
+  open: { label: "Open Day", sessionBatchesPerMinute: 50, shortlistsPerMinute: 50, shortlistsPerDay: 500, analyticsBatchesPerMinute: 600, flushSeconds: 5 },
+};
+const asTrafficPreset = (value: unknown): TrafficPreset => (value === "busy" || value === "open" ? value : "default");
 const MAX_PARAMS = 25;
 
 const cleanText = (value: unknown, max: number): string =>
@@ -262,6 +282,8 @@ interface AdminContext {
   deleteClientUser: (slug: string, uid: string) => Promise<boolean>;
   // True when the portal has a client with this id (the slug used in /ws/<slug>)
   clientExists: (slug: string) => Promise<boolean>;
+  getTrafficPreset: (slug: string) => Promise<TrafficPreset>;
+  setTrafficPreset: (slug: string, preset: TrafficPreset) => Promise<void>;
   getClientName: (slug: string) => Promise<string>;
 }
 
@@ -385,6 +407,8 @@ async function createAdminContext(): Promise<AdminContext | null> {
         return true;
       },
       clientExists: async (slug) => (await db.collection("clients").doc(slug).get()).exists,
+      getTrafficPreset: async (slug) => asTrafficPreset((await db.collection("clients").doc(slug).get()).data()?.trafficPreset),
+      setTrafficPreset: async (slug, preset) => { await db.collection("clients").doc(slug).update({ trafficPreset: preset }); },
       getClientName: async (slug) => {
         const data = (await db.collection("clients").doc(slug).get()).data();
         return typeof data?.name === "string" ? data.name : "";
@@ -583,8 +607,26 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
   };
   // Per client, whoever the caller is: a ceiling well above what a busy showroom produces, so a script that
   // gets past the per-caller limits still cannot flood one client's leads or analytics.
-  const clientLimited = (res: Response, bucket: string, clientSlug: string, perMinute: number, perDay: number): boolean =>
-    overLimit(`${bucket}:m:${clientSlug}`, perMinute, 60_000) || overLimit(`${bucket}:d:${clientSlug}`, perDay, 86_400_000) ? tooMany(res) : false;
+  const clientLimited = (res: Response, bucket: string, clientSlug: string, perMinute: number, perDay: number | null): boolean =>
+    overLimit(`${bucket}:m:${clientSlug}`, perMinute, 60_000) || (perDay !== null && overLimit(`${bucket}:d:${clientSlug}`, perDay, 86_400_000)) ? tooMany(res) : false;
+
+  // The preset chosen for each client, remembered for a minute to avoid a database read on every request
+  const trafficPresets = new Map<string, { preset: TrafficPreset; until: number }>();
+  const trafficPresetOf = async (clientSlug: string): Promise<TrafficPreset> => {
+    const cached = trafficPresets.get(clientSlug);
+    if (cached && (!admin || cached.until > Date.now())) return cached.preset;
+    if (!admin) return "default";
+    let preset: TrafficPreset = "default";
+    try {
+      preset = await admin.getTrafficPreset(clientSlug);
+    } catch (e: any) {
+      console.error("[Insights] Could not read a client's traffic preset:", e?.message || e);
+    }
+    if (trafficPresets.size > 500) trafficPresets.clear();
+    trafficPresets.set(clientSlug, { preset, until: Date.now() + 60_000 });
+    return preset;
+  };
+  const trafficLimitsOf = async (clientSlug: string): Promise<TrafficLimits> => TRAFFIC_PRESETS[await trafficPresetOf(clientSlug)];
 
   // Data is only accepted for clients that exist in the portal, so a mistyped slug cannot create orphan records.
   // Answers are remembered for five minutes to avoid a database read on every analytics batch.
@@ -741,7 +783,8 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
       const leadPhone = cleanText(req.body?.lead?.phone, 40);
       const hasLead = !!leadName && !!leadPhone;
       if (!units.length && !hasLead) return res.status(400).json({ status: "error", error: "Send at least one unit or a lead." });
-      if (clientLimited(res, "shortlist", clientSlug, 30, 500)) return;
+      const limits = await trafficLimitsOf(clientSlug);
+      if (clientLimited(res, "shortlist", clientSlug, limits.shortlistsPerMinute, limits.shortlistsPerDay)) return;
       if (leadPhone && !/^[+0-9()\-.\s]{5,40}$/.test(leadPhone)) return res.status(400).json({ status: "error", error: "The phone number is not valid." });
 
       const now = new Date().toISOString();
@@ -808,9 +851,10 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
       if (!clientSlug || !(await isKnownClient(clientSlug))) return res.status(400).json({ status: "error", error: "Unknown client_slug." });
       const sessionId = cleanText(req.body?.session_id, 64);
       if (!sessionId) return res.status(400).json({ status: "error", error: "session_id is required." });
-      // One Unreal session sends a batch every few seconds; a whole showroom stays far below the client ceiling
-      if (overLimit(`analytics:s:${clientSlug}:${sessionId}`, 40, 60_000)) return void tooMany(res);
-      if (clientLimited(res, "analytics", clientSlug, 600, 100_000)) return;
+      // One Unreal session sends a batch every few seconds; a whole showroom stays below the client ceiling
+      const limits = await trafficLimitsOf(clientSlug);
+      if (overLimit(`analytics:s:${clientSlug}:${sessionId}`, limits.sessionBatchesPerMinute, 60_000)) return void tooMany(res);
+      if (clientLimited(res, "analytics", clientSlug, limits.analyticsBatchesPerMinute, null)) return;
       const rawEvents: any[] = Array.isArray(req.body?.events) ? req.body.events : [];
       const receivedAt = new Date().toISOString();
       const events: AnalyticsEvent[] = [];
@@ -824,7 +868,8 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
       }
       if (!events.length) return res.status(400).json({ status: "error", error: "No valid events." });
       await store.saveEvents(events, req.body?.session_start === true ? 1 : 0);
-      res.json({ status: "ok", accepted: events.length, rejected: rawEvents.length - events.length });
+      // flush_seconds tells the Unreal app how often to send, so it follows the preset chosen in the portal
+      res.json({ status: "ok", accepted: events.length, rejected: rawEvents.length - events.length, flush_seconds: limits.flushSeconds });
     } catch (e: any) {
       console.error("[Insights] Could not save analytics events:", e?.message || e);
       res.status(500).json({ status: "error", error: "The events could not be saved." });
@@ -912,6 +957,45 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
     } catch (e: any) {
       console.error("[Insights] Could not update a lead:", e?.message || e);
       res.status(500).json({ status: "error", error: "The lead could not be updated." });
+    }
+  });
+
+  // Portal: the traffic preset of one client. Anyone who can open the client's leads sees it; the owner, admins
+  // and the client's moderators change it.
+  const canManage = (user: PortalUser, clientSlug: string): boolean =>
+    user.role === "owner" || user.role === "admin" || (user.role === "moderator" && user.clientIds.includes(clientSlug));
+  const presetList = (Object.keys(TRAFFIC_PRESETS) as TrafficPreset[]).map((id) => ({ id, ...TRAFFIC_PRESETS[id] }));
+
+  app.get("/api/traffic-preset", async (req, res) => {
+    const clientSlug = cleanSlug(req.query.slug);
+    if (!clientSlug) return res.status(400).json({ status: "error", error: "slug is required." });
+    if (!admin) return res.json({ status: "ok", preset: await trafficPresetOf(clientSlug), can_edit: process.env.NODE_ENV !== "production" && isLoopback(req), presets: presetList });
+    const user = await identify(req, res);
+    if (!user) return;
+    if (!canManage(user, clientSlug) && !(user.role === "client" && user.clientId === clientSlug)) {
+      return res.status(403).json({ status: "error", error: "This account cannot view that client." });
+    }
+    res.json({ status: "ok", preset: await trafficPresetOf(clientSlug), can_edit: canManage(user, clientSlug), presets: presetList });
+  });
+
+  app.put("/api/traffic-preset", async (req, res) => {
+    const clientSlug = cleanSlug(req.body?.slug);
+    const requested = req.body?.preset;
+    if (!clientSlug || typeof requested !== "string" || !Object.prototype.hasOwnProperty.call(TRAFFIC_PRESETS, requested)) return res.status(400).json({ status: "error", error: "slug and a known preset are required." });
+    const preset = asTrafficPreset(requested);
+    try {
+      if (admin) {
+        if (!(await checkStaff(req, res, clientSlug))) return;
+        if (!(await admin.clientExists(clientSlug))) return res.status(404).json({ status: "error", error: "Unknown client." });
+        await admin.setTrafficPreset(clientSlug, preset);
+      } else if (!(process.env.NODE_ENV !== "production" && isLoopback(req))) {
+        return res.status(503).json({ status: "error", error: "This needs the FIREBASE_SERVICE_ACCOUNT secret on the server." });
+      }
+      trafficPresets.set(clientSlug, { preset, until: Date.now() + 60_000 });
+      res.json({ status: "ok", preset });
+    } catch (e: any) {
+      console.error("[Insights] Could not save a client's traffic preset:", e?.message || e);
+      res.status(500).json({ status: "error", error: "The setting could not be saved." });
     }
   });
 
