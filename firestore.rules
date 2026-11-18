@@ -95,7 +95,9 @@ service cloud.firestore {
     match /clients/{clientId} {
       allow read: if isAdminOrOwner() || isModeratorOf(clientId) || isClientOf(clientId);
       allow create, delete: if isAdminOrOwner();
-      allow update: if isAdminOrOwner() || isModeratorOf(clientId) || isClientOf(clientId);
+      // A client account cannot change its own traffic limits
+      allow update: if isAdminOrOwner() || isModeratorOf(clientId) ||
+        (isClientOf(clientId) && request.resource.data.get('trafficPreset', 'default') == resource.data.get('trafficPreset', 'default'));
     }
 
     // Older names for the same collection, still read as a fallback by the admin console

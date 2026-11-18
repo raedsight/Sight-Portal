@@ -9,6 +9,7 @@ import {
   getEmailAuditHistory 
 } from "./src/serverEmailNotifier";
 import { BugNotificationPayload } from "./src/types";
+import { fetchPublicImage, UnsafeUrlError } from "./src/serverSafeFetch";
 import { registerInsightsRoutes, shortlistHostGuard, type ClientAccessCheck, type InsightsRoutes } from "./src/serverInsights";
 
 async function startServer() {
@@ -124,9 +125,19 @@ async function startServer() {
     ...loadPersistedClients()
   };
 
+  // What the server holds for a project. A project it does not know (a mistyped or missing ID, or one that has
+  // not been pushed since the server started) gets an empty list, never another project's or the demo's units.
+  // The demo data is only served when "hyperion-vis" is asked for by name.
+  const dataFor = (slug: string | undefined) => {
+    const key = typeof slug === "string" ? slug.trim() : "";
+    return clientsData[key] || { client_slug: key, target_class: "ArchViz Real-Estate Portfolio", attributes_matrix: [] as any[] };
+  };
+  // A socket only receives what belongs to the project it connected for
+  const socketIsFor = (client: any, slug: string): boolean => !!slug && client.client_slug === slug;
+
   // Helper function to broadcast updates to all active WebSocket clients connected to a specific client_slug
   const broadcastSync = (event: "init" | "update", client_slug: string, extraPayload?: any) => {
-    const data = clientsData[client_slug] || clientsData["hyperion-vis"];
+    const data = dataFor(client_slug);
     const payloadObject: Record<string, any> = {
       event,
       timestamp: new Date().toISOString(),
@@ -148,13 +159,8 @@ async function startServer() {
     let clientsCount = 0;
     wss.clients.forEach((client: any) => {
       if (client.readyState === WebSocket.OPEN) {
-        // Broadcast to matching client_slug or default instances
-        if (
-          !client.client_slug ||
-          client.client_slug === client_slug || 
-          client.client_slug === "hyperion-vis" ||
-          client_slug === "hyperion-vis"
-        ) {
+        // Broadcast only to the sockets connected for this project
+        if (socketIsFor(client, client_slug)) {
           client.send(payloadString);
           clientsCount++;
         }
@@ -237,22 +243,8 @@ async function startServer() {
       }));
   };
 
-  // Unknown or default slugs fall back to the most recently pushed media catalog
-  const resolveMediaSlug = (requested?: string): string => {
-    if (requested && clientsMedia[requested]?.items?.length) return requested;
-    if (!requested || requested === "hyperion-vis") {
-      let latest = "";
-      let latestTime = "";
-      for (const [slug, entry] of Object.entries(clientsMedia)) {
-        if (entry.items?.length && (entry.updatedAt || "") >= latestTime) {
-          latest = slug;
-          latestTime = entry.updatedAt || "";
-        }
-      }
-      if (latest) return latest;
-    }
-    return requested || "hyperion-vis";
-  };
+  // Media is only served for the project asked for; an unknown or missing ID gets an empty catalog
+  const resolveMediaSlug = (requested?: string): string => (typeof requested === "string" ? requested.trim() : "");
 
   // Unreal-friendly view: no inline base64, each image is served by its own URL
   const buildMediaPayload = (slug: string, category?: string) => {
@@ -284,7 +276,7 @@ async function startServer() {
     let count = 0;
     wss.clients.forEach((client: any) => {
       if (client.readyState === WebSocket.OPEN) {
-        if (!client.client_slug || client.client_slug === slug || client.client_slug === "hyperion-vis" || slug === "hyperion-vis") {
+        if (socketIsFor(client, slug)) {
           client.send(message);
           count++;
         }
@@ -312,13 +304,14 @@ async function startServer() {
   // API Endpoint 1: Healthcheck & Dynamic Unreal Compatibility Fallback Route
   // This mirrors what the Unreal Engine C++ plugin queries by default, responding with compiled datasets
   app.get("/api/health", (req, res) => {
-    const slug = (req.query.client_slug as string) || "hyperion-vis";
-    const data = clientsData[slug] || clientsData["hyperion-vis"];
+    const slug = (req.query.client_slug as string) || "";
+    const data = dataFor(slug);
 
     let ue5Alive = false;
     wss.clients.forEach((client: any) => {
       if (client.readyState === WebSocket.OPEN) {
-        if (!client.client_slug || client.client_slug === slug || client.client_slug === "hyperion-vis") {
+        // With no project named (the admin overview), any connected Unreal app counts
+        if (!slug || socketIsFor(client, slug)) {
           ue5Alive = true;
         }
       }
@@ -349,6 +342,14 @@ async function startServer() {
     }
     return insightsRoutes.authorizeAdmin(req, res);
   };
+  // Google Drive endpoints: a portal account with a portal assigned, on top of the Google token they already need
+  const mayUseDrive = async (req: express.Request, res: express.Response): Promise<boolean> => {
+    if (!insightsRoutes) {
+      res.status(503).json({ status: "error", error: "The server is still starting. Try again in a moment." });
+      return false;
+    }
+    return insightsRoutes.authorizeMember(req, res);
+  };
   // The portal's own address, used for links in emails. Never taken from the caller.
   const portalBaseUrl = (req: express.Request): string => {
     if (process.env.APP_URL && /^https?:\/\//.test(process.env.APP_URL)) return process.env.APP_URL.replace(/\/+$/, "");
@@ -366,8 +367,8 @@ async function startServer() {
 
   // API Endpoint 2: Fetch spreadsheet datasets currently cached in memory
   app.get("/api/sheet-data", (req, res) => {
-    const slug = (req.query.client_slug as string) || "hyperion-vis";
-    const data = clientsData[slug] || clientsData["hyperion-vis"];
+    const slug = (req.query.client_slug as string) || "";
+    const data = dataFor(slug);
     res.json({
       timestamp: new Date().toISOString(),
       payload: {
@@ -457,14 +458,15 @@ async function startServer() {
       }
 
       if (/^https?:\/\//i.test(src)) {
-        const upstream = await fetch(upscaleDriveThumbnail(src), { headers: { Accept: "image/png,image/jpeg,image/*;q=0.8" } });
-        const contentType = upstream.headers.get("content-type") || "";
-        if (!upstream.ok || !contentType.startsWith("image/")) {
-          return res.status(502).json({ error: `Could not fetch image from source (HTTP ${upstream.status}, ${contentType || "no content type"})` });
+        // Only public https image addresses are fetched; see serverSafeFetch
+        try {
+          const image = await fetchPublicImage(upscaleDriveThumbnail(src));
+          res.setHeader("Content-Type", image.contentType);
+          res.setHeader("Cache-Control", "public, max-age=300");
+          return res.send(image.buffer);
+        } catch (fetchErr: any) {
+          return res.status(fetchErr instanceof UnsafeUrlError ? 400 : 502).json({ error: fetchErr?.message || "Could not fetch image from source" });
         }
-        res.setHeader("Content-Type", contentType);
-        res.setHeader("Cache-Control", "public, max-age=300");
-        return res.send(Buffer.from(await upstream.arrayBuffer()));
       }
 
       return res.status(415).json({ error: "Unsupported media URL format" });
@@ -518,7 +520,7 @@ async function startServer() {
   app.post("/api/force-sync", async (req, res) => {
     const slug = (req.body.client_slug as string) || (req.query.client_slug as string) || "";
     if (!(await mayChangeClient(req, res, slug))) return;
-    const data = clientsData[slug] || clientsData["hyperion-vis"];
+    const data = dataFor(slug);
     
     console.log(`[Full-Stack API] Force re-sync requested for client '${slug}'. Broadcasting state to all active WebSockets...`);
     
@@ -715,6 +717,7 @@ async function startServer() {
 
   // Endpoint: Provision or locate client dedicated folder
   app.post("/api/drive/provision-folder", async (req, res) => {
+    if (!(await mayUseDrive(req, res))) return;
     const token = getAuthToken(req);
     if (!token) {
       return res.status(401).json({ error: "Google OAuth access token missing from Authorization header" });
@@ -855,6 +858,7 @@ async function startServer() {
 
   // Endpoint: Upload file directly to Google Drive
   app.post("/api/drive/upload", async (req, res) => {
+    if (!(await mayUseDrive(req, res))) return;
     const token = getAuthToken(req);
     if (!token) {
       return res.status(401).json({ error: "Google OAuth access token missing from Authorization header" });
@@ -881,13 +885,13 @@ async function startServer() {
           fileBuffer = Buffer.from(dataUrl.substring(commaIdx + 1), "base64");
         }
       } else if (url && (url.startsWith("http://") || url.startsWith("https://"))) {
-        const imgRes = await fetch(url);
-        if (imgRes.ok) {
-          fileBuffer = Buffer.from(await imgRes.arrayBuffer());
-          const cType = imgRes.headers.get("content-type");
-          if (cType) effectiveMime = cType.split(";")[0];
-        } else {
-          return res.status(400).json({ error: `Could not fetch remote media from URL: ${url}` });
+        // Only public https image addresses are fetched; see serverSafeFetch
+        try {
+          const image = await fetchPublicImage(url);
+          fileBuffer = image.buffer;
+          effectiveMime = image.contentType;
+        } catch (fetchErr: any) {
+          return res.status(400).json({ error: `Could not fetch remote media from URL: ${fetchErr?.message || "fetch failed"}` });
         }
       }
 
@@ -954,6 +958,7 @@ async function startServer() {
 
   // Endpoint: Query folder files
   app.get("/api/drive/files", async (req, res) => {
+    if (!(await mayUseDrive(req, res))) return;
     const token = getAuthToken(req);
     if (!token) {
       return res.status(401).json({ error: "Google OAuth access token missing from Authorization header" });
@@ -992,6 +997,7 @@ async function startServer() {
 
   // Endpoint: Grant folder permissions to client email
   app.post("/api/drive/share-folder", async (req, res) => {
+    if (!(await mayUseDrive(req, res))) return;
     const token = getAuthToken(req);
     if (!token) {
       return res.status(401).json({ error: "Google OAuth access token missing from Authorization header" });
@@ -1084,7 +1090,7 @@ async function startServer() {
       if (match) {
         // extract client_slug from path, e.g. /ws/neon-nebula -> "neon-nebula"
         // or extract from query param `client` or `client_slug`, e.g. /ws?client=neon-nebula
-        let client_slug = match[1] || urlObj.searchParams.get("client") || urlObj.searchParams.get("client_slug") || "hyperion-vis";
+        let client_slug = match[1] || urlObj.searchParams.get("client") || urlObj.searchParams.get("client_slug") || "";
         
         console.log(`[WebSocket Upgrade] Upgrade handshake routing to client_slug: "${client_slug}"`);
 
@@ -1101,19 +1107,11 @@ async function startServer() {
   });
 
   wss.on("connection", (ws: any) => {
-    const client_slug = ws.client_slug || "hyperion-vis";
+    const client_slug = ws.client_slug || "";
     console.log(`[WebSocket connection] Direct Unreal Plugin client linked successfully for client: '${client_slug}'! Sending initial payload attributes...`);
     
-    // Ensure this client has an entry in clientsData
-    if (!clientsData[client_slug]) {
-      clientsData[client_slug] = {
-        client_slug,
-        target_class: "ArchViz Real-Estate Portfolio",
-        attributes_matrix: clientsData["hyperion-vis"]?.attributes_matrix || []
-      };
-    }
-
-    const data = clientsData[client_slug];
+    // An unknown project starts empty; it never borrows the demo's units
+    const data = dataFor(client_slug);
 
     // Immediately stream latest spreadsheet properties matching the active portfolio state (the client initiates, the server responds)
     ws.send(JSON.stringify({
