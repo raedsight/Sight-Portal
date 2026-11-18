@@ -1,2 +1,24 @@
+# Line endings: every text file is stored and checked out with LF, on every machine and with any git setting.
+# Without this, a file saved with Windows line endings shows up as completely changed in GitHub Desktop.
+* text=auto eol=lf
+
+# Windows scripts keep Windows line endings
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Never treated as text
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.dll binary
+*.exe binary
+*.pdb binary
+
+# Unreal assets are stored with Git LFS
 *.uasset filter=lfs diff=lfs merge=lfs -text
 *.umap filter=lfs diff=lfs merge=lfs -text
