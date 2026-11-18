@@ -561,6 +561,9 @@ export interface InsightsRoutes {
   authorizeAdmin: (req: Request, res: Response) => Promise<PortalUser | null>;
   // For the Google Drive endpoints: any portal account with a portal assigned (sign-in sent in X-Portal-Auth)
   authorizeMember: (req: Request, res: Response) => Promise<boolean>;
+  // True when the request carries a valid portal sign-in (in X-Portal-Auth or Authorization). Answers nothing
+  // itself; used to decide whether a large request body is read at all.
+  hasValidSignIn: (req: Request) => Promise<boolean>;
   // Email addresses of the moderators assigned to a client (empty without the database connection)
   listModeratorEmails: (clientSlug: string) => Promise<string[]>;
 }
@@ -755,6 +758,22 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
       (user.role === "moderator" && user.clientIds.length > 0) || (user.role === "client" && !!user.clientId);
     if (!allowed) res.status(403).json({ status: "error", error: "This account has no portal assigned." });
     return allowed;
+  };
+
+  const hasValidSignIn = async (req: Request): Promise<boolean> => {
+    if (!admin) return process.env.NODE_ENV !== "production" && isLoopback(req);
+    for (const headerName of ["x-portal-auth", "authorization"]) {
+      const header = String(req.headers[headerName] || "");
+      const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+      if (!token) continue;
+      try {
+        await admin.verifyIdToken(token);
+        return true;
+      } catch {
+        // not a portal sign-in (on the Drive endpoints Authorization holds the Google token): try the next header
+      }
+    }
+    return false;
   };
 
   const listModeratorEmails = async (clientSlug: string): Promise<string[]> => {
@@ -1029,5 +1048,5 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
     }
   });
 
-  return { authorize, authorizeWrite, authorizeAdmin, authorizeMember, listModeratorEmails };
+  return { authorize, authorizeWrite, authorizeAdmin, authorizeMember, hasValidSignIn, listModeratorEmails };
 }

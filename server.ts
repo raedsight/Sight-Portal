@@ -19,8 +19,24 @@ async function startServer() {
   // JSON parsing and large coordinate matrices and image base64 payloads helper setting
   // On the buyer-facing shortlist domain (PUBLIC_SHORTLIST_URL), only shortlist pages are served
   app.use(shortlistHostGuard);
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+  // Request bodies: everything is read with a small limit, except the few portal endpoints that carry images
+  // (media catalog, sheet push, Drive upload and folder setup, bug ticket screenshot). Those are read with a large limit, and
+  // only after the request has shown a valid portal sign-in, so a stranger cannot make the server read 50 MB.
+  const LARGE_BODY_PATHS = new Set(["/api/sheet-data", "/api/media", "/api/drive/upload", "/api/drive/provision-folder", "/api/notify-bug"]);
+  const smallJson = express.json({ limit: "256kb" });
+  const largeJson = express.json({ limit: "50mb" });
+  let insightsRoutes: InsightsRoutes | null = null;
+  app.use(async (req, res, next) => {
+    if (req.method !== "POST" || !LARGE_BODY_PATHS.has(req.path)) return smallJson(req, res, next);
+    try {
+      if (!insightsRoutes) return res.status(503).json({ status: "error", error: "The server is still starting. Try again in a moment." });
+      if (!(await insightsRoutes.hasValidSignIn(req))) return res.status(401).json({ status: "error", error: "Sign in to the portal first." });
+      return largeJson(req, res, next);
+    } catch (err) {
+      return next(err);
+    }
+  });
+  app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
   const CACHE_FILE_PATH = path.join(process.cwd(), "clients_datatable_cache.json");
 
@@ -333,7 +349,6 @@ async function startServer() {
   // portal users who own the client: the owner, an admin, or the client's own account. Unreal itself only reads.
   // The check is created further down with the leads and analytics routes, once the database connection is ready.
   let clientWriteCheck: ClientAccessCheck | null = null;
-  let insightsRoutes: InsightsRoutes | null = null;
   // Admin console endpoints: the owner and admins only
   const mayAdminister = async (req: express.Request, res: express.Response) => {
     if (!insightsRoutes) {
