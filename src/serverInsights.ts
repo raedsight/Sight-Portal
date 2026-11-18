@@ -486,8 +486,9 @@ async function createAdminContext(): Promise<AdminContext | null> {
 // ---------------------------------------------------------------------------------------------------------------------
 // Email
 
-async function sendLeadEmail(lead: Lead, shortlistUrl: string | null): Promise<void> {
-  const recipient = process.env.LEADS_EMAIL || DEFAULT_ADMIN_EMAIL;
+// Goes to the leads address (the owner) and to the moderators who look after the lead's project
+async function sendLeadEmail(lead: Lead, shortlistUrl: string | null, moderatorEmails: string[] = []): Promise<void> {
+  const recipient = Array.from(new Set([process.env.LEADS_EMAIL || DEFAULT_ADMIN_EMAIL, ...moderatorEmails].map((a) => a.trim()).filter(Boolean)));
   const subject = lead.reservedUnit
     ? `Unit reserved: ${lead.reservedUnit} by ${lead.name} (${lead.clientSlug})`
     : `New lead: ${lead.name} (${lead.clientSlug})`;
@@ -523,7 +524,9 @@ async function sendReservationConfirmation(lead: Lead, projectName: string): Pro
   await deliverEmail(lead.email, `Your reservation of unit ${lead.reservedUnit} at ${project}`, lines, `Reservation ${lead.id} is stored`);
 }
 
-async function deliverEmail(recipient: string, subject: string, lines: string[], what: string): Promise<void> {
+async function deliverEmail(to: string | string[], subject: string, lines: string[], what: string): Promise<void> {
+  const recipients = Array.isArray(to) ? to : [to];
+  const recipient = recipients.join(", ");
   const text = lines.join("\n");
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6">${lines.map((l) => `<div>${escapeHtml(l)}</div>`).join("")}</div>`;
   const cleanSubject = subject.replace(/[\r\n]+/g, " ").slice(0, 200);
@@ -540,7 +543,7 @@ async function deliverEmail(recipient: string, subject: string, lines: string[],
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from: process.env.RESEND_FROM || "Sight Portal <onboarding@resend.dev>", to: [recipient], subject: cleanSubject, html, text }),
+        body: JSON.stringify({ from: process.env.RESEND_FROM || "Sight Portal <onboarding@resend.dev>", to: recipients, subject: cleanSubject, html, text }),
       });
       if (!res.ok) throw new Error(`Resend answered ${res.status}`);
     } else {
@@ -922,7 +925,7 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
       if (lead) await store.saveLead(lead);
       const url = `${baseUrl(req)}/s/${shortlist.id}`;
       // The lead is always saved; the email about it is held back if they arrive faster than people can type them
-      if (lead && !overLimit(`lead-email:${clientSlug}`, 20, 3_600_000)) void sendLeadEmail(lead, url);
+      if (lead && !overLimit(`lead-email:${clientSlug}`, 20, 3_600_000)) void notifyLead(lead, url);
       res.json({ status: "ok", id: shortlist.id, url, lead_id: lead?.id || null, durable: store.mode === "firestore" });
     } catch (e: any) {
       console.error("[Insights] Could not save a shortlist:", e?.message || e);
@@ -1075,6 +1078,15 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
     }
   });
 
+  // The lead email: to the owner and to the project's moderators. Never fails the request it belongs to.
+  const notifyLead = async (lead: Lead, shortlistUrl: string | null): Promise<void> => {
+    try {
+      await sendLeadEmail(lead, shortlistUrl, await listModeratorEmails(lead.clientSlug));
+    } catch (e: any) {
+      console.warn("[Insights] Could not send a lead email:", e?.message || e);
+    }
+  };
+
   // ---- Reservations -------------------------------------------------------------------------------------------
   // An advisor reserves a unit from the Unreal app's Shortlist window. The Unreal app is not signed in, so the
   // reservation PIN of the project is what allows it. Five wrong PINs lock reservations for 15 minutes.
@@ -1144,7 +1156,7 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
         sessionId: cleanText(req.body?.session_id, 64) || undefined, status: "new" as const,
       });
       await store.saveLead(lead);
-      if (!overLimit(`lead-email:${clientSlug}`, 20, 3_600_000)) void sendLeadEmail(lead, null);
+      if (!overLimit(`lead-email:${clientSlug}`, 20, 3_600_000)) void notifyLead(lead, null);
       // The buyer gets a confirmation at the address the advisor typed (same hourly ceiling per project)
       if (!overLimit(`buyer-email:${clientSlug}`, 20, 3_600_000)) {
         void (async () => sendReservationConfirmation(lead, admin ? cleanText(await admin.getClientName(clientSlug), 80) : ""))()
