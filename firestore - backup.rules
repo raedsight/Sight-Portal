@@ -1,0 +1,127 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ==========================================
+    // WHO IS ASKING
+    // ==========================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // The system owner: the known owner accounts, or the owner's Google address once Google has verified it
+    function isOwnerAccount() {
+      return isSignedIn() && (
+        request.auth.uid == 'nKJz7KlPOkN7y9rXG2ZKLL5Lowp1' ||
+        request.auth.uid == 'GDtCCZxWf2brJSU2aoamHTKmrrA3' ||
+        request.auth.uid == 'OUHZt9WNCvghWlqbw9p1e3PVeLC2' ||
+        (request.auth.token.email_verified == true &&
+         request.auth.token.email.lower() == 'raed.sight@gmail.com')
+      );
+    }
+
+    // The role stored in the signed-in user's own profile ('' when there is no profile yet)
+    function myRole() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '')
+        : '';
+    }
+
+    function myClientId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientId', '');
+    }
+
+    function myClientIds() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientIds', []);
+    }
+
+    function isOwner() {
+      return isSignedIn() && (isOwnerAccount() || myRole() == 'owner');
+    }
+
+    function isAdminOrOwner() {
+      return isSignedIn() && (isOwnerAccount() || myRole() in ['admin', 'owner']);
+    }
+
+    // A client account, and only for the one portal an admin assigned to it
+    function isClientOf(clientId) {
+      return isSignedIn() && myRole() == 'client' && myClientId() == clientId;
+    }
+
+    // A moderator, and only for the portals an admin assigned to them
+    function isModeratorOf(clientId) {
+      return isSignedIn() && myRole() == 'moderator' && clientId in myClientIds();
+    }
+
+    // ==========================================
+    // COLLECTIONS
+    // ==========================================
+
+    // 1. Users: each person sees their own profile; admins see and manage everyone's.
+    match /users/{userId} {
+      allow read: if isAdminOrOwner() || (isSignedIn() && request.auth.uid == userId);
+
+      // A new sign-in may only register itself as a client with no portal assigned. It can see nothing
+      // until an admin assigns a portal. Nobody can make themselves an admin or pick their own portal.
+      allow create: if isAdminOrOwner() || (
+        isSignedIn() && request.auth.uid == userId &&
+        request.resource.data.get('uid', userId) == userId &&
+        request.resource.data.role == 'client' &&
+        request.resource.data.get('clientId', null) == null &&
+        request.resource.data.get('clientIds', []).size() == 0
+      );
+
+      // Owners change anything. Admins manage clients and admins but cannot create or change an owner.
+      // A person may update their own profile as long as the role and the assigned portals stay the same.
+      allow update: if isOwner() ||
+        (isAdminOrOwner() && resource.data.get('role', '') != 'owner' && request.resource.data.get('role', '') != 'owner') ||
+        (isSignedIn() && request.auth.uid == userId &&
+         request.resource.data.get('role', '') == resource.data.get('role', '') &&
+         request.resource.data.get('clientId', null) == resource.data.get('clientId', null) &&
+         request.resource.data.get('clientIds', []) == resource.data.get('clientIds', []));
+
+      allow delete: if isOwner();
+    }
+
+    // 2. Theme presets: managed in the admin console
+    match /themePresets/{presetId} {
+      allow read: if isSignedIn();
+      allow write: if isAdminOrOwner();
+    }
+
+    // 3. Client portals: admins manage all of them; a moderator reads and edits the portals assigned to them;
+    //    a client account reads and edits only its own portal
+    match /clients/{clientId} {
+      allow read: if isAdminOrOwner() || isModeratorOf(clientId) || isClientOf(clientId);
+      allow create, delete: if isAdminOrOwner();
+      allow update: if isAdminOrOwner() || isModeratorOf(clientId) || isClientOf(clientId);
+    }
+
+    // Older names for the same collection, still read as a fallback by the admin console
+    match /clientPortals/{clientId} {
+      allow read, write: if isAdminOrOwner();
+    }
+    match /client_portals/{clientId} {
+      allow read, write: if isAdminOrOwner();
+    }
+    match /portals/{clientId} {
+      allow read, write: if isAdminOrOwner();
+    }
+
+    // 4. Activity log: any signed-in user adds entries (sign-ins, pushes); only admins read, change or clear it
+    match /logs/{logId} {
+      allow read, update, delete: if isAdminOrOwner();
+      allow create: if isSignedIn() &&
+        request.resource.data.keys().size() <= 12 &&
+        request.resource.data.get('details', '') is string &&
+        request.resource.data.get('details', '').size() <= 4000;
+    }
+
+    // Moderators remove client accounts through the portal server, which checks the account belongs to one of
+    // their portals; they have no direct access to other people's profiles here.
+
+    // Everything else is closed. Buyer leads, shortlists and usage analytics are read and written only by the
+    // portal server, which checks the signed-in user's role itself and is not subject to these rules.
+  }
+}
