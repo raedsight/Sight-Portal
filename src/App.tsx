@@ -844,7 +844,7 @@ export default function App() {
                 </button>
 
                 <div className="flex items-center justify-between text-[10px] text-gray-400 px-1 font-mono">
-                  <span>Owner & Google Drive Access</span>
+                  <span title="Google Drive and Sheets access is only requested when you use a Drive or Sheets action">Identity only &middot; No Drive access at sign-in</span>
                   <span className="text-emerald-400 font-semibold">Active Provider</span>
                 </div>
               </div>

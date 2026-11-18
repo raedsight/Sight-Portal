@@ -727,18 +727,15 @@ export async function triggerGoogleAuthPopup(): Promise<{ user: User; accessToke
   }
 }
 
-// Standard Google Sign-In for general authentication
+// Standard Google Sign-In for general authentication.
+// Signing in only proves who the person is: it asks for no access to their Google Drive or Sheets. That access
+// is requested later, by googleSignIn() in firebaseAuth, the first time someone uses a Drive or Sheets action.
 export async function triggerGoogleLogin(): Promise<User> {
   try {
     const provider = new GoogleAuthProvider();
-    provider.addScope("https://www.googleapis.com/auth/spreadsheets");
-    provider.addScope("https://www.googleapis.com/auth/drive");
-    provider.addScope("https://www.googleapis.com/auth/drive.file");
     const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (credential?.accessToken) {
-      setCachedAccessToken(credential.accessToken);
-    }
+    // The token from this sign-in cannot reach Drive or Sheets, so it is not kept as the Google connection
+    setCachedAccessToken(null);
     return result.user;
   } catch (error: any) {
     console.error("[Google Login error]", error);
