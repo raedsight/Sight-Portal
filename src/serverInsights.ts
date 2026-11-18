@@ -14,6 +14,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import nodemailer from "nodemailer";
+import QRCode from "qrcode";
 import firebaseConfig from "../firebase-applet-config.json";
 import { DEFAULT_ADMIN_EMAIL } from "./serverEmailNotifier";
 
@@ -44,6 +45,8 @@ export interface Shortlist {
   projectName?: string;
   sessionId?: string;
   leadId?: string;
+  // Set when the page confirms a reservation made in the Unreal app: the buyer's name, shown on the page
+  reservedFor?: string;
   openedCount: number;
   lastOpenedAt?: string;
 }
@@ -486,8 +489,9 @@ async function createAdminContext(): Promise<AdminContext | null> {
 // ---------------------------------------------------------------------------------------------------------------------
 // Email
 
-async function sendLeadEmail(lead: Lead, shortlistUrl: string | null): Promise<void> {
-  const recipient = process.env.LEADS_EMAIL || DEFAULT_ADMIN_EMAIL;
+// Goes to the leads address (the owner) and to the moderators who look after the lead's project
+async function sendLeadEmail(lead: Lead, shortlistUrl: string | null, moderatorEmails: string[] = []): Promise<void> {
+  const recipient = Array.from(new Set([process.env.LEADS_EMAIL || DEFAULT_ADMIN_EMAIL, ...moderatorEmails].map((a) => a.trim()).filter(Boolean)));
   const subject = lead.reservedUnit
     ? `Unit reserved: ${lead.reservedUnit} by ${lead.name} (${lead.clientSlug})`
     : `New lead: ${lead.name} (${lead.clientSlug})`;
@@ -507,25 +511,74 @@ async function sendLeadEmail(lead: Lead, shortlistUrl: string | null): Promise<v
   await deliverEmail(recipient, subject, lines, `Lead ${lead.id} is stored`);
 }
 
-// What the buyer receives after an advisor reserves a unit for them: a short confirmation, with none of the
-// portal's internal details
-async function sendReservationConfirmation(lead: Lead, projectName: string): Promise<void> {
+// What the buyer receives after an advisor reserves a unit for them: a confirmation in the look of the reservation
+// page, with a button and a QR code that open that page, and none of the portal's internal details
+async function sendReservationConfirmation(lead: Lead, projectName: string, pageUrl: string | null, unit: ShortlistUnit | null, currency?: string): Promise<void> {
   if (!lead.email || !lead.reservedUnit) return;
   const project = projectName || "our project";
+  const address = [lead.city, lead.country].filter(Boolean).join(", ");
   const lines = [
     `Dear ${lead.name},`,
     `Thank you for your interest in ${project}. Unit ${lead.reservedUnit} has been reserved in your name.`,
+    pageUrl ? `View your reservation: ${pageUrl}` : "",
     "Our sales team will contact you shortly to confirm the details and the next steps.",
     `Phone on file: ${lead.phone}`,
-    lead.city || lead.country ? `Address on file: ${[lead.city, lead.country].filter(Boolean).join(", ")}` : "",
+    address ? `Address on file: ${address}` : "",
     "If you did not ask for this reservation, please reply to this email.",
   ].filter(Boolean);
-  await deliverEmail(lead.email, `Your reservation of unit ${lead.reservedUnit} at ${project}`, lines, `Reservation ${lead.id} is stored`);
+  const html = pageUrl ? renderReservationEmail(lead, project, pageUrl, unit, currency) : undefined;
+  await deliverEmail(lead.email, `Your reservation of unit ${lead.reservedUnit} at ${project}`, lines, `Reservation ${lead.id} is stored`, html);
 }
 
-async function deliverEmail(recipient: string, subject: string, lines: string[], what: string): Promise<void> {
+// Email programs ignore style sheets, so every style is written on its own element
+export function renderReservationEmail(lead: Lead, project: string, pageUrl: string, unit: ShortlistUnit | null, currency?: string): string {
+  const gold = "#e7c873";
+  const muted = "#9aa7b4";
+  const price = unit && typeof unit.price === "number" && unit.price > 0 ? `${formatNumber(unit.price)} ${escapeHtml(currency || "IQD")}` : "";
+  const facts = unit ? [
+    unit.propertyClass ? escapeHtml(unit.propertyClass) : "",
+    typeof unit.bedrooms === "number" ? `${unit.bedrooms} bed` : "",
+    typeof unit.bathrooms === "number" ? `${unit.bathrooms} bath` : "",
+    typeof unit.surface === "number" ? `${formatNumber(unit.surface, 1)} m&sup2;` : "",
+  ].filter(Boolean).join(" &middot; ") : "";
+  const place = unit ? [unit.zone ? `Zone ${escapeHtml(unit.zone)}` : "", unit.block ? `Block ${escapeHtml(unit.block)}` : "",
+    typeof unit.doorNo === "number" && unit.doorNo > 0 ? `Door ${unit.doorNo}` : ""].filter(Boolean).join(" &middot; ") : "";
+  const address = [lead.city, lead.country].filter(Boolean).join(", ");
+  const link = escapeHtml(pageUrl);
+  return `<div style="margin:0;padding:24px 12px;background:#0d1117;font-family:Arial,Helvetica,sans-serif;color:#e6edf3">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto"><tr><td>
+  <div style="font-size:12px;letter-spacing:1px;text-transform:uppercase;color:${gold}">Sight Solution - ${escapeHtml(project)}</div>
+  <div style="font-size:24px;font-weight:bold;margin:8px 0 6px;color:#e6edf3">Your reservation</div>
+  <div style="font-size:14px;line-height:1.6;color:${muted};margin-bottom:18px">Dear ${escapeHtml(lead.name)}, thank you for your interest in ${escapeHtml(project)}. The unit below has been reserved in your name.</div>
+  <div style="background:#161b22;border:1px solid #2a323c;border-radius:14px;padding:16px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td style="font-size:18px;font-weight:bold;color:#e6edf3">${escapeHtml(lead.reservedUnit || "")}</td>
+      <td align="right"><span style="font-size:12px;border:1px solid #c9a24b;color:${gold};border-radius:999px;padding:2px 10px">${escapeHtml(RESERVED_STATUS)}</span></td>
+    </tr></table>
+    ${price ? `<div style="font-size:20px;font-weight:bold;color:${gold};margin-top:8px">${price}</div>` : ""}
+    ${facts ? `<div style="font-size:14px;margin-top:8px;color:#e6edf3">${facts}</div>` : ""}
+    ${place ? `<div style="font-size:13px;margin-top:4px;color:${muted}">${place}</div>` : ""}
+  </div>
+  <div style="text-align:center;margin:22px 0 6px">
+    <a href="${link}" style="display:inline-block;background:${gold};color:#0d1117;font-size:15px;font-weight:bold;text-decoration:none;border-radius:10px;padding:12px 26px">View your reservation</a>
+  </div>
+  <div style="text-align:center;margin:18px 0 6px">
+    <a href="${link}"><img src="${link}/qr.png" width="170" height="170" alt="QR code of your reservation page" style="background:#ffffff;border-radius:10px;padding:8px;border:0"></a>
+    <div style="font-size:12px;color:${muted};margin-top:8px">Scan to open your reservation on your phone</div>
+  </div>
+  <div style="font-size:13px;line-height:1.7;color:${muted};border-top:1px solid #2a323c;margin-top:18px;padding-top:14px">
+    Our sales team will contact you shortly to confirm the details and the next steps.<br>
+    Phone on file: ${escapeHtml(lead.phone)}${address ? `<br>Address on file: ${escapeHtml(address)}` : ""}<br>
+    If you did not ask for this reservation, please reply to this email.
+  </div>
+</td></tr></table></div>`;
+}
+
+async function deliverEmail(to: string | string[], subject: string, lines: string[], what: string, designedHtml?: string): Promise<void> {
+  const recipients = Array.isArray(to) ? to : [to];
+  const recipient = recipients.join(", ");
   const text = lines.join("\n");
-  const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6">${lines.map((l) => `<div>${escapeHtml(l)}</div>`).join("")}</div>`;
+  const html = designedHtml || `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6">${lines.map((l) => `<div>${escapeHtml(l)}</div>`).join("")}</div>`;
   const cleanSubject = subject.replace(/[\r\n]+/g, " ").slice(0, 200);
   try {
     if (process.env.SMTP_HOST && process.env.SMTP_USER) {
@@ -540,7 +593,7 @@ async function deliverEmail(recipient: string, subject: string, lines: string[],
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from: process.env.RESEND_FROM || "Sight Portal <onboarding@resend.dev>", to: [recipient], subject: cleanSubject, html, text }),
+        body: JSON.stringify({ from: process.env.RESEND_FROM || "Sight Portal <onboarding@resend.dev>", to: recipients, subject: cleanSubject, html, text }),
       });
       if (!res.ok) throw new Error(`Resend answered ${res.status}`);
     } else {
@@ -560,7 +613,8 @@ const formatNumber = (value: number | undefined, digits = 0): string =>
 export function renderShortlistPage(shortlist: Shortlist | null): string {
   // What the buyer sees: the brand and the project, nothing that points at the portal
   const brand = shortlist?.projectName ? `Sight Solution - ${shortlist.projectName}` : "Sight Viz";
-  const heading = shortlist ? "Your shortlist" : "Shortlist not found";
+  const reserved = !!shortlist?.reservedFor;
+  const heading = !shortlist ? "Shortlist not found" : reserved ? "Your reservation" : "Your shortlist";
   const cards = (shortlist?.units || []).map((unit) => {
     const facts = [
       unit.propertyClass ? escapeHtml(unit.propertyClass) : "",
@@ -579,12 +633,14 @@ export function renderShortlistPage(shortlist: Shortlist | null): string {
       ${place ? `<div class="place">${place}</div>` : ""}
     </article>`;
   }).join("\n");
-  const body = shortlist
+  const body = shortlist && reserved
+    ? `<p class="lead">${shortlist.units.length === 1 ? `Unit ${escapeHtml(shortlist.units[0].name)} is` : "These homes are"} reserved in the name of ${escapeHtml(shortlist.reservedFor || "")} since ${escapeHtml(shortlist.createdAt.slice(0, 10))}. Our sales team will contact you to confirm the details and the next steps.</p>${cards}`
+    : shortlist
     ? `<p class="lead">${shortlist.units.length} ${shortlist.units.length === 1 ? "home" : "homes"} saved on ${escapeHtml(shortlist.createdAt.slice(0, 10))}. Prices and availability are as shown at that time.</p>${cards || "<p>No homes were saved.</p>"}`
     : `<p class="lead">This link is not valid or the shortlist has been removed. Ask your sales advisor for a new one.</p>`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>${escapeHtml(brand)} - QR</title>
+<meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>${escapeHtml(brand)} - ${reserved ? "Reservation" : "QR"}</title>
 <style>
   body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:#0d1117;color:#e6edf3}
   main{max-width:640px;margin:0 auto;padding:24px 16px 48px}
@@ -618,7 +674,7 @@ export function shortlistHostGuard(req: Request, res: Response, next: () => void
     publicHost = "";
   }
   const requestHost = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim().toLowerCase();
-  if (publicHost && requestHost === publicHost && !/^\/s\/[A-Za-z0-9_-]+\/?$/.test(req.path)) {
+  if (publicHost && requestHost === publicHost && !/^\/s\/[A-Za-z0-9_-]+(\/|\/qr\.png)?$/.test(req.path)) {
     res.status(404).type("text/plain").send("Not found");
     return;
   }
@@ -631,7 +687,7 @@ export interface InsightsOptions {
   // Marks a unit as reserved in the data the server sends to Unreal, and tells every connected Unreal app.
   // loadRows gives the portal's own unit rows, for when the server holds none for this client (after a restart).
   // "unknown": no such unit; "taken": it is not Available any more.
-  reserveUnit: (slug: string, unitName: string, loadRows: () => Promise<Record<string, any>[] | null>) => Promise<"ok" | "unknown" | "taken">;
+  reserveUnit: (slug: string, unitName: string, loadRows: () => Promise<Record<string, any>[] | null>) => Promise<Record<string, any> | "unknown" | "taken">;
 }
 
 // Checks that the request comes from a signed-in portal user who may act on this client.
@@ -922,7 +978,7 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
       if (lead) await store.saveLead(lead);
       const url = `${baseUrl(req)}/s/${shortlist.id}`;
       // The lead is always saved; the email about it is held back if they arrive faster than people can type them
-      if (lead && !overLimit(`lead-email:${clientSlug}`, 20, 3_600_000)) void sendLeadEmail(lead, url);
+      if (lead && !overLimit(`lead-email:${clientSlug}`, 20, 3_600_000)) void notifyLead(lead, url);
       res.json({ status: "ok", id: shortlist.id, url, lead_id: lead?.id || null, durable: store.mode === "firestore" });
     } catch (e: any) {
       console.error("[Insights] Could not save a shortlist:", e?.message || e);
@@ -940,6 +996,21 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
     } catch (e: any) {
       console.error("[Insights] Could not read a shortlist:", e?.message || e);
       res.status(500).json({ status: "error", error: "The shortlist could not be read." });
+    }
+  });
+
+  // The QR code of a shortlist or reservation page as a picture, for emails (which cannot draw one themselves)
+  app.get("/s/:id/qr.png", async (req, res) => {
+    if (limited(req, res, "shortlist-qr", 120, 60_000)) return;
+    if (!/^[A-Za-z0-9_-]{6,32}$/.test(req.params.id)) return void res.status(404).type("text/plain").send("Not found");
+    try {
+      const png = await QRCode.toBuffer(`${baseUrl(req)}/s/${req.params.id}`, { type: "png", width: 340, margin: 2, errorCorrectionLevel: "M" });
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.setHeader("X-Robots-Tag", "noindex, nofollow");
+      res.type("png").send(png);
+    } catch (e: any) {
+      console.error("[Insights] Could not draw a QR code:", e?.message || e);
+      res.status(500).type("text/plain").send("Error");
     }
   });
 
@@ -1075,6 +1146,15 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
     }
   });
 
+  // The lead email: to the owner and to the project's moderators. Never fails the request it belongs to.
+  const notifyLead = async (lead: Lead, shortlistUrl: string | null): Promise<void> => {
+    try {
+      await sendLeadEmail(lead, shortlistUrl, await listModeratorEmails(lead.clientSlug));
+    } catch (e: any) {
+      console.warn("[Insights] Could not send a lead email:", e?.message || e);
+    }
+  };
+
   // ---- Reservations -------------------------------------------------------------------------------------------
   // An advisor reserves a unit from the Unreal app's Shortlist window. The Unreal app is not signed in, so the
   // reservation PIN of the project is what allows it. Five wrong PINs lock reservations for 15 minutes.
@@ -1127,6 +1207,7 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
       const outcome = await options.reserveUnit(clientSlug, unitName, async () => (admin ? admin.getSheetRows(clientSlug) : null));
       if (outcome === "unknown") return res.status(404).json({ status: "error", error: "That unit was not found in this project." });
       if (outcome === "taken") return res.status(409).json({ status: "error", error: "That unit is no longer available." });
+      const reservedRow: Record<string, any> = outcome;
 
       // The portal's own copy of the units, so the reservation shows there and survives a later push
       if (admin) {
@@ -1138,19 +1219,39 @@ export async function registerInsightsRoutes(app: Express, options: InsightsOpti
           console.error("[Insights] Could not mark a reserved unit in the portal's sheet data:", e?.message || e);
         }
       }
+      const now = new Date().toISOString();
+      const sessionId = cleanText(req.body?.session_id, 64) || undefined;
+      const projectName = admin ? cleanText(await admin.getClientName(clientSlug), 80) : "";
+      const currency = cleanText(req.body?.currency, 8) || undefined;
+      // The buyer's page: the same page a shortlist QR opens, here confirming the reserved unit
+      const unit = sanitizeUnit({ ...reservedRow, Name: unitName, DoorNo: reservedRow["Door No"], Availability: RESERVED_STATUS });
       const lead: Lead = dropUndefined({
-        id: newId(), clientSlug, createdAt: new Date().toISOString(), name, phone, email, country, city,
+        id: newId(), clientSlug, createdAt: now, name, phone, email, country, city,
         note: `Reserved ${unitName} from the Unreal app`, reservedUnit: unitName, unitNames: [unitName],
-        sessionId: cleanText(req.body?.session_id, 64) || undefined, status: "new" as const,
+        sessionId, status: "new" as const,
       });
+      let pageUrl: string | null = null;
+      if (unit) {
+        try {
+          const page: Shortlist = dropUndefined({
+            id: newId(), clientSlug, createdAt: now, units: [unit], sessionId, currency, openedCount: 0,
+            projectName: projectName || undefined, leadId: lead.id, reservedFor: name,
+          });
+          await store.saveShortlist(page);
+          lead.shortlistId = page.id;
+          pageUrl = `${baseUrl(req)}/s/${page.id}`;
+        } catch (e: any) {
+          console.error("[Insights] Could not save the reservation page:", e?.message || e);
+        }
+      }
       await store.saveLead(lead);
-      if (!overLimit(`lead-email:${clientSlug}`, 20, 3_600_000)) void sendLeadEmail(lead, null);
+      if (!overLimit(`lead-email:${clientSlug}`, 20, 3_600_000)) void notifyLead(lead, pageUrl);
       // The buyer gets a confirmation at the address the advisor typed (same hourly ceiling per project)
       if (!overLimit(`buyer-email:${clientSlug}`, 20, 3_600_000)) {
-        void (async () => sendReservationConfirmation(lead, admin ? cleanText(await admin.getClientName(clientSlug), 80) : ""))()
+        void sendReservationConfirmation(lead, projectName, pageUrl, unit, currency)
           .catch((e) => console.warn("[Insights] Could not send a reservation confirmation:", e?.message || e));
       }
-      res.json({ status: "ok", unit: unitName, availability: RESERVED_STATUS, lead_id: lead.id });
+      res.json({ status: "ok", unit: unitName, availability: RESERVED_STATUS, lead_id: lead.id, url: pageUrl });
     } catch (e: any) {
       console.error("[Insights] Could not reserve a unit:", e?.message || e);
       res.status(500).json({ status: "error", error: "The unit could not be reserved." });

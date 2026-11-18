@@ -1087,7 +1087,7 @@ async function startServer() {
       row.Availability = RESERVED_STATUS;
       savePersistedClients(clientsData);
       broadcastSync("update", slug, { property: unitName, data: { Availability: RESERVED_STATUS } });
-      return "ok";
+      return { ...row };
     },
   });
   clientWriteCheck = insights.authorizeWrite;
