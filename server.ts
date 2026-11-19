@@ -169,7 +169,7 @@ async function startServer() {
   const socketIsFor = (client: any, slug: string): boolean => !!slug && client.client_slug === slug;
 
   // Helper function to broadcast updates to all active WebSocket clients connected to a specific client_slug
-  const broadcastSync = (event: "init" | "update", client_slug: string, extraPayload?: any) => {
+  const broadcastSync = (event: "init" | "update", client_slug: string, extraPayload?: any): number => {
     const data = dataFor(client_slug);
     const payloadObject: Record<string, any> = {
       event,
@@ -200,6 +200,7 @@ async function startServer() {
       }
     });
     console.log(`[WebSocket Broadcast] Sent live '${event}' data to ${clientsCount} connected Unreal Engine sockets for client '${client_slug}'`);
+    return clientsCount;
   };
 
   // -------------------------------------------------------------
@@ -447,9 +448,10 @@ async function startServer() {
       savePersistedClients(clientsData);
 
       // Real-time Push to all active WebSockets/Connected Plugin threads directly
-      broadcastSync("update", slug, updated_row);
+      // How many Unreal apps of this project received it, so the portal can say so instead of assuming
+      const unrealSessions = broadcastSync("update", slug, updated_row);
 
-      return res.json({ success: true, message: `Spreadsheet records successfully cached on backend server for client '${slug}'` });
+      return res.json({ success: true, unreal_sessions: unrealSessions, message: `Spreadsheet records successfully cached on backend server for client '${slug}'` });
     }
     
     return res.status(400).json({ error: "Invalid payload layout structure: missing 'attributes_matrix' array" });

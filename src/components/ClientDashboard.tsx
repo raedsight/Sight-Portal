@@ -476,6 +476,8 @@ export default function ClientDashboard({
   const testWsRef = useRef<WebSocket | null>(null);
   const [pushStatus, setPushStatus] = useState<"idle" | "pushing" | "success" | "error">("idle");
   const [pushMessage, setPushMessage] = useState<string>("");
+  // The colour of the message stays with the message (the button's own status goes back to idle after a moment)
+  const [pushTone, setPushTone] = useState<"success" | "warning" | "error">("success");
 
   const handlePushFullDatatable = async () => {
     if (!sheetData || !sheetData.rows || sheetData.rows.length === 0) return;
@@ -491,16 +493,30 @@ export default function ClientDashboard({
         })
       });
       if (res.ok) {
+        const result = await res.json().catch(() => null);
+        const sessions = typeof result?.unreal_sessions === "number" ? result.unreal_sessions : null;
+        const count = sheetData.rows.length;
         setPushStatus("success");
-        setPushMessage(`Pushed all ${sheetData.rows.length} properties to Unreal Engine WebSocket!`);
+        if (sessions === 0) {
+          setPushTone("warning");
+          setPushMessage(`The ${count} properties are saved on the server, but no Unreal app of this project is connected right now. Start the app (or press Play in the editor) and it will receive them when it connects.`);
+        } else {
+          setPushTone("success");
+          setPushMessage(sessions === null
+            ? `Pushed all ${count} properties to the server.`
+            : `Pushed all ${count} properties to ${sessions} connected Unreal ${sessions === 1 ? "app" : "apps"}.`);
+        }
         setTimeout(() => setPushStatus("idle"), 4000);
       } else {
+        const failure = await res.json().catch(() => null);
         setPushStatus("error");
-        setPushMessage("Server error pushing datatable.");
+        setPushTone("error");
+        setPushMessage(failure?.error ? `The push was refused: ${failure.error}` : `Server error pushing datatable (HTTP ${res.status}).`);
         setTimeout(() => setPushStatus("idle"), 4000);
       }
     } catch (err: any) {
       setPushStatus("error");
+      setPushTone("error");
       setPushMessage(err.message || "Failed to push to server");
       setTimeout(() => setPushStatus("idle"), 4000);
     }
@@ -2909,7 +2925,9 @@ export default function ClientDashboard({
 
                     {pushMessage && (
                       <div className={`p-2 rounded text-[10px] font-mono text-center ${
-                        pushStatus === "success" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"
+                        pushTone === "success" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                          : pushTone === "warning" ? "bg-amber-500/10 text-amber-300 border border-amber-500/20"
+                          : "bg-red-500/10 text-red-400 border border-red-500/20"
                       }`}>
                         {pushMessage}
                       </div>
