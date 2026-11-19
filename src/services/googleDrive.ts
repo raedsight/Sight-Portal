@@ -619,7 +619,7 @@ export async function syncClientMediaWithDrive(params: {
 
   // 1. Provision / locate dedicated folder
   const folderInfo = await getOrProvisionClientFolder(client, token);
-  const currentMediaList: MediaResource[] = [...(client.mediaResources || [])];
+  let currentMediaList: MediaResource[] = [...(client.mediaResources || [])];
 
   // 2. Push Phase: Upload any portal assets that don't have driveFileId yet
   if (mode === "two-way" || mode === "push") {
@@ -701,6 +701,16 @@ export async function syncClientMediaWithDrive(params: {
           name.endsWith(".obj") ||
           name.endsWith(".gltf")
         );
+      });
+
+      // Google's thumbnail links expire. Every sync renews the link of each image already in the portal, so the
+      // previews keep showing for everyone who opens the project.
+      const freshLinks = new Map<string, string>();
+      for (const f of mediaFiles) if (f.thumbnailLink) freshLinks.set(f.id, f.thumbnailLink);
+      currentMediaList = currentMediaList.map((m) => {
+        const link = m.driveFileId ? freshLinks.get(m.driveFileId) : undefined;
+        if (!link || m.url.startsWith("data:") || m.driveThumbnailLink === link) return m;
+        return { ...m, url: link, driveThumbnailLink: link };
       });
 
       const existingDriveIds = new Set(
