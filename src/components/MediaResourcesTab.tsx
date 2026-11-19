@@ -78,6 +78,36 @@ const kindOfTags = (tags?: string[]): ImageKind => {
   return "photo";
 };
 
+
+// A Google Drive image is stored with Drive's own thumbnail link, and Google lets those links expire after a while.
+// When the stored link no longer loads, the picture is asked for again by its Drive file ID (an address that does
+// not expire; it shows when the file is shared by link or the browser's Google account may see it), and when that
+// fails too a plain placeholder is shown instead of a broken picture.
+function MediaImage({ item, className, onClick }: { item: MediaResource; className?: string; onClick?: () => void }) {
+  const stable = item.driveFileId && !item.url.startsWith("data:")
+    ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(item.driveFileId)}&sz=w1600`
+    : "";
+  const [stage, setStage] = useState<"stored" | "stable" | "missing">("stored");
+  useEffect(() => setStage("stored"), [item.url, item.driveFileId]);
+  if (stage === "missing") {
+    return (
+      <div onClick={onClick} className={`${className || ""} flex items-center justify-center bg-black/60 text-[10px] text-gray-500 text-center px-2`}>
+        Preview unavailable
+      </div>
+    );
+  }
+  return (
+    <img
+      src={stage === "stored" ? item.url : stable}
+      alt=""
+      onClick={onClick}
+      onError={() => setStage(stage === "stored" && stable ? "stable" : "missing")}
+      className={className}
+      referrerPolicy="no-referrer"
+    />
+  );
+}
+
 export default function MediaResourcesTab({
   client,
   sheetData,
@@ -1718,11 +1748,9 @@ export default function MediaResourcesTab({
                   onClick={() => setInspectingMedia(item)}
                   className="relative aspect-[16/10] bg-black overflow-hidden cursor-pointer"
                 >
-                  <img
-                    src={item.url}
-                    alt={item.title}
+                  <MediaImage
+                    item={item}
                     className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    referrerPolicy="no-referrer"
                   />
 
                   {/* Gradient Shadow Overlay */}
@@ -1877,12 +1905,10 @@ export default function MediaResourcesTab({
             >
               {/* Thumbnail + Details */}
               <div className="flex items-center gap-3.5 min-w-0">
-                <img
-                  src={item.url}
-                  alt={item.title}
+                <MediaImage
+                  item={item}
                   onClick={() => setInspectingMedia(item)}
                   className="w-14 h-11 object-cover rounded-lg border border-white/10 shrink-0 cursor-pointer"
-                  referrerPolicy="no-referrer"
                 />
 
                 <div className="min-w-0 space-y-0.5">
@@ -2507,11 +2533,9 @@ export default function MediaResourcesTab({
             <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-0">
               {/* Image View */}
               <div className="lg:col-span-8 bg-black p-4 flex items-center justify-center min-h-[350px]">
-                <img
-                  src={inspectingMedia.url}
-                  alt={inspectingMedia.title}
-                  className="max-h-[60vh] max-w-full object-contain rounded shadow-2xl"
-                  referrerPolicy="no-referrer"
+                <MediaImage
+                  item={inspectingMedia}
+                  className="max-h-[60vh] max-w-full min-h-[120px] min-w-[200px] object-contain rounded shadow-2xl"
                 />
               </div>
 

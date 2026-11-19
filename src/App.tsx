@@ -476,31 +476,10 @@ export default function App() {
         setBackendAlive(false);
       }
 
-      // 2. Discover running native Unreal Engine Remote Control API (which runs directly on localhost)
-      if (serverUeAlive) {
-        setUe5Alive(true);
-      } else {
-        const targetUE5Urls = [
-          selectedClient?.ue5Endpoint || "http://localhost:8008/remote/object/call",
-          "http://127.0.0.1:8008/remote/object/call"
-        ];
-
-        let ueResponsive = false;
-        for (const url of targetUE5Urls) {
-          if (!url) continue;
-          try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 1200);
-            await fetch(url, { method: "GET", mode: "no-cors", signal: controller.signal });
-            clearTimeout(timeoutId);
-            ueResponsive = true;
-            break;
-          } catch (e) {
-            // Unreachable port
-          }
-        }
-        setUe5Alive(ueResponsive);
-      }
+      // 2. The server knows whether an Unreal app of this project is connected. (The page used to also knock on
+      // this computer's port 8008 every few seconds; the app has not used that port for a long time, so it only
+      // filled the browser console with "connection refused" errors.)
+      setUe5Alive(serverUeAlive);
     };
 
     probeEndpoints();
